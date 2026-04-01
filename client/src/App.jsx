@@ -70,6 +70,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [panelOpen, setPanelOpen] = useState(false);
   const [openTable, setOpenTable] = useState(null); // which table's chairs are expanded
+  const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, 1 = next week, etc.
 
   // Load initial data
   useEffect(() => {
@@ -284,37 +285,80 @@ export default function App() {
         </div>
       </header>
 
-      {/* Date Selector Bar */}
+      {/* Date Selector Bar with Week Navigation */}
       <div className="bg-brand-blue border-b border-white/10 px-4 py-2 flex-shrink-0">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <span className="text-white/50 text-xs font-medium uppercase tracking-wider mr-1 flex-shrink-0">Date:</span>
-          {sessions.map(session => {
-            const isSelected = selectedSession?.id === session.id;
-            return (
-              <button
-                key={session.id}
-                onClick={() => {
-                  setSelectedSession(session);
-                  setSelectedSeats([]);
-                  setHoldExpiry(null);
-                  setOpenTable(null);
-                }}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                  isSelected
-                    ? 'bg-brand-gold text-white shadow-md'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
-                }`}
-              >
-                {formatDateShort(session.date)} — {formatTime(session.time)}
-                <span className={`ml-1.5 text-xs ${
-                  isSelected ? 'text-white/80' : session.available_seats > 100 ? 'text-green-400' : session.available_seats > 30 ? 'text-amber-400' : 'text-red-400'
-                }`}>
-                  ({session.available_seats})
-                </span>
+        {(() => {
+          // Group sessions into weeks (Mon-Sun)
+          const getWeekStart = (dateStr) => {
+            const d = new Date(dateStr + 'T12:00:00');
+            const day = d.getDay();
+            const diff = (day === 0 ? -6 : 1) - day; // Monday start
+            const monday = new Date(d);
+            monday.setDate(d.getDate() + diff);
+            return monday.toISOString().split('T')[0];
+          };
+
+          const weeks = {};
+          sessions.forEach(s => {
+            const wk = getWeekStart(s.date);
+            if (!weeks[wk]) weeks[wk] = [];
+            weeks[wk].push(s);
+          });
+          const weekKeys = Object.keys(weeks).sort();
+          const clampedOffset = Math.max(0, Math.min(weekOffset, weekKeys.length - 1));
+          const currentWeekKey = weekKeys[clampedOffset];
+          const visibleSessions = currentWeekKey ? weeks[currentWeekKey] : [];
+
+          const weekLabel = currentWeekKey ? (() => {
+            const start = new Date(currentWeekKey + 'T12:00:00');
+            const end = new Date(start);
+            end.setDate(start.getDate() + 6);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[start.getMonth()]} ${start.getDate()} – ${months[end.getMonth()]} ${end.getDate()}`;
+          })() : '';
+
+          return (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setWeekOffset(Math.max(0, weekOffset - 1))} disabled={clampedOffset === 0}
+                className="flex-shrink-0 w-8 h-8 rounded-lg bg-white/10 text-white/70 hover:bg-white/20 hover:text-white flex items-center justify-center transition disabled:opacity-30 disabled:cursor-not-allowed">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
               </button>
-            );
-          })}
-        </div>
+              <span className="text-white/60 text-xs font-semibold uppercase tracking-wider flex-shrink-0 min-w-[120px] text-center">{weekLabel}</span>
+              <button onClick={() => setWeekOffset(Math.min(weekKeys.length - 1, weekOffset + 1))} disabled={clampedOffset >= weekKeys.length - 1}
+                className="flex-shrink-0 w-8 h-8 rounded-lg bg-white/10 text-white/70 hover:bg-white/20 hover:text-white flex items-center justify-center transition disabled:opacity-30 disabled:cursor-not-allowed">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+              </button>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 ml-2">
+                {visibleSessions.map(session => {
+                  const isSelected = selectedSession?.id === session.id;
+                  return (
+                    <button
+                      key={session.id}
+                      onClick={() => {
+                        setSelectedSession(session);
+                        setSelectedSeats([]);
+                        setHoldExpiry(null);
+                        setOpenTable(null);
+                      }}
+                      className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                        isSelected
+                          ? 'bg-brand-gold text-white shadow-md'
+                          : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+                      }`}
+                    >
+                      {formatDateShort(session.date)} — {formatTime(session.time)}
+                      <span className={`ml-1.5 text-xs ${
+                        isSelected ? 'text-white/80' : session.available_seats > 100 ? 'text-green-400' : session.available_seats > 30 ? 'text-amber-400' : 'text-red-400'
+                      }`}>
+                        ({session.available_seats})
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Main Content: Table Map */}
@@ -358,12 +402,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Room Label */}
-        <div className="text-center mb-3">
-          <span className="text-xs font-bold uppercase tracking-[0.2em] text-white/30">Front of Room — Caller</span>
-          <div className="mt-1 h-1 bg-gradient-to-r from-transparent via-brand-gold/30 to-transparent rounded-full max-w-md mx-auto"></div>
-        </div>
-
         {/* Instruction — hidden once seats are already selected */}
         {selectedSeats.length === 0 && !openTable && (
           <div className="text-center mb-4">
@@ -386,65 +424,88 @@ export default function App() {
           </div>
         )}
 
-        {/* Table Map — Venue Layout using CSS Grid for automatic row alignment */}
+        {/* Floorplan Room Outline */}
         <div className="seat-map-container">
-          <div className="inline-grid mx-auto" style={{
-            gridTemplateColumns: 'auto auto auto auto',
-            gridTemplateRows: 'auto auto',
-            gap: '12px',
-            columnGap: '20px',
-            minWidth: 'max-content'
-          }}>
-            {/* Row 1: upper sections — grid auto-sizes to tallest (right-upper = 4 rows) */}
-            <div className="self-start">
-              {SECTIONS.filter(s => s.id === 'left-upper').map(section => (
-                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                  openTable={openTable} onTableClick={setOpenTable} />
-              ))}
-            </div>
-            <div className="self-start">
-              {SECTIONS.filter(s => s.id === 'center-left-upper').map(section => (
-                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                  openTable={openTable} onTableClick={setOpenTable} />
-              ))}
-            </div>
-            <div className="self-end">
-              {SECTIONS.filter(s => s.id === 'center-column-upper').map(section => (
-                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                  openTable={openTable} onTableClick={setOpenTable} />
-              ))}
-            </div>
-            <div className="self-start">
-              {SECTIONS.filter(s => s.id === 'right-upper').map(section => (
-                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                  openTable={openTable} onTableClick={setOpenTable} />
-              ))}
+          <div className="floorplan-room">
+            {/* Front Wall — Caller / Stage Area */}
+            <div className="floorplan-front-wall">
+              <div className="floorplan-stage-label">
+                <svg className="w-4 h-4 text-brand-gold/60 inline-block mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                </svg>
+                Front of Room — Caller
+              </div>
             </div>
 
-            {/* Row 2: lower sections — all auto-aligned */}
-            {SECTIONS.filter(s => s.id === 'left-lower').map(section => (
-              <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                openTable={openTable} onTableClick={setOpenTable} />
-            ))}
-            {SECTIONS.filter(s => s.id === 'center-left-lower').map(section => (
-              <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                openTable={openTable} onTableClick={setOpenTable} />
-            ))}
-            {SECTIONS.filter(s => s.id === 'center-column-lower').map(section => (
-              <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                openTable={openTable} onTableClick={setOpenTable} />
-            ))}
-            {SECTIONS.filter(s => s.id === 'right-lower').map(section => (
-              <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                openTable={openTable} onTableClick={setOpenTable} />
-            ))}
+            {/* Table Map — Venue Layout */}
+            <div className="floorplan-interior">
+              <div className="inline-grid mx-auto" style={{
+                gridTemplateColumns: 'auto auto auto auto',
+                gridTemplateRows: 'auto auto',
+                gap: '12px',
+                columnGap: '20px',
+                minWidth: 'max-content'
+              }}>
+                {/* Row 1: upper sections */}
+                <div className="self-start">
+                  {SECTIONS.filter(s => s.id === 'left-upper').map(section => (
+                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                      openTable={openTable} onTableClick={setOpenTable} />
+                  ))}
+                </div>
+                <div className="self-start">
+                  {SECTIONS.filter(s => s.id === 'center-left-upper').map(section => (
+                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                      openTable={openTable} onTableClick={setOpenTable} />
+                  ))}
+                </div>
+                <div className="self-end">
+                  {SECTIONS.filter(s => s.id === 'center-column-upper').map(section => (
+                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                      openTable={openTable} onTableClick={setOpenTable} />
+                  ))}
+                </div>
+                <div className="self-start">
+                  {SECTIONS.filter(s => s.id === 'right-upper').map(section => (
+                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                      openTable={openTable} onTableClick={setOpenTable} />
+                  ))}
+                </div>
+
+                {/* Row 2: lower sections */}
+                {SECTIONS.filter(s => s.id === 'left-lower').map(section => (
+                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                    openTable={openTable} onTableClick={setOpenTable} />
+                ))}
+                {SECTIONS.filter(s => s.id === 'center-left-lower').map(section => (
+                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                    openTable={openTable} onTableClick={setOpenTable} />
+                ))}
+                {SECTIONS.filter(s => s.id === 'center-column-lower').map(section => (
+                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                    openTable={openTable} onTableClick={setOpenTable} />
+                ))}
+                {SECTIONS.filter(s => s.id === 'right-lower').map(section => (
+                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                    openTable={openTable} onTableClick={setOpenTable} />
+                ))}
+              </div>
+            </div>
+
+            {/* Back Wall — Entrance with door opening */}
+            <div className="floorplan-back-wall">
+              <div className="floorplan-wall-segment"></div>
+              <div className="floorplan-entrance-gap">
+                <div className="floorplan-door-swing floorplan-door-left"></div>
+                <span className="floorplan-entrance-label">Entrance</span>
+                <div className="floorplan-door-swing floorplan-door-right"></div>
+              </div>
+              <div className="floorplan-wall-segment"></div>
+            </div>
+            <div className="text-center mt-1">
+              <span className="text-[10px] font-medium uppercase tracking-[0.15em] text-white/25">Back of Room</span>
+            </div>
           </div>
-        </div>
-
-        {/* Back of room */}
-        <div className="text-center mt-4">
-          <div className="h-0.5 bg-gradient-to-r from-transparent via-white/10 to-transparent rounded-full max-w-md mx-auto mb-2"></div>
-          <span className="text-xs font-bold uppercase tracking-[0.2em] text-white/20">Back of Room — Entrance</span>
         </div>
 
         {/* CTA if no chairs selected */}

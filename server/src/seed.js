@@ -95,10 +95,10 @@ async function seed() {
     run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)', p);
   }
 
-  // --- Sessions (next 10 days, skip Wednesdays) ---
+  // --- Sessions (next 90 days, skip Wednesdays) ---
   const sessionIds = [];
   const today = new Date();
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 90; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     if (d.getDay() === 3) continue; // Skip Wednesday

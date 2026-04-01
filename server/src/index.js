@@ -464,10 +464,46 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(clientBuild, 'index.html'));
 });
 
+// ============ AUTO-SESSION GENERATION ============
+
+const SESSION_HORIZON_DAYS = 90; // Keep sessions available 3 months ahead
+
+function ensureFutureSessions() {
+  const today = new Date();
+  for (let i = 0; i < SESSION_HORIZON_DAYS; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    if (d.getDay() === 3) continue; // Skip Wednesday (no bingo)
+    const dateStr = d.toISOString().split('T')[0];
+
+    const existing = get('SELECT id FROM sessions WHERE date = ?', [dateStr]);
+    if (existing) continue;
+
+    const id = uuid();
+    run('INSERT INTO sessions (id, date, time, cutoff_time, is_available) VALUES (?, ?, ?, ?, ?)',
+      [id, dateStr, '18:30', '12:00', 1]);
+
+    // Create 74 tables x 6 chairs
+    for (let tNum = 1; tNum <= 75; tNum++) {
+      if (tNum === 41) continue;
+      for (let ch = 1; ch <= 6; ch++) {
+        run('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
+          [uuid(), id, tNum, ch, 'vacant']);
+      }
+    }
+    console.log(`Auto-created session for ${dateStr}`);
+  }
+}
+
 // ============ START ============
 async function start() {
   await getDb();
   console.log('Database connected.');
+
+  // Ensure sessions exist for the next 90 days
+  ensureFutureSessions();
+  // Re-check daily (every 24 hours)
+  setInterval(ensureFutureSessions, 24 * 60 * 60 * 1000);
 
   // Release expired holds every 30 seconds
   setInterval(releaseExpiredHolds, 30000);

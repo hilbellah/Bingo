@@ -140,6 +140,88 @@ body {
   text-align: center;
 }
 
+/* ── Floorplan room outline ── */
+.floorplan-room {
+  display: inline-flex;
+  flex-direction: column;
+  border: 2px solid rgba(255,255,255,0.18);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+  position: relative;
+  margin: 0 auto;
+}
+
+/* Front wall — caller / stage strip */
+.floorplan-front-wall {
+  border-bottom: 2px solid rgba(197,165,90,0.35);
+  background: linear-gradient(180deg, rgba(197,165,90,0.08) 0%, transparent 100%);
+  padding: 10px 16px;
+  border-radius: 6px 6px 0 0;
+  text-align: center;
+}
+.floorplan-stage-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Interior seating area */
+.floorplan-interior {
+  padding: 16px 20px;
+  text-align: center;
+}
+
+/* Back wall with entrance gap */
+.floorplan-back-wall {
+  display: flex;
+  align-items: flex-end;
+  padding: 0 0 4px;
+}
+.floorplan-wall-segment {
+  flex: 1;
+  height: 2px;
+  background: rgba(255,255,255,0.18);
+}
+.floorplan-entrance-gap {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 0 6px;
+  position: relative;
+}
+.floorplan-entrance-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.25);
+  white-space: nowrap;
+  padding: 0 4px 2px;
+}
+
+/* Door swing arcs */
+.floorplan-door-swing {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  background: transparent;
+}
+.floorplan-door-left {
+  border-radius: 0 0 0 18px;
+  border-top: none;
+  border-right: none;
+}
+.floorplan-door-right {
+  border-radius: 0 0 18px 0;
+  border-top: none;
+  border-left: none;
+}
+
 /* Smooth scroll */
 html {
   scroll-behavior: smooth;
