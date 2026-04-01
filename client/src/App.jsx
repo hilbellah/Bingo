@@ -162,6 +162,8 @@ export default function App() {
       if (!holdExpiry || new Date(result.holdUntil) > new Date(holdExpiry)) {
         setHoldExpiry(result.holdUntil);
       }
+      // Auto-open booking panel after selecting a chair
+      setPanelOpen(true);
     } else {
       setError(result.error || 'Could not select chair');
       setTimeout(() => setError(''), 3000);
@@ -480,8 +482,8 @@ export default function App() {
       />
 
       {/* Footer */}
-      <footer className="bg-[#1e3a5f] border-t border-white/10 px-4 py-3 text-center flex-shrink-0">
-        <p className="text-white/50 text-xs">
+      <footer className="bg-brand-blue-dark border-t border-white/10 px-4 py-3 text-center flex-shrink-0">
+        <p className="text-white/30 text-xs">
           Saint Mary's Entertainment Centre — Fredericton, NB — Booking cut-off daily at 12:00 PM
         </p>
       </footer>
@@ -566,11 +568,11 @@ function ChairPicker({ tableNum, chairs, selectedSeats, holderId, onChairClick, 
     const isDisabled = chair.is_disabled;
 
     let bgClass, borderClass, textClass;
-    if (isDisabled) { bgClass = 'bg-slate-100'; borderClass = 'border-slate-200'; textClass = 'text-slate-300'; }
-    else if (isSold) { bgClass = 'bg-slate-200'; borderClass = 'border-slate-300'; textClass = 'text-slate-400'; }
-    else if (isSelected || isMyHold) { bgClass = 'bg-blue-500'; borderClass = 'border-blue-600'; textClass = 'text-white'; }
-    else if (isOtherHold) { bgClass = 'bg-amber-100'; borderClass = 'border-amber-400'; textClass = 'text-amber-700'; }
-    else { bgClass = 'bg-green-500'; borderClass = 'border-green-600'; textClass = 'text-white'; }
+    if (isDisabled) { bgClass = 'bg-gray-700/40'; borderClass = 'border-gray-600/30'; textClass = 'text-gray-500'; }
+    else if (isSold) { bgClass = 'bg-gray-600/50'; borderClass = 'border-gray-500/40'; textClass = 'text-gray-400'; }
+    else if (isSelected || isMyHold) { bgClass = 'bg-blue-500/70'; borderClass = 'border-blue-400'; textClass = 'text-white'; }
+    else if (isOtherHold) { bgClass = 'bg-amber-500/50'; borderClass = 'border-amber-400/50'; textClass = 'text-amber-200'; }
+    else { bgClass = 'bg-green-600/60'; borderClass = 'border-green-500/50'; textClass = 'text-white'; }
 
     return (
       <button
@@ -602,14 +604,14 @@ function ChairPicker({ tableNum, chairs, selectedSeats, holderId, onChairClick, 
 
   return (
     <div className="mx-auto max-w-sm" onClick={(e) => e.stopPropagation()}>
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 relative shadow-lg">
+      <div className="bg-white/10 border border-white/20 rounded-2xl p-5 relative">
         <button onClick={onClose}
-          className="absolute top-3 right-3 text-slate-400 hover:text-slate-700 text-xl leading-none"
+          className="absolute top-3 right-3 text-white/40 hover:text-white/80 text-xl leading-none"
           aria-label="Close">&times;</button>
 
         <div className="text-center mb-4">
-          <span className="text-[#1e3a5f] font-bold text-lg">Table {tableNum}</span>
-          <p className="text-slate-400 text-xs mt-0.5">{vacantCount} of 6 chairs available</p>
+          <span className="text-brand-gold font-bold text-lg">Table {tableNum}</span>
+          <p className="text-white/50 text-xs mt-0.5">{vacantCount} of 6 chairs available</p>
         </div>
 
         {/* Table layout: left chairs — table — right chairs */}
@@ -620,8 +622,8 @@ function ChairPicker({ tableNum, chairs, selectedSeats, holderId, onChairClick, 
           </div>
 
           {/* Table center */}
-          <div className="w-20 h-[210px] rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0">
-            <span className="text-slate-300 text-[10px] font-bold uppercase tracking-wider [writing-mode:vertical-rl]">
+          <div className="w-20 h-[210px] rounded-xl bg-white/5 border border-white/15 flex items-center justify-center shrink-0">
+            <span className="text-white/20 text-[10px] font-bold uppercase tracking-wider [writing-mode:vertical-rl]">
               Table {tableNum}
             </span>
           </div>
@@ -632,10 +634,10 @@ function ChairPicker({ tableNum, chairs, selectedSeats, holderId, onChairClick, 
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-4 mt-4 text-[10px] text-slate-400">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block"></span> Vacant</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500 inline-block"></span> Selected</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-300 inline-block"></span> Occupied</span>
+        <div className="flex items-center justify-center gap-4 mt-4 text-[10px] text-white/40">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-600/60 inline-block"></span> Vacant</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500/70 inline-block"></span> Selected</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-600/50 inline-block"></span> Occupied</span>
         </div>
       </div>
     </div>
