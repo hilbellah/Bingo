@@ -1,0 +1,20 @@
+{
+  "name": "wolastoq-bingo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Saint Mary's Entertainment Centre - Bingo Ticket Booking System",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && node src/index.js",
+    "dev:client": "cd client && npx vite --port 3000",
+    "build": "cd client && npx vite build",
+    "seed": "cd server && node src/seed.js",
+    "migrate": "cd server && node src/migrate.js",
+    "setup": "npm install && npm run migrate && npm run seed",
+    "start": "cd server && node src/index.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

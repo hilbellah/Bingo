@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: linear-gradient(180deg, #0a1628 0%, #132744 40%, #1a3a5c 100%);
+  min-height: 100vh;
+  color: #1a202c;
+}
+
+/* Warm glow effects */
+.glow-gold {
+  box-shadow: 0 0 20px rgba(197, 165, 90, 0.3), 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.glow-gold-sm {
+  box-shadow: 0 0 10px rgba(197, 165, 90, 0.2), 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.card-warm {
+  background: linear-gradient(135deg, #ffffff 0%, #faf7f0 100%);
+  border: 1px solid rgba(197, 165, 90, 0.15);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08), 0 0 0 1px rgba(197, 165, 90, 0.05);
+}
+
+/* Section number badges */
+.section-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #c5a55a, #d4b96e);
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(197, 165, 90, 0.4);
+}
+
+/* Table buttons on the venue map */
+.table-btn {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.table-btn:hover:not(:disabled) {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.table-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Seat/Chair buttons */
+.seat-btn {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.seat-btn:hover:not(:disabled) {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.seat-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.seat-vacant {
+  background: linear-gradient(135deg, #43a047, #66bb6a);
+  color: white;
+  border-color: #388e3c;
+}
+
+.seat-selected {
+  background: linear-gradient(135deg, #1565c0, #42a5f5);
+  color: white;
+  border-color: #0d47a1;
+  box-shadow: 0 0 12px rgba(21, 101, 192, 0.5);
+}
+
+.seat-held {
+  background: linear-gradient(135deg, #f9a825, #fdd835);
+  color: #333;
+  border-color: #f57f17;
+}
+
+.seat-sold {
+  background: linear-gradient(135deg, #757575, #9e9e9e);
+  color: white;
+  border-color: #616161;
+}
+
+.seat-disabled {
+  background: #e0e0e0;
+  color: #bdbdbd;
+  border-color: #ccc;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #1a2744; }
+::-webkit-scrollbar-thumb { background: #c5a55a; border-radius: 4px; }
+
+/* Seat map zoom on mobile */
+.seat-map-container {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  text-align: center;
+}
+
+/* Smooth scroll */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Animated gradient border */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.shimmer-border {
+  background: linear-gradient(90deg, transparent, rgba(197,165,90,0.3), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite;
+}
+
+/* Print styles */
+@media print {
+  body { background: white; }
+  .no-print { display: none; }
+}

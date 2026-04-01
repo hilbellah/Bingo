@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: wolastoq-bingo
+    runtime: node
+    plan: free
+    buildCommand: |
+      cd client
+      npm install
+      npm run build
+      cd ../server
+      npm install
+    startCommand: "cd server && node --experimental-modules src/index.js"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: ADMIN_USERNAME
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: DATABASE_URL
+        value: ./bingo.db
+      - key: SESSION_HOLD_MINUTES
+        value: "10"
+    autoDeploy: false
+    healthCheckPath: /api/sessions
