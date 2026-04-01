@@ -4,7 +4,7 @@
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: linear-gradient(180deg, #0a1628 0%, #132744 40%, #1a3a5c 100%);
+  background: #f0f2f5;
   min-height: 100vh;
   color: #1a202c;
 }
@@ -40,33 +40,62 @@ body {
   box-shadow: 0 2px 8px rgba(197, 165, 90, 0.4);
 }
 
-/* Table buttons on the venue map */
+/* Table buttons on the venue map — clean outlined style matching venue reference */
 .table-btn {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
-  min-height: 48px;
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  min-height: 46px;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: 6px;
   font-size: 14px;
   font-weight: 700;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
+  background: #ffffff;
+  border: 2px solid #c8d0db;
+  color: #3b4a5e;
 }
 
 .table-btn:hover:not(:disabled) {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  border-color: #1e3a5f;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  transform: scale(1.04);
 }
 
 .table-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.5;
+  background: #e8ecf0;
+}
+
+.table-btn.table-selected {
+  background: #dbeafe;
+  border-color: #3b82f6;
+  color: #1e40af;
+}
+
+.table-btn.table-partial {
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #92400e;
+}
+
+.table-btn.table-full {
+  background: #e8ecf0;
+  border-color: #b0b8c4;
+  color: #b0b8c4;
+}
+
+.table-btn.table-open {
+  background: #1e3a5f;
+  border-color: #1e3a5f;
+  color: #ffffff;
 }
 
 /* Seat/Chair buttons */
@@ -130,8 +159,8 @@ body {
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: #1a2744; }
-::-webkit-scrollbar-thumb { background: #c5a55a; border-radius: 4px; }
+::-webkit-scrollbar-track { background: #f0f2f5; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
 
 /* Seat map zoom on mobile */
 .seat-map-container {

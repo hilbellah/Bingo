@@ -24,7 +24,13 @@ export default function BookingPanel({
   requiredPkg, optionalPkgs, total,
   allNamesValid, allSeatsSelected, loading, onSubmit, holdExpiry
 }) {
-  const [step, setStep] = useState(0); // 0=party, 1=names, 2=review/pay
+  // Skip party size step — chairs are selected on the map, auto-filling party size
+  const [step, setStep] = useState(selectedSeats.length > 0 ? 1 : 0); // 0=select chairs prompt, 1=names, 2=review/pay
+
+  // Auto-advance to names step when seats are selected
+  React.useEffect(() => {
+    if (selectedSeats.length > 0 && step === 0) setStep(1);
+  }, [selectedSeats.length]);
 
   const getSeatInfo = (seatId) => {
     const seat = seats.find(s => s.id === seatId);
@@ -56,7 +62,7 @@ export default function BookingPanel({
   const getAddonQty = (idx, pkgId) =>
     attendees[idx]?.addons?.find(a => a.packageId === pkgId)?.quantity || 0;
 
-  const canGoToNames = partySize > 0;
+  const canGoToNames = selectedSeats.length > 0;
   const canGoToReview = allNamesValid && allSeatsSelected;
 
   return (
@@ -89,12 +95,12 @@ export default function BookingPanel({
         {/* Step tabs */}
         <div className="flex border-b border-gray-200 flex-shrink-0">
           {[
-            { label: 'Party Size', idx: 0 },
+            { label: `Chairs (${selectedSeats.length})`, idx: 0 },
             { label: 'Names & Packages', idx: 1 },
             { label: 'Review & Pay', idx: 2 },
           ].map(t => (
             <button key={t.idx} onClick={() => setStep(t.idx)}
-              disabled={t.idx === 1 && !canGoToNames || t.idx === 2 && !canGoToReview}
+              disabled={(t.idx === 1 && selectedSeats.length === 0) || (t.idx === 2 && !canGoToReview)}
               className={`flex-1 py-3 text-sm font-medium transition border-b-2 ${
                 step === t.idx ? 'text-brand-blue border-brand-gold' :
                 'text-gray-400 border-transparent hover:text-gray-600'
@@ -116,63 +122,23 @@ export default function BookingPanel({
             </ul>
           </div>
 
-          {/* STEP 0: Party Size */}
+          {/* STEP 0: Select Chairs prompt (shown when no chairs selected yet) */}
           {step === 0 && (
-            <div>
-              <h3 className="font-bold text-brand-blue text-lg mb-1">How Many Players?</h3>
-              <p className="text-gray-500 text-sm mb-5">Choose your group size, then pick chairs on the map</p>
-
-              <div className="grid grid-cols-3 gap-3">
-                {[1, 2, 3, 4, 5, 6].map(n => (
-                  <button key={n} onClick={() => { onPartySize(n); }}
-                    className={`flex flex-col items-center gap-1 p-4 rounded-xl transition-all ${
-                      partySize === n
-                        ? 'bg-brand-blue text-white shadow-lg scale-105'
-                        : 'bg-gray-50 hover:bg-brand-cream border-2 border-gray-100 hover:border-brand-gold/30 text-brand-blue'
-                    }`}>
-                    <div className="flex flex-wrap justify-center gap-0.5">
-                      {Array.from({ length: n }, (_, i) => (
-                        <svg key={i} className={`w-4 h-4 ${partySize === n ? 'text-brand-gold' : 'text-brand-gold/60'}`} fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                        </svg>
-                      ))}
-                    </div>
-                    <span className="text-xl font-bold">{n}</span>
-                  </button>
-                ))}
+            <div className="text-center py-8">
+              <div className="w-16 h-16 rounded-full bg-brand-gold/10 flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-brand-gold" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                </svg>
               </div>
-
-              {partySize > 0 && (
-                <div className="mt-5 space-y-3">
-                  <div className="bg-brand-gold/10 rounded-xl px-4 py-3 text-center">
-                    <p className="text-brand-blue font-semibold">
-                      {partySize} {partySize === 1 ? 'player' : 'players'} — now pick {partySize} seat{partySize > 1 ? 's' : ''} on the map
-                    </p>
-                  </div>
-
-                  {/* Selected seats summary */}
-                  {selectedSeats.length > 0 && (
-                    <div className="bg-blue-50 rounded-xl px-4 py-3">
-                      <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Your Seats</p>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedSeats.map((seatId, i) => {
-                          const info = getSeatInfo(seatId);
-                          return (
-                            <span key={seatId} className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-medium">
-                              T{info.table} C{info.chair}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  <button onClick={() => setStep(1)} disabled={!canGoToNames || !allSeatsSelected}
-                    className="w-full bg-brand-blue text-white py-3 rounded-xl font-semibold transition hover:bg-brand-blue/90 disabled:opacity-40 disabled:cursor-not-allowed">
-                    {allSeatsSelected ? 'Next: Enter Names' : `Select ${partySize - selectedSeats.length} more seat${partySize - selectedSeats.length !== 1 ? 's' : ''}`}
-                  </button>
-                </div>
-              )}
+              <h3 className="font-bold text-brand-blue text-lg mb-2">Pick Your Chairs</h3>
+              <p className="text-gray-500 text-sm mb-5">
+                Close this panel and tap chairs on the map.<br />
+                Your party size will be set automatically.
+              </p>
+              <button onClick={onClose}
+                className="bg-brand-blue text-white px-6 py-3 rounded-xl font-semibold transition hover:bg-brand-blue/90">
+                Go to Seat Map
+              </button>
             </div>
           )}
 

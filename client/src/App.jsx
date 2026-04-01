@@ -121,38 +121,46 @@ export default function App() {
     }
   }, [selectedSession]);
 
-  // Chair click handler
+  // Chair click handler — selecting chairs auto-fills party size
   const handleChairClick = async (chair) => {
     if (chair.is_disabled || chair.status === 'sold') return;
     if (chair.status === 'held' && chair.held_by !== holderId) return;
 
-    if (partySize === 0) {
-      setPanelOpen(true);
-      return;
-    }
-
     // Deselect
     if (selectedSeats.includes(chair.id)) {
       await unlockSeat(chair.id, holderId);
-      setSelectedSeats(prev => prev.filter(id => id !== chair.id));
+      const newSelected = selectedSeats.filter(id => id !== chair.id);
+      setSelectedSeats(newSelected);
+      // Auto-update party size and attendees
+      const newSize = newSelected.length;
+      setPartySize(newSize);
+      setAttendees(prev => prev.slice(0, newSize));
       return;
     }
 
-    // Max check
-    if (selectedSeats.length >= partySize) {
-      setError(`Select only ${partySize} chair${partySize > 1 ? 's' : ''}. Tap a selected chair to deselect.`);
+    // Max 6 chairs per booking
+    if (selectedSeats.length >= 6) {
+      setError('Maximum 6 chairs per booking. Tap a selected chair to deselect.');
       setTimeout(() => setError(''), 4000);
       return;
     }
 
     const result = await lockSeat(chair.id, holderId);
     if (result.success) {
-      setSelectedSeats(prev => [...prev, chair.id]);
+      const newSelected = [...selectedSeats, chair.id];
+      setSelectedSeats(newSelected);
+      // Auto-update party size and grow attendees
+      const newSize = newSelected.length;
+      setPartySize(newSize);
+      setAttendees(prev => {
+        const updated = [...prev];
+        while (updated.length < newSize) {
+          updated.push({ firstName: '', lastName: '', addons: [] });
+        }
+        return updated;
+      });
       if (!holdExpiry || new Date(result.holdUntil) > new Date(holdExpiry)) {
         setHoldExpiry(result.holdUntil);
-      }
-      if (selectedSeats.length + 1 === partySize) {
-        setPanelOpen(true);
       }
     } else {
       setError(result.error || 'Could not select chair');
@@ -264,7 +272,7 @@ export default function App() {
                 : 'bg-brand-gold text-white hover:bg-brand-gold-light'
             }`}
           >
-            {allSeatsSelected && allNamesValid ? 'Complete Booking' : partySize > 0 ? `Booking (${selectedSeats.length}/${partySize})` : 'Start Booking'}
+            {allSeatsSelected && allNamesValid ? 'Complete Booking' : selectedSeats.length > 0 ? `Booking (${selectedSeats.length})` : 'Start Booking'}
             {selectedSeats.length > 0 && (
               <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
                 {selectedSeats.length}
@@ -308,104 +316,130 @@ export default function App() {
       </div>
 
       {/* Main Content: Table Map */}
-      <div className="flex-1 overflow-auto p-4 md:p-6">
+      <div className="flex-1 overflow-auto p-4 md:p-6 bg-[#f0f2f5]">
         {/* Legend */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-green-500/80"></span>
-              <span className="text-white/70">Available</span>
+              <span className="w-4 h-4 rounded border-2 border-slate-300 bg-white"></span>
+              <span className="text-slate-500">Available</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-amber-500/80"></span>
-              <span className="text-white/70">Partial</span>
+              <span className="w-4 h-4 rounded border-2 border-amber-500 bg-amber-50"></span>
+              <span className="text-slate-500">Partial</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-blue-500/80"></span>
-              <span className="text-white/70">Your Pick</span>
+              <span className="w-4 h-4 rounded border-2 border-blue-500 bg-blue-50"></span>
+              <span className="text-slate-500">Your Pick</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-gray-500/80"></span>
-              <span className="text-white/70">Full</span>
+              <span className="w-4 h-4 rounded border-2 border-slate-300 bg-slate-200"></span>
+              <span className="text-slate-500">Full</span>
             </div>
           </div>
-          <div className="text-sm text-white/50">
+          <div className="text-sm text-slate-400">
             {vacantCount} chairs available &middot; {soldCount} sold
             {heldCount > 0 && <> &middot; {heldCount} on hold</>}
           </div>
 
-          {partySize > 0 && (
-            <div className="text-sm text-white/70">
-              {allSeatsSelected
-                ? <span className="text-green-400 font-semibold">All {partySize} chairs selected</span>
-                : <span>Select <strong className="text-brand-gold">{partySize - selectedSeats.length}</strong> more chair{partySize - selectedSeats.length !== 1 ? 's' : ''}</span>
-              }
+          {selectedSeats.length > 0 && (
+            <div className="text-sm text-slate-600">
+              <span className="text-blue-600 font-semibold">{selectedSeats.length} chair{selectedSeats.length !== 1 ? 's' : ''} selected</span>
             </div>
           )}
         </div>
 
         {/* Error Toast */}
         {error && (
-          <div className="mb-4 bg-red-500/20 border border-red-400/30 text-red-200 px-4 py-3 rounded-xl text-center text-sm font-medium">
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-center text-sm font-medium">
             {error}
           </div>
         )}
 
-        {/* Room Label */}
-        <div className="text-center mb-3">
-          <span className="text-xs font-bold uppercase tracking-[0.2em] text-white/30">Front of Room — Caller</span>
-          <div className="mt-1 h-1 bg-gradient-to-r from-transparent via-brand-gold/30 to-transparent rounded-full max-w-md mx-auto"></div>
-        </div>
-
-        {/* Instruction */}
+        {/* Room Label — Caller badge matching venue reference */}
         <div className="text-center mb-4">
-          <p className="text-white/40 text-sm">
-            {openTable ? `Table ${openTable} — pick your chairs below` : 'Tap a table to see available chairs'}
-          </p>
+          <span className="inline-flex items-center gap-2 bg-[#1e3a5f] text-white text-sm font-bold uppercase tracking-[0.12em] px-6 py-2.5 rounded-full">
+            <span>🏁</span> Caller
+          </span>
         </div>
 
-        {/* Chair picker for expanded table */}
-        {openTable && (
-          <ChairPicker
-            tableNum={openTable}
-            chairs={tableMap[openTable] || []}
-            selectedSeats={selectedSeats}
-            holderId={holderId}
-            onChairClick={handleChairClick}
-            onClose={() => setOpenTable(null)}
-          />
+        {/* Instruction — hidden once seats are already selected */}
+        {selectedSeats.length === 0 && !openTable && (
+          <div className="text-center mb-4">
+            <p className="text-slate-400 text-sm">Tap a table to see available chairs</p>
+          </div>
         )}
 
-        {/* Table Map — Venue Layout */}
+        {/* Chair picker overlay for expanded table */}
+        {openTable && (
+          <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            onClick={(e) => { if (e.target === e.currentTarget) setOpenTable(null); }}>
+            <ChairPicker
+              tableNum={openTable}
+              chairs={tableMap[openTable] || []}
+              selectedSeats={selectedSeats}
+              holderId={holderId}
+              onChairClick={handleChairClick}
+              onClose={() => setOpenTable(null)}
+            />
+          </div>
+        )}
+
+        {/* Table Map — Venue Layout (matches venue reference image) */}
         <div className="seat-map-container">
-          <div className="inline-flex items-start gap-4 md:gap-5 mx-auto" style={{ minWidth: 'max-content' }}>
-            {/* Left sections */}
-            <div className="flex flex-col gap-3 shrink-0">
-              {SECTIONS.filter(s => s.id.startsWith('left-')).map(section => (
+          {/* Upper-area height = 4 rows (right-upper): 4*46 + 3*4 = 196px */}
+          <div className="inline-flex items-start gap-6 md:gap-8 mx-auto" style={{ minWidth: 'max-content' }}>
+            {/* Left sections (upper top-aligned + lower) */}
+            <div className="flex flex-col gap-6 shrink-0">
+              <div style={{ minHeight: 196 }}>
+                {SECTIONS.filter(s => s.id === 'left-upper').map(section => (
+                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                    openTable={openTable} onTableClick={setOpenTable} />
+                ))}
+              </div>
+              {SECTIONS.filter(s => s.id === 'left-lower').map(section => (
                 <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                   openTable={openTable} onTableClick={setOpenTable} />
               ))}
             </div>
 
-            {/* Center-left sections */}
-            <div className="flex flex-col gap-3 shrink-0">
-              {SECTIONS.filter(s => s.id.startsWith('center-left')).map(section => (
+            {/* Center-left sections (upper top-aligned + lower) */}
+            <div className="flex flex-col gap-6 shrink-0">
+              <div style={{ minHeight: 196 }}>
+                {SECTIONS.filter(s => s.id === 'center-left-upper').map(section => (
+                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                    openTable={openTable} onTableClick={setOpenTable} />
+                ))}
+              </div>
+              {SECTIONS.filter(s => s.id === 'center-left-lower').map(section => (
                 <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                   openTable={openTable} onTableClick={setOpenTable} />
               ))}
             </div>
 
-            {/* Center column — offset down to match venue layout (starts at gap between upper/lower) */}
-            <div className="flex flex-col gap-3 shrink-0 mt-[188px]">
-              {SECTIONS.filter(s => s.id === 'center-column').map(section => (
+            {/* Center column — 46,45 bottom-aligned in upper area; 44,43,42 in lower area */}
+            <div className="flex flex-col gap-6 shrink-0">
+              <div style={{ minHeight: 196 }} className="flex flex-col justify-end">
+                {SECTIONS.filter(s => s.id === 'center-column-upper').map(section => (
+                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                    openTable={openTable} onTableClick={setOpenTable} />
+                ))}
+              </div>
+              {SECTIONS.filter(s => s.id === 'center-column-lower').map(section => (
                 <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                   openTable={openTable} onTableClick={setOpenTable} />
               ))}
             </div>
 
-            {/* Right sections — offset to match venue map (right-upper aligns with center-left-upper) */}
-            <div className="flex flex-col gap-3 shrink-0">
-              {SECTIONS.filter(s => s.id.startsWith('right-')).map(section => (
+            {/* Right sections (upper 4-row + lower 3-row) */}
+            <div className="flex flex-col gap-6 shrink-0">
+              <div style={{ minHeight: 196 }}>
+                {SECTIONS.filter(s => s.id === 'right-upper').map(section => (
+                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                    openTable={openTable} onTableClick={setOpenTable} />
+                ))}
+              </div>
+              {SECTIONS.filter(s => s.id === 'right-lower').map(section => (
                 <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                   openTable={openTable} onTableClick={setOpenTable} />
               ))}
@@ -415,21 +449,18 @@ export default function App() {
 
         {/* Back of room */}
         <div className="text-center mt-4">
-          <div className="h-0.5 bg-gradient-to-r from-transparent via-white/10 to-transparent rounded-full max-w-md mx-auto mb-2"></div>
-          <span className="text-xs font-bold uppercase tracking-[0.2em] text-white/20">Back of Room — Entrance</span>
+          <div className="h-0.5 bg-gradient-to-r from-transparent via-slate-300 to-transparent rounded-full max-w-md mx-auto mb-2"></div>
+          <span className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Back of Room — Entrance</span>
         </div>
 
-        {/* CTA if no party size set */}
-        {partySize === 0 && !openTable && (
+        {/* CTA if no chairs selected */}
+        {selectedSeats.length === 0 && !openTable && (
           <div className="text-center mt-8">
-            <button
-              onClick={() => setPanelOpen(true)}
-              className="bg-brand-gold hover:bg-brand-gold-light text-white font-bold text-lg px-8 py-4 rounded-2xl shadow-lg glow-gold transition-all"
-            >
-              Start Booking — Choose Your Chairs
-            </button>
-            <p className="text-white/40 text-sm mt-3">
-              Pick your date above, then tap here to start your booking
+            <p className="text-slate-500 font-semibold text-lg mb-2">
+              Tap a table above to pick your chairs
+            </p>
+            <p className="text-slate-400 text-sm">
+              Your party size will be set automatically based on chairs selected
             </p>
           </div>
         )}
@@ -457,8 +488,8 @@ export default function App() {
       />
 
       {/* Footer */}
-      <footer className="bg-brand-blue-dark border-t border-white/10 px-4 py-3 text-center flex-shrink-0">
-        <p className="text-white/30 text-xs">
+      <footer className="bg-[#1e3a5f] border-t border-white/10 px-4 py-3 text-center flex-shrink-0">
+        <p className="text-white/50 text-xs">
           Saint Mary's Entertainment Centre — Fredericton, NB — Booking cut-off daily at 12:00 PM
         </p>
       </footer>
@@ -466,15 +497,15 @@ export default function App() {
   );
 }
 
-// Section component — renders table buttons in venue layout grid
+// Section component — renders table buttons in venue layout grid (no container borders, matches venue reference)
 function TableSection({ section, getTableStatus, openTable, onTableClick }) {
   return (
-    <div className="rounded-2xl p-3 md:p-4 bg-white/5 border border-white/10 shrink-0">
-      <div className="flex flex-col gap-1.5">
+    <div className="shrink-0">
+      <div className="flex flex-col gap-1">
         {section.seats.map((row, ri) => (
-          <div key={ri} className="flex gap-1.5 justify-center shrink-0">
+          <div key={ri} className="flex gap-1 justify-center shrink-0">
             {row.map((num, ci) => {
-              if (num === null) return <div key={ci} className="w-12 h-12 shrink-0" />;
+              if (num === null) return <div key={ci} className="w-[46px] h-[46px] shrink-0" />;
               return <TableBtn key={num} tableNum={num} status={getTableStatus(num)}
                 isOpen={openTable === num} onClick={onTableClick} />;
             })}
@@ -485,39 +516,29 @@ function TableSection({ section, getTableStatus, openTable, onTableClick }) {
   );
 }
 
-// Table button — shows table number + availability color
+// Table button — shows table number in outlined box style
 function TableBtn({ tableNum, status, isOpen, onClick }) {
   if (status === 'empty' || !status) {
     return <div className="w-12 h-12 shrink-0" />;
   }
 
-  const { hasMyChairs, allSold, allVacant, vacantChairs } = status;
+  const { hasMyChairs, allSold, vacantChairs } = status;
 
-  let bgClass, borderClass, textClass;
-  if (isOpen) {
-    bgClass = 'bg-brand-gold'; borderClass = 'border-brand-gold-light'; textClass = 'text-white';
-  } else if (hasMyChairs) {
-    bgClass = 'bg-blue-500/80'; borderClass = 'border-blue-400'; textClass = 'text-white';
-  } else if (allSold) {
-    bgClass = 'bg-gray-600/60'; borderClass = 'border-gray-500/50'; textClass = 'text-gray-400';
-  } else if (allVacant) {
-    bgClass = 'bg-green-600/70'; borderClass = 'border-green-500/50'; textClass = 'text-white';
-  } else {
-    bgClass = 'bg-amber-600/60'; borderClass = 'border-amber-500/50'; textClass = 'text-white';
-  }
+  let extraClass = '';
+  if (isOpen) extraClass = 'table-open';
+  else if (hasMyChairs) extraClass = 'table-selected';
+  else if (allSold) extraClass = 'table-full';
+  else if (vacantChairs < 6) extraClass = 'table-partial';
 
   return (
     <button
       onClick={() => onClick(tableNum)}
       disabled={allSold}
-      className={`table-btn ${bgClass} border-2 ${borderClass} ${textClass} ${isOpen ? 'ring-2 ring-brand-gold/50 scale-110' : ''}`}
+      className={`table-btn ${extraClass}`}
       aria-label={`Table ${tableNum} — ${vacantChairs} chairs available`}
       title={`Table ${tableNum} — ${vacantChairs}/6 available`}
     >
       <span className="text-sm font-bold leading-none">{tableNum}</span>
-      {!allSold && !isOpen && (
-        <span className="text-[9px] leading-none opacity-70">{vacantChairs}/6</span>
-      )}
     </button>
   );
 }
@@ -543,11 +564,11 @@ function ChairPicker({ tableNum, chairs, selectedSeats, holderId, onChairClick, 
     const isDisabled = chair.is_disabled;
 
     let bgClass, borderClass, textClass;
-    if (isDisabled) { bgClass = 'bg-gray-700/40'; borderClass = 'border-gray-600/30'; textClass = 'text-gray-500'; }
-    else if (isSold) { bgClass = 'bg-gray-600/50'; borderClass = 'border-gray-500/40'; textClass = 'text-gray-400'; }
-    else if (isSelected || isMyHold) { bgClass = 'bg-blue-500/70'; borderClass = 'border-blue-400'; textClass = 'text-white'; }
-    else if (isOtherHold) { bgClass = 'bg-amber-500/50'; borderClass = 'border-amber-400/50'; textClass = 'text-amber-200'; }
-    else { bgClass = 'bg-green-600/60'; borderClass = 'border-green-500/50'; textClass = 'text-white'; }
+    if (isDisabled) { bgClass = 'bg-slate-100'; borderClass = 'border-slate-200'; textClass = 'text-slate-300'; }
+    else if (isSold) { bgClass = 'bg-slate-200'; borderClass = 'border-slate-300'; textClass = 'text-slate-400'; }
+    else if (isSelected || isMyHold) { bgClass = 'bg-blue-500'; borderClass = 'border-blue-600'; textClass = 'text-white'; }
+    else if (isOtherHold) { bgClass = 'bg-amber-100'; borderClass = 'border-amber-400'; textClass = 'text-amber-700'; }
+    else { bgClass = 'bg-green-500'; borderClass = 'border-green-600'; textClass = 'text-white'; }
 
     return (
       <button
@@ -578,15 +599,15 @@ function ChairPicker({ tableNum, chairs, selectedSeats, holderId, onChairClick, 
   };
 
   return (
-    <div className="mb-6 mx-auto max-w-sm">
-      <div className="bg-white/10 border border-white/20 rounded-2xl p-5 relative">
+    <div className="mx-auto max-w-sm" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 relative shadow-lg">
         <button onClick={onClose}
-          className="absolute top-3 right-3 text-white/40 hover:text-white/80 text-xl leading-none"
+          className="absolute top-3 right-3 text-slate-400 hover:text-slate-700 text-xl leading-none"
           aria-label="Close">&times;</button>
 
         <div className="text-center mb-4">
-          <span className="text-brand-gold font-bold text-lg">Table {tableNum}</span>
-          <p className="text-white/50 text-xs mt-0.5">{vacantCount} of 6 chairs available</p>
+          <span className="text-[#1e3a5f] font-bold text-lg">Table {tableNum}</span>
+          <p className="text-slate-400 text-xs mt-0.5">{vacantCount} of 6 chairs available</p>
         </div>
 
         {/* Table layout: left chairs — table — right chairs */}
@@ -597,8 +618,8 @@ function ChairPicker({ tableNum, chairs, selectedSeats, holderId, onChairClick, 
           </div>
 
           {/* Table center */}
-          <div className="w-20 h-[210px] rounded-xl bg-white/5 border border-white/15 flex items-center justify-center shrink-0">
-            <span className="text-white/20 text-[10px] font-bold uppercase tracking-wider [writing-mode:vertical-rl]">
+          <div className="w-20 h-[210px] rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0">
+            <span className="text-slate-300 text-[10px] font-bold uppercase tracking-wider [writing-mode:vertical-rl]">
               Table {tableNum}
             </span>
           </div>
@@ -609,10 +630,10 @@ function ChairPicker({ tableNum, chairs, selectedSeats, holderId, onChairClick, 
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-4 mt-4 text-[10px] text-white/40">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-600/60 inline-block"></span> Vacant</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500/70 inline-block"></span> Selected</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-600/50 inline-block"></span> Occupied</span>
+        <div className="flex items-center justify-center gap-4 mt-4 text-[10px] text-slate-400">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block"></span> Vacant</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500 inline-block"></span> Selected</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-300 inline-block"></span> Occupied</span>
         </div>
       </div>
     </div>

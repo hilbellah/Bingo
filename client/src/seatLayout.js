@@ -49,11 +49,17 @@ export const SECTIONS = [
     ]
   },
   {
-    id: 'center-column',
+    id: 'center-column-upper',
     label: '',
     seats: [
       [46],
       [45],
+    ]
+  },
+  {
+    id: 'center-column-lower',
+    label: '',
+    seats: [
       [44],
       [43],
       [42],
