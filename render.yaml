@@ -25,5 +25,5 @@ services:
         value: ./bingo.db
       - key: SESSION_HOLD_MINUTES
         value: "10"
-    autoDeploy: false
+    autoDeploy: true
     healthCheckPath: /api/sessions
