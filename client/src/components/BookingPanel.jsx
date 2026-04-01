@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PartySize from './PartySize';
 
 function formatPrice(cents) {
   return '$' + (cents / 100).toFixed(2);
@@ -95,7 +96,7 @@ export default function BookingPanel({
         {/* Step tabs */}
         <div className="flex border-b border-gray-200 flex-shrink-0">
           {[
-            { label: `Chairs (${selectedSeats.length})`, idx: 0 },
+            { label: `Party (${partySize || '?'})`, idx: 0 },
             { label: 'Names & Packages', idx: 1 },
             { label: 'Review & Pay', idx: 2 },
           ].map(t => (
@@ -122,23 +123,25 @@ export default function BookingPanel({
             </ul>
           </div>
 
-          {/* STEP 0: Select Chairs prompt (shown when no chairs selected yet) */}
+          {/* STEP 0: Party Size + Select Chairs prompt */}
           {step === 0 && (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 rounded-full bg-brand-gold/10 flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-brand-gold" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                </svg>
+            <div className="py-4">
+              {/* Party Size Selector */}
+              <PartySize value={partySize} onChange={onPartySize} />
+
+              {/* Go pick chairs prompt */}
+              <div className="text-center mt-6">
+                <p className="text-gray-500 text-sm mb-4">
+                  {partySize > 0
+                    ? <>Now pick <strong>{partySize}</strong> chair{partySize !== 1 ? 's' : ''} on the seat map</>
+                    : 'Select your party size above, or tap chairs directly on the map'
+                  }
+                </p>
+                <button onClick={onClose}
+                  className="bg-brand-blue text-white px-6 py-3 rounded-xl font-semibold transition hover:bg-brand-blue/90">
+                  Go to Seat Map
+                </button>
               </div>
-              <h3 className="font-bold text-brand-blue text-lg mb-2">Pick Your Chairs</h3>
-              <p className="text-gray-500 text-sm mb-5">
-                Close this panel and tap chairs on the map.<br />
-                Your party size will be set automatically.
-              </p>
-              <button onClick={onClose}
-                className="bg-brand-blue text-white px-6 py-3 rounded-xl font-semibold transition hover:bg-brand-blue/90">
-                Go to Seat Map
-              </button>
             </div>
           )}
 
