@@ -3,15 +3,8 @@ services:
     name: wolastoq-bingo
     runtime: node
     plan: free
-    buildCommand: |
-      cd client
-      npm install
-      npm run build
-      cd ../server
-      npm install
-      node src/migrate.js
-      node src/seed.js
-    startCommand: "cd server && node --experimental-modules src/index.js"
+    buildCommand: "cd client && npm install --include=dev && npm run build && cd ../server && npm install && node src/migrate.js && node src/seed.js"
+    startCommand: "cd server && node src/index.js"
     envVars:
       - key: NODE_ENV
         value: production
