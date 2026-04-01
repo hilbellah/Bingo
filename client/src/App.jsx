@@ -433,59 +433,57 @@ export default function App() {
                 <svg className="w-4 h-4 text-brand-gold/60 inline-block mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
                 </svg>
-                Front of Room — Caller
+                Front of Room — Stage
               </div>
             </div>
 
-            {/* Table Map — Venue Layout */}
+            {/* Table Map — Venue Layout matching blueprint */}
             <div className="floorplan-interior">
-              <div className="inline-grid mx-auto" style={{
-                gridTemplateColumns: 'auto auto auto auto',
-                gridTemplateRows: 'auto auto',
-                gap: '12px',
-                columnGap: '20px',
-                minWidth: 'max-content'
-              }}>
-                {/* Row 1: upper sections */}
+              {/* === UPPER ROW: Left block + Floor Stage + Right block === */}
+              <div className="flex items-start justify-between gap-3 mb-4">
                 <div className="self-start">
-                  {SECTIONS.filter(s => s.id === 'left-upper').map(section => (
+                  {SECTIONS.filter(s => s.id === 'upper-left').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                       openTable={openTable} onTableClick={setOpenTable} />
                   ))}
                 </div>
-                <div className="self-start">
-                  {SECTIONS.filter(s => s.id === 'center-left-upper').map(section => (
-                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                      openTable={openTable} onTableClick={setOpenTable} />
-                  ))}
-                </div>
-                <div className="self-end">
-                  {SECTIONS.filter(s => s.id === 'center-column-upper').map(section => (
-                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                      openTable={openTable} onTableClick={setOpenTable} />
-                  ))}
+                {/* Floor Stage */}
+                <div className="flex-1 flex items-center justify-center min-h-[160px]">
+                  <div className="w-full max-w-[200px] h-[130px] border-2 border-white/20 bg-white/5 rounded-lg flex items-center justify-center">
+                    <span className="text-white/30 font-bold text-base tracking-wide">Floor Stage</span>
+                  </div>
                 </div>
                 <div className="self-start">
-                  {SECTIONS.filter(s => s.id === 'right-upper').map(section => (
+                  {SECTIONS.filter(s => s.id === 'upper-right').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                       openTable={openTable} onTableClick={setOpenTable} />
                   ))}
                 </div>
+              </div>
 
-                {/* Row 2: lower sections */}
-                {SECTIONS.filter(s => s.id === 'left-lower').map(section => (
+              {/* === LOWER ROW: Left + Center-Left + Inner + Caller + Center Column + Right === */}
+              <div className="flex items-start gap-3">
+                {SECTIONS.filter(s => s.id === 'lower-left').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                     openTable={openTable} onTableClick={setOpenTable} />
                 ))}
-                {SECTIONS.filter(s => s.id === 'center-left-lower').map(section => (
+                {SECTIONS.filter(s => s.id === 'lower-center-left').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                     openTable={openTable} onTableClick={setOpenTable} />
                 ))}
-                {SECTIONS.filter(s => s.id === 'center-column-lower').map(section => (
+                {SECTIONS.filter(s => s.id === 'center-left-inner').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                     openTable={openTable} onTableClick={setOpenTable} />
                 ))}
-                {SECTIONS.filter(s => s.id === 'right-lower').map(section => (
+                {/* Caller position marker */}
+                <div className="flex items-center justify-center self-center">
+                  <div className="w-7 h-7 bg-amber-800/60 border-2 border-amber-600/40 rounded-sm" title="Caller"></div>
+                </div>
+                {SECTIONS.filter(s => s.id === 'center-column').map(section => (
+                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                    openTable={openTable} onTableClick={setOpenTable} />
+                ))}
+                {SECTIONS.filter(s => s.id === 'lower-right').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                     openTable={openTable} onTableClick={setOpenTable} />
                 ))}

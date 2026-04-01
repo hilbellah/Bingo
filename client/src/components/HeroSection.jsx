@@ -13,12 +13,14 @@ export default function HeroSection() {
       <div className="absolute top-6 right-[40%] w-12 h-12 rounded-full bg-green-500/15 blur-xl"></div>
 
       <div className="relative max-w-5xl mx-auto px-4 py-12 md:py-16 text-center">
-        {/* Logo/venue name */}
+        {/* Logo */}
         <div className="inline-block mb-4">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-full bg-brand-gold flex items-center justify-center">
-              <span className="text-white text-2xl font-bold">B</span>
-            </div>
+          <div className="flex items-center justify-center mb-2">
+            <img
+              src="/logo.png"
+              alt="Saint Mary's Entertainment Centre"
+              className="w-24 h-24 md:w-32 md:h-32 object-contain"
+            />
           </div>
         </div>
 

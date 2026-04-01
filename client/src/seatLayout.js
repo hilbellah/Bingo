@@ -1,29 +1,41 @@
-// Exact seat layout matching Saint Mary's Entertainment Centre venue map
-// Each seat has: number, section, row, col (for grid positioning)
-// Sections match the physical groupings on the venue floor plan
-
-// Layout from the venue seat map image:
-// CALLER at top center
-// Left side: two blocks of 4 cols x 3 rows (seats 1-24)
-// Center-left: two blocks of 3 cols x 3 rows (seats 25-40)
-// Center column: 5 seats vertical (seats 42-46) - note: no seat 41
-// Right side: upper block 4 cols x 4 rows (seats 51-75), lower block 4 cols x 3 rows (seats 48-50, 55-57, 62-64, 69-71)
+// Exact seat layout matching Saint Mary's Entertainment Centre venue blueprint
+// Each table number maps to a physical table with 6 seats (3 per side)
+// Tables 1-75, no table 41 = 74 tables total
+//
+// Layout matches the venue blueprint floor plan:
+//   FRONT OF ROOM — STAGE at top
+//   Upper-left block (5 cols x 3 rows) | Floor Stage | Upper-right block (4 cols x 3 rows)
+//   Lower-left (4 cols x 3 rows) | Lower-center-left (3 cols x 3 rows) | Transition (2 cols) | Center column (2 cols x 4 rows + top single) | Lower-right (3 cols x 4 rows)
+//   BACK OF ROOM — ENTRANCE at bottom
 
 export const SECTIONS = [
+  // === UPPER AREA (near stage) ===
   {
-    id: 'left-upper',
+    id: 'upper-left',
     label: '',
+    area: 'upper',
     seats: [
-      // Row from top to bottom (closest to caller first)
-      // Each sub-array is a row
-      [6, 12, 18, 24],
-      [5, 11, 17, 23],
-      [4, 10, 16, 22],
+      [6, 12, 18, 24, 30],
+      [5, 11, 17, 23, 29],
+      [4, 10, 16, 22, 28],
     ]
   },
   {
-    id: 'left-lower',
+    id: 'upper-right',
     label: '',
+    area: 'upper',
+    seats: [
+      [54, 61, 68, 75],
+      [53, 60, 67, 74],
+      [52, 59, 66, 73],
+    ]
+  },
+
+  // === LOWER AREA (near entrance) ===
+  {
+    id: 'lower-left',
+    label: '',
+    area: 'lower',
     seats: [
       [3, 9, 15, 21],
       [2, 8, 14, 20],
@@ -31,17 +43,9 @@ export const SECTIONS = [
     ]
   },
   {
-    id: 'center-left-upper',
+    id: 'lower-center-left',
     label: '',
-    seats: [
-      [30, 36, null],
-      [29, 35, null],
-      [28, 34, 40],
-    ]
-  },
-  {
-    id: 'center-left-lower',
-    label: '',
+    area: 'lower',
     seats: [
       [27, 33, 39],
       [26, 32, 38],
@@ -49,39 +53,36 @@ export const SECTIONS = [
     ]
   },
   {
-    id: 'center-column-upper',
+    id: 'center-left-inner',
     label: '',
+    area: 'lower',
     seats: [
-      [46],
-      [45],
+      [34, 40],
+      [35, null],
+      [36, null],
     ]
   },
   {
-    id: 'center-column-lower',
+    id: 'center-column',
     label: '',
+    area: 'lower',
     seats: [
-      [44],
-      [43],
-      [42],
+      [46, 47],
+      [45, 51],
+      [44, 50],
+      [43, 49],
+      [42, 48],
     ]
   },
   {
-    id: 'right-upper',
+    id: 'lower-right',
     label: '',
+    area: 'lower',
     seats: [
-      [54, 61, 68, 75],
-      [53, 60, 67, 74],
-      [52, 59, 66, 73],
-      [51, 58, 65, 72],
-    ]
-  },
-  {
-    id: 'right-lower',
-    label: '',
-    seats: [
-      [50, 57, 64, 71],
-      [49, 56, 63, 70],
-      [48, 55, 62, 69],
+      [58, 65, 72],
+      [57, 64, 71],
+      [56, 63, 70],
+      [55, 62, 69],
     ]
   },
 ];
@@ -97,4 +98,4 @@ for (const section of SECTIONS) {
 }
 ALL_SEAT_NUMBERS.sort((a, b) => a - b);
 
-export const TOTAL_SEATS = ALL_SEAT_NUMBERS.length; // 74 seats (1-75, no 41)
+export const TOTAL_SEATS = ALL_SEAT_NUMBERS.length; // 74 tables (1-75, no 41)
