@@ -316,57 +316,56 @@ export default function App() {
       </div>
 
       {/* Main Content: Table Map */}
-      <div className="flex-1 overflow-auto p-4 md:p-6 bg-[#f0f2f5]">
+      <div className="flex-1 overflow-auto p-4 md:p-6">
         {/* Legend */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded border-2 border-slate-300 bg-white"></span>
-              <span className="text-slate-500">Available</span>
+              <span className="w-4 h-4 rounded bg-green-500/80"></span>
+              <span className="text-white/70">Available</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded border-2 border-amber-500 bg-amber-50"></span>
-              <span className="text-slate-500">Partial</span>
+              <span className="w-4 h-4 rounded bg-amber-500/80"></span>
+              <span className="text-white/70">Partial</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded border-2 border-blue-500 bg-blue-50"></span>
-              <span className="text-slate-500">Your Pick</span>
+              <span className="w-4 h-4 rounded bg-blue-500/80"></span>
+              <span className="text-white/70">Your Pick</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded border-2 border-slate-300 bg-slate-200"></span>
-              <span className="text-slate-500">Full</span>
+              <span className="w-4 h-4 rounded bg-gray-500/80"></span>
+              <span className="text-white/70">Full</span>
             </div>
           </div>
-          <div className="text-sm text-slate-400">
+          <div className="text-sm text-white/50">
             {vacantCount} chairs available &middot; {soldCount} sold
             {heldCount > 0 && <> &middot; {heldCount} on hold</>}
           </div>
 
           {selectedSeats.length > 0 && (
-            <div className="text-sm text-slate-600">
-              <span className="text-blue-600 font-semibold">{selectedSeats.length} chair{selectedSeats.length !== 1 ? 's' : ''} selected</span>
+            <div className="text-sm text-white/70">
+              <span className="text-blue-400 font-semibold">{selectedSeats.length} chair{selectedSeats.length !== 1 ? 's' : ''} selected</span>
             </div>
           )}
         </div>
 
         {/* Error Toast */}
         {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-center text-sm font-medium">
+          <div className="mb-4 bg-red-500/20 border border-red-400/30 text-red-200 px-4 py-3 rounded-xl text-center text-sm font-medium">
             {error}
           </div>
         )}
 
-        {/* Room Label — Caller badge matching venue reference */}
-        <div className="text-center mb-4">
-          <span className="inline-flex items-center gap-2 bg-[#1e3a5f] text-white text-sm font-bold uppercase tracking-[0.12em] px-6 py-2.5 rounded-full">
-            <span>🏁</span> Caller
-          </span>
+        {/* Room Label */}
+        <div className="text-center mb-3">
+          <span className="text-xs font-bold uppercase tracking-[0.2em] text-white/30">Front of Room — Caller</span>
+          <div className="mt-1 h-1 bg-gradient-to-r from-transparent via-brand-gold/30 to-transparent rounded-full max-w-md mx-auto"></div>
         </div>
 
         {/* Instruction — hidden once seats are already selected */}
         {selectedSeats.length === 0 && !openTable && (
           <div className="text-center mb-4">
-            <p className="text-slate-400 text-sm">Tap a table to see available chairs</p>
+            <p className="text-white/40 text-sm">Tap a table to see available chairs</p>
           </div>
         )}
 
@@ -385,81 +384,74 @@ export default function App() {
           </div>
         )}
 
-        {/* Table Map — Venue Layout (matches venue reference image) */}
+        {/* Table Map — Venue Layout using CSS Grid for automatic row alignment */}
         <div className="seat-map-container">
-          {/* Upper-area height = 4 rows (right-upper): 4*46 + 3*4 = 196px */}
-          <div className="inline-flex items-start gap-6 md:gap-8 mx-auto" style={{ minWidth: 'max-content' }}>
-            {/* Left sections (upper top-aligned + lower) */}
-            <div className="flex flex-col gap-6 shrink-0">
-              <div style={{ minHeight: 196 }}>
-                {SECTIONS.filter(s => s.id === 'left-upper').map(section => (
-                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable} />
-                ))}
-              </div>
-              {SECTIONS.filter(s => s.id === 'left-lower').map(section => (
+          <div className="inline-grid mx-auto" style={{
+            gridTemplateColumns: 'auto auto auto auto',
+            gridTemplateRows: 'auto auto',
+            gap: '12px',
+            columnGap: '20px',
+            minWidth: 'max-content'
+          }}>
+            {/* Row 1: upper sections — grid auto-sizes to tallest (right-upper = 4 rows) */}
+            <div className="self-start">
+              {SECTIONS.filter(s => s.id === 'left-upper').map(section => (
+                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                  openTable={openTable} onTableClick={setOpenTable} />
+              ))}
+            </div>
+            <div className="self-start">
+              {SECTIONS.filter(s => s.id === 'center-left-upper').map(section => (
+                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                  openTable={openTable} onTableClick={setOpenTable} />
+              ))}
+            </div>
+            <div className="self-end">
+              {SECTIONS.filter(s => s.id === 'center-column-upper').map(section => (
+                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                  openTable={openTable} onTableClick={setOpenTable} />
+              ))}
+            </div>
+            <div className="self-start">
+              {SECTIONS.filter(s => s.id === 'right-upper').map(section => (
                 <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                   openTable={openTable} onTableClick={setOpenTable} />
               ))}
             </div>
 
-            {/* Center-left sections (upper top-aligned + lower) */}
-            <div className="flex flex-col gap-6 shrink-0">
-              <div style={{ minHeight: 196 }}>
-                {SECTIONS.filter(s => s.id === 'center-left-upper').map(section => (
-                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable} />
-                ))}
-              </div>
-              {SECTIONS.filter(s => s.id === 'center-left-lower').map(section => (
-                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                  openTable={openTable} onTableClick={setOpenTable} />
-              ))}
-            </div>
-
-            {/* Center column — 46,45 bottom-aligned in upper area; 44,43,42 in lower area */}
-            <div className="flex flex-col gap-6 shrink-0">
-              <div style={{ minHeight: 196 }} className="flex flex-col justify-end">
-                {SECTIONS.filter(s => s.id === 'center-column-upper').map(section => (
-                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable} />
-                ))}
-              </div>
-              {SECTIONS.filter(s => s.id === 'center-column-lower').map(section => (
-                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                  openTable={openTable} onTableClick={setOpenTable} />
-              ))}
-            </div>
-
-            {/* Right sections (upper 4-row + lower 3-row) */}
-            <div className="flex flex-col gap-6 shrink-0">
-              <div style={{ minHeight: 196 }}>
-                {SECTIONS.filter(s => s.id === 'right-upper').map(section => (
-                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable} />
-                ))}
-              </div>
-              {SECTIONS.filter(s => s.id === 'right-lower').map(section => (
-                <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                  openTable={openTable} onTableClick={setOpenTable} />
-              ))}
-            </div>
+            {/* Row 2: lower sections — all auto-aligned */}
+            {SECTIONS.filter(s => s.id === 'left-lower').map(section => (
+              <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                openTable={openTable} onTableClick={setOpenTable} />
+            ))}
+            {SECTIONS.filter(s => s.id === 'center-left-lower').map(section => (
+              <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                openTable={openTable} onTableClick={setOpenTable} />
+            ))}
+            {SECTIONS.filter(s => s.id === 'center-column-lower').map(section => (
+              <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                openTable={openTable} onTableClick={setOpenTable} />
+            ))}
+            {SECTIONS.filter(s => s.id === 'right-lower').map(section => (
+              <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                openTable={openTable} onTableClick={setOpenTable} />
+            ))}
           </div>
         </div>
 
         {/* Back of room */}
         <div className="text-center mt-4">
-          <div className="h-0.5 bg-gradient-to-r from-transparent via-slate-300 to-transparent rounded-full max-w-md mx-auto mb-2"></div>
-          <span className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Back of Room — Entrance</span>
+          <div className="h-0.5 bg-gradient-to-r from-transparent via-white/10 to-transparent rounded-full max-w-md mx-auto mb-2"></div>
+          <span className="text-xs font-bold uppercase tracking-[0.2em] text-white/20">Back of Room — Entrance</span>
         </div>
 
         {/* CTA if no chairs selected */}
         {selectedSeats.length === 0 && !openTable && (
           <div className="text-center mt-8">
-            <p className="text-slate-500 font-semibold text-lg mb-2">
-              Tap a table above to pick your chairs
-            </p>
-            <p className="text-slate-400 text-sm">
+            <button onClick={() => {}} className="px-6 py-3 bg-brand-gold hover:bg-brand-gold-light text-white font-semibold rounded-xl shadow-lg transition-all glow-gold-sm">
+              Tap a Table Above to Pick Your Chairs
+            </button>
+            <p className="text-white/40 text-sm mt-2">
               Your party size will be set automatically based on chairs selected
             </p>
           </div>
@@ -497,15 +489,15 @@ export default function App() {
   );
 }
 
-// Section component — renders table buttons in venue layout grid (no container borders, matches venue reference)
+// Section component — renders table buttons in venue layout grid
 function TableSection({ section, getTableStatus, openTable, onTableClick }) {
   return (
-    <div className="shrink-0">
-      <div className="flex flex-col gap-1">
+    <div className="rounded-2xl p-3 md:p-4 bg-white/5 border border-white/10 shrink-0">
+      <div className="flex flex-col gap-1.5">
         {section.seats.map((row, ri) => (
-          <div key={ri} className="flex gap-1 justify-center shrink-0">
+          <div key={ri} className="flex gap-1.5 justify-center shrink-0">
             {row.map((num, ci) => {
-              if (num === null) return <div key={ci} className="w-[46px] h-[46px] shrink-0" />;
+              if (num === null) return <div key={ci} className="w-12 h-12 shrink-0" />;
               return <TableBtn key={num} tableNum={num} status={getTableStatus(num)}
                 isOpen={openTable === num} onClick={onTableClick} />;
             })}
@@ -516,29 +508,39 @@ function TableSection({ section, getTableStatus, openTable, onTableClick }) {
   );
 }
 
-// Table button — shows table number in outlined box style
+// Table button — shows table number + vacancy count with inline dark-theme colors
 function TableBtn({ tableNum, status, isOpen, onClick }) {
   if (status === 'empty' || !status) {
     return <div className="w-12 h-12 shrink-0" />;
   }
 
-  const { hasMyChairs, allSold, vacantChairs } = status;
+  const { hasMyChairs, allSold, allVacant, vacantChairs } = status;
 
-  let extraClass = '';
-  if (isOpen) extraClass = 'table-open';
-  else if (hasMyChairs) extraClass = 'table-selected';
-  else if (allSold) extraClass = 'table-full';
-  else if (vacantChairs < 6) extraClass = 'table-partial';
+  let bgClass, borderClass, textClass;
+  if (isOpen) {
+    bgClass = 'bg-brand-gold'; borderClass = 'border-brand-gold-light'; textClass = 'text-white';
+  } else if (hasMyChairs) {
+    bgClass = 'bg-blue-500/80'; borderClass = 'border-blue-400'; textClass = 'text-white';
+  } else if (allSold) {
+    bgClass = 'bg-gray-600/60'; borderClass = 'border-gray-500/50'; textClass = 'text-gray-400';
+  } else if (allVacant) {
+    bgClass = 'bg-green-600/70'; borderClass = 'border-green-500/50'; textClass = 'text-white';
+  } else {
+    bgClass = 'bg-amber-600/60'; borderClass = 'border-amber-500/50'; textClass = 'text-white';
+  }
 
   return (
     <button
       onClick={() => onClick(tableNum)}
       disabled={allSold}
-      className={`table-btn ${extraClass}`}
+      className={`table-btn ${bgClass} border-2 ${borderClass} ${textClass} ${isOpen ? 'ring-2 ring-brand-gold/50 scale-110' : ''}`}
       aria-label={`Table ${tableNum} — ${vacantChairs} chairs available`}
       title={`Table ${tableNum} — ${vacantChairs}/6 available`}
     >
       <span className="text-sm font-bold leading-none">{tableNum}</span>
+      {!allSold && !isOpen && (
+        <span className="text-[9px] leading-none opacity-70">{vacantChairs}/6</span>
+      )}
     </button>
   );
 }
