@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { fetchSessions, fetchSeats, fetchPackages, lockSeat, unlockSeat, createBooking } from './api';
 import { useSocket } from './useSocket';
 import BookingPanel from './components/BookingPanel';
+import PartySizeOverlay from './components/PartySizeOverlay';
 import Confirmation from './components/Confirmation';
 import { SECTIONS } from './seatLayout';
 
@@ -70,6 +71,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [panelOpen, setPanelOpen] = useState(false);
   const [openTable, setOpenTable] = useState(null); // which table's chairs are expanded
+  const [showPartySizeOverlay, setShowPartySizeOverlay] = useState(false); // party size step after chair selection
   const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, 1 = next week, etc.
 
   // Load initial data
@@ -163,8 +165,8 @@ export default function App() {
       if (!holdExpiry || new Date(result.holdUntil) > new Date(holdExpiry)) {
         setHoldExpiry(result.holdUntil);
       }
-      // Auto-open booking panel after selecting a chair
-      setPanelOpen(true);
+      // Show party size overlay after selecting first chair
+      setShowPartySizeOverlay(true);
     } else {
       setError(result.error || 'Could not select chair');
       setTimeout(() => setError(''), 3000);
@@ -422,6 +424,20 @@ export default function App() {
               onClose={() => setOpenTable(null)}
             />
           </div>
+        )}
+
+        {/* Party size overlay — shown after chair selection */}
+        {showPartySizeOverlay && !openTable && (
+          <PartySizeOverlay
+            value={partySize}
+            onChange={handlePartySize}
+            selectedCount={selectedSeats.length}
+            onConfirm={() => {
+              setShowPartySizeOverlay(false);
+              setPanelOpen(true);
+            }}
+            onClose={() => setShowPartySizeOverlay(false)}
+          />
         )}
 
         {/* Floorplan Room Outline */}

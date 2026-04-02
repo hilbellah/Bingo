@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import PartySize from './PartySize';
 
 function formatPrice(cents) {
   return '$' + (cents / 100).toFixed(2);
@@ -25,13 +24,7 @@ export default function BookingPanel({
   requiredPkg, optionalPkgs, total,
   allNamesValid, allSeatsSelected, loading, onSubmit, holdExpiry
 }) {
-  // Skip party size step — chairs are selected on the map, auto-filling party size
-  const [step, setStep] = useState(selectedSeats.length > 0 ? 1 : 0); // 0=select chairs prompt, 1=names, 2=review/pay
-
-  // Auto-advance to names step when seats are selected
-  React.useEffect(() => {
-    if (selectedSeats.length > 0 && step === 0) setStep(1);
-  }, [selectedSeats.length]);
+  const [step, setStep] = useState(0); // 0=names & packages, 1=review/pay
 
   const getSeatInfo = (seatId) => {
     const seat = seats.find(s => s.id === seatId);
@@ -63,7 +56,6 @@ export default function BookingPanel({
   const getAddonQty = (idx, pkgId) =>
     attendees[idx]?.addons?.find(a => a.packageId === pkgId)?.quantity || 0;
 
-  const canGoToNames = selectedSeats.length > 0;
   const canGoToReview = allNamesValid && allSeatsSelected;
 
   return (
@@ -96,12 +88,11 @@ export default function BookingPanel({
         {/* Step tabs */}
         <div className="flex border-b border-gray-200 flex-shrink-0">
           {[
-            { label: `Party (${partySize || '?'})`, idx: 0 },
-            { label: 'Names & Packages', idx: 1 },
-            { label: 'Review & Pay', idx: 2 },
+            { label: `Names & Packages (${partySize})`, idx: 0 },
+            { label: 'Review & Pay', idx: 1 },
           ].map(t => (
             <button key={t.idx} onClick={() => setStep(t.idx)}
-              disabled={(t.idx === 1 && selectedSeats.length === 0) || (t.idx === 2 && !canGoToReview)}
+              disabled={t.idx === 1 && !canGoToReview}
               className={`flex-1 py-3 text-sm font-medium transition border-b-2 ${
                 step === t.idx ? 'text-brand-blue border-brand-gold' :
                 'text-gray-400 border-transparent hover:text-gray-600'
@@ -123,30 +114,8 @@ export default function BookingPanel({
             </ul>
           </div>
 
-          {/* STEP 0: Party Size + Select Chairs prompt */}
+          {/* STEP 0: Names & Packages */}
           {step === 0 && (
-            <div className="py-4">
-              {/* Party Size Selector */}
-              <PartySize value={partySize} onChange={onPartySize} />
-
-              {/* Go pick chairs prompt */}
-              <div className="text-center mt-6">
-                <p className="text-gray-500 text-sm mb-4">
-                  {partySize > 0
-                    ? <>Now pick <strong>{partySize}</strong> chair{partySize !== 1 ? 's' : ''} on the seat map</>
-                    : 'Select your party size above, or tap chairs directly on the map'
-                  }
-                </p>
-                <button onClick={onClose}
-                  className="bg-brand-blue text-white px-6 py-3 rounded-xl font-semibold transition hover:bg-brand-blue/90">
-                  Go to Seat Map
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 1: Names & Packages */}
-          {step === 1 && (
             <div>
               <h3 className="font-bold text-brand-blue text-lg mb-4">Player Details</h3>
 
@@ -241,7 +210,7 @@ export default function BookingPanel({
                   <span className="text-brand-gold text-2xl font-bold">{formatPrice(total)}</span>
                 </div>
 
-                <button onClick={() => setStep(2)} disabled={!canGoToReview}
+                <button onClick={() => setStep(1)} disabled={!canGoToReview}
                   className="w-full bg-brand-gold text-white py-3 rounded-xl font-semibold text-lg transition hover:bg-brand-gold-light disabled:opacity-40 disabled:cursor-not-allowed glow-gold-sm">
                   Review & Pay
                 </button>
@@ -249,8 +218,8 @@ export default function BookingPanel({
             </div>
           )}
 
-          {/* STEP 2: Review & Pay */}
-          {step === 2 && (
+          {/* STEP 1: Review & Pay */}
+          {step === 1 && (
             <div>
               <h3 className="font-bold text-brand-blue text-lg mb-4">Confirm & Pay</h3>
 
