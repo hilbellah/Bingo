@@ -96,6 +96,7 @@ export default function AdminDashboard() {
           <p className="text-xs text-gray-300">Saint Mary's Entertainment Centre</p>
         </div>
         <div className="flex gap-3 items-center">
+          <a href="/tickets" className="text-xs text-gray-300 hover:text-white">Reprint Tickets</a>
           <a href="/" className="text-xs text-gray-300 hover:text-white">View Booking Page</a>
           <button onClick={handleLogout} className="text-xs bg-white/10 px-3 py-1.5 rounded hover:bg-white/20">
             Logout
@@ -362,12 +363,27 @@ export default function AdminDashboard() {
                         </tbody>
                       </table>
 
-                      {b.paymentStatus === 'paid' && (
-                        <button onClick={() => handleCancelBooking(b.id)}
-                          className="mt-2 text-xs text-red-500 hover:underline">
-                          Cancel Booking
-                        </button>
-                      )}
+                      <div className="flex gap-3 mt-2">
+                        {b.paymentStatus === 'paid' && (
+                          <a
+                            href={`/tickets/${b.referenceNumber}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-brand-blue hover:underline flex items-center gap-1"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                            </svg>
+                            Print Tickets
+                          </a>
+                        )}
+                        {b.paymentStatus === 'paid' && (
+                          <button onClick={() => handleCancelBooking(b.id)}
+                            className="text-xs text-red-500 hover:underline">
+                            Cancel Booking
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

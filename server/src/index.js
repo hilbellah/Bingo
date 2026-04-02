@@ -80,12 +80,14 @@ app.get('/api/sessions', (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const sessions = all(
     `SELECT s.*,
-      (SELECT COUNT(*) FROM seats WHERE session_id = s.id AND status = 'vacant' AND is_disabled = 0) as available_seats,
-      (SELECT COUNT(*) FROM seats WHERE session_id = s.id AND status = 'sold') as sold_seats,
-      (SELECT COUNT(*) FROM seats WHERE session_id = s.id AND status = 'held') as held_seats,
-      (SELECT COUNT(*) FROM seats WHERE session_id = s.id AND is_disabled = 0) as total_seats
+      COALESCE(SUM(CASE WHEN st.status = 'vacant' AND st.is_disabled = 0 THEN 1 ELSE 0 END), 0) as available_seats,
+      COALESCE(SUM(CASE WHEN st.status = 'sold' THEN 1 ELSE 0 END), 0) as sold_seats,
+      COALESCE(SUM(CASE WHEN st.status = 'held' THEN 1 ELSE 0 END), 0) as held_seats,
+      COALESCE(SUM(CASE WHEN st.is_disabled = 0 THEN 1 ELSE 0 END), 0) as total_seats
     FROM sessions s
+    LEFT JOIN seats st ON st.session_id = s.id
     WHERE s.date >= ? AND s.is_available = 1
+    GROUP BY s.id
     ORDER BY s.date ASC, s.time ASC`, [today]
   );
   res.json(sessions);

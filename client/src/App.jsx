@@ -71,6 +71,7 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [openTable, setOpenTable] = useState(null); // which table's chairs are expanded inline
   const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, 1 = next week, etc.
+  const [namesFilledBeforeChairs, setNamesFilledBeforeChairs] = useState(false); // track if user filled names and went to pick chairs
 
   // Load initial data
   useEffect(() => {
@@ -214,6 +215,14 @@ export default function App() {
 
   const allNamesValid = attendees.length > 0 && attendees.every(a => a.firstName.trim() && a.lastName.trim());
   const allSeatsSelected = selectedSeats.length === partySize && partySize > 0;
+
+  // Auto-reopen panel when all chairs are selected after user filled names and went to pick chairs
+  useEffect(() => {
+    if (namesFilledBeforeChairs && allSeatsSelected && allNamesValid && !panelOpen) {
+      setPanelOpen(true);
+      setNamesFilledBeforeChairs(false);
+    }
+  }, [selectedSeats.length, allSeatsSelected]);
 
   if (booking) {
     return <Confirmation booking={booking} session={selectedSession} attendees={attendees}
@@ -516,6 +525,7 @@ export default function App() {
       <BookingPanel
         isOpen={panelOpen}
         onClose={() => setPanelOpen(false)}
+        onPickChairs={() => { setNamesFilledBeforeChairs(true); setPanelOpen(false); }}
         session={selectedSession}
         partySize={partySize}
         onPartySize={handlePartySize}

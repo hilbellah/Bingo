@@ -10,6 +10,8 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 const dbPath = path.resolve(__dirname, '..', process.env.DATABASE_URL || './bingo.db');
 
 let db = null;
+let saveTimer = null;
+const SAVE_DELAY_MS = 500; // batch writes within 500ms window
 
 export async function getDb() {
   if (db) return db;
@@ -24,8 +26,9 @@ export async function getDb() {
     db = new SQL.Database();
   }
 
-  // Enable foreign keys
+  // Enable foreign keys and WAL mode for better read performance
   db.run('PRAGMA foreign_keys = ON');
+  db.run('PRAGMA journal_mode = WAL');
 
   return db;
 }
@@ -35,6 +38,15 @@ export function saveDb() {
   const data = db.export();
   const buffer = Buffer.from(data);
   fs.writeFileSync(dbPath, buffer);
+}
+
+// Debounced save — batches rapid writes into a single disk flush
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveDb();
+    saveTimer = null;
+  }, SAVE_DELAY_MS);
 }
 
 // Helper to run a query and return all results as array of objects
@@ -58,14 +70,14 @@ export function get(sql, params = []) {
 // Helper to run a statement (INSERT, UPDATE, DELETE)
 export function run(sql, params = []) {
   db.run(sql, params);
-  saveDb();
+  scheduleSave();
   return { changes: db.getRowsModified() };
 }
 
 // Helper to execute raw SQL (for migrations)
 export function exec(sql) {
   db.exec(sql);
-  saveDb();
+  saveDb(); // migrations save immediately
 }
 
 export default { getDb, saveDb, all, get, run, exec };

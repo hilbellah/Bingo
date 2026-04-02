@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 function formatPrice(cents) {
   return '$' + (cents / 100).toFixed(2);
@@ -19,6 +20,8 @@ function formatTime(timeStr) {
 }
 
 export default function Confirmation({ booking, session, attendees, seats, selectedSeats }) {
+  const navigate = useNavigate();
+
   const getSeatInfo = (seatId) => {
     const seat = seats.find(s => s.id === seatId);
     return seat ? { table: seat.table_number, chair: seat.chair_number } : { table: '?', chair: '?' };
@@ -94,13 +97,13 @@ export default function Confirmation({ booking, session, attendees, seats, selec
         {/* Actions */}
         <div className="flex gap-3">
           <button
-            onClick={() => window.print()}
+            onClick={() => navigate(`/tickets/${booking.referenceNumber}`)}
             className="flex-1 bg-brand-blue text-white py-3 rounded-xl font-semibold text-base hover:bg-brand-blue/90 transition flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
-            Print
+            Print Tickets
           </button>
           <button
             onClick={() => window.location.reload()}

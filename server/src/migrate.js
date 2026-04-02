@@ -76,6 +76,8 @@ async function migrate() {
   try { exec('CREATE INDEX idx_seats_status ON seats(session_id, status)'); } catch(e) {}
   try { exec('CREATE INDEX idx_bookings_session ON bookings(session_id)'); } catch(e) {}
   try { exec('CREATE INDEX idx_booking_items_booking ON booking_items(booking_id)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_booking_items_seat ON booking_items(seat_id)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_bookings_reference ON bookings(reference_number)'); } catch(e) {}
 
   console.log('Migrations complete.');
 }
