@@ -19,6 +19,7 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3001;
 const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '10');
+const startTime = Date.now();
 
 app.use(cors());
 app.use(express.json());
@@ -26,6 +27,28 @@ app.use(express.json());
 // Serve static build in production
 const clientBuild = path.join(__dirname, '../../client/dist');
 app.use(express.static(clientBuild));
+
+// ============ HEALTH CHECK ============
+app.get('/health', async (req, res) => {
+  try {
+    const db = await getDb();
+    db.prepare('SELECT 1').get();
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor((Date.now() - startTime) / 1000),
+      db: 'connected'
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor((Date.now() - startTime) / 1000),
+      db: 'disconnected',
+      error: error.message
+    });
+  }
+});
 
 // ============ HELPERS ============
 
@@ -456,6 +479,42 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
+  });
+});
+
+// --- Ticket data for printing (public, by reference number) ---
+app.get('/api/bookings/:ref/tickets', (req, res) => {
+  const { ref } = req.params;
+  const booking = get('SELECT b.*, s.date as session_date, s.time as session_time FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE b.reference_number = ?', [ref]);
+  if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+  const items = all(`
+    SELECT bi.first_name, bi.last_name, bi.price,
+           seats.table_number, seats.chair_number,
+           p.name as package_name, p.price as package_price
+    FROM booking_items bi
+    JOIN seats ON seats.id = bi.seat_id
+    JOIN packages p ON p.id = bi.package_id
+    WHERE bi.booking_id = ?
+    ORDER BY bi.id
+  `, [booking.id]);
+
+  res.json({
+    referenceNumber: booking.reference_number,
+    sessionDate: booking.session_date,
+    sessionTime: booking.session_time,
+    totalAmount: booking.total_amount,
+    totalFormatted: '$' + formatPrice(booking.total_amount),
+    paymentStatus: booking.payment_status,
+    tickets: items.map(item => ({
+      firstName: item.first_name,
+      lastName: item.last_name,
+      tableNumber: item.table_number,
+      chairNumber: item.chair_number,
+      packageName: item.package_name,
+      packagePrice: item.package_price,
+      packagePriceFormatted: '$' + formatPrice(item.package_price),
+    }))
   });
 });
 
