@@ -1,4 +1,4 @@
-import { getDb, exec, run } from './database.js';
+import { getDb, exec, run, saveDb } from './database.js';
 import { v4 as uuid } from 'uuid';
 
 // Venue table numbers (1-75, no table 41)
@@ -9,7 +9,7 @@ for (let i = 1; i <= 75; i++) {
 const CHAIRS_PER_TABLE = 6;
 
 async function seed() {
-  await getDb();
+  const db = await getDb();
 
   console.log('Running migrations...');
 
@@ -76,6 +76,9 @@ async function seed() {
 
   console.log('Seeding database...');
 
+  // Use db.run() directly (no saveDb per call) for bulk inserts, wrapped in transaction
+  db.run('BEGIN TRANSACTION');
+
   // --- Packages ---
   const requiredPkg = uuid();
   const opt1 = uuid(), opt2 = uuid(), opt3 = uuid(), opt4 = uuid();
@@ -92,7 +95,7 @@ async function seed() {
     [opt7, 'Winner Take All', 100, 'optional', 12, 1, 7],
   ];
   for (const p of pkgs) {
-    run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)', p);
+    db.run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)', p);
   }
 
   // --- Sessions (next 90 days, skip Wednesdays) ---
@@ -105,12 +108,11 @@ async function seed() {
     const dateStr = d.toISOString().split('T')[0];
     const sid = uuid();
     sessionIds.push(sid);
-    run('INSERT INTO sessions (id, date, time, cutoff_time, is_available) VALUES (?, ?, ?, ?, ?)',
+    db.run('INSERT INTO sessions (id, date, time, cutoff_time, is_available) VALUES (?, ?, ?, ?, ?)',
       [sid, dateStr, '18:30', '12:00', 1]);
   }
 
   // --- Chairs for each session (74 tables x 6 chairs = 444 per session) ---
-  // seatLookup[sessionId][tableNumber][chairNumber] = seatId
   const seatLookup = {};
   let totalChairs = 0;
   for (const sid of sessionIds) {
@@ -119,7 +121,7 @@ async function seed() {
       seatLookup[sid][tNum] = {};
       for (let ch = 1; ch <= CHAIRS_PER_TABLE; ch++) {
         const seatId = uuid();
-        run('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
+        db.run('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
           [seatId, sid, tNum, ch, 'vacant']);
         seatLookup[sid][tNum][ch] = seatId;
         totalChairs++;
@@ -135,30 +137,33 @@ async function seed() {
 
     // Booking 1: Party of 2 at Table 1 (chairs 1 & 2)
     const b1 = uuid(), bi1 = uuid(), bi2 = uuid();
-    run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b1, fs, ref(), 5000, 'paid', new Date(Date.now() - 86400000).toISOString()]);
-    run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)', [bi1, b1, 'John', 'Smith', s[1][1], requiredPkg, 1800]);
-    run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi1, opt1, 1, 1400]);
-    run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][1]]);
-    run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)', [bi2, b1, 'Jane', 'Smith', s[1][2], requiredPkg, 1800]);
-    run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][2]]);
+    db.run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b1, fs, ref(), 5000, 'paid', new Date(Date.now() - 86400000).toISOString()]);
+    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)', [bi1, b1, 'John', 'Smith', s[1][1], requiredPkg, 1800]);
+    db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi1, opt1, 1, 1400]);
+    db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][1]]);
+    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)', [bi2, b1, 'Jane', 'Smith', s[1][2], requiredPkg, 1800]);
+    db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][2]]);
 
     // Booking 2: Party of 3 at Table 5 (chairs 1, 2, 3)
     const b2 = uuid();
-    run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b2, fs, ref(), 5400, 'paid', new Date(Date.now() - 43200000).toISOString()]);
+    db.run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b2, fs, ref(), 5400, 'paid', new Date(Date.now() - 43200000).toISOString()]);
     const names = [['Mike', 'Johnson'], ['Sarah', 'Johnson'], ['Tom', 'Johnson']];
     for (let i = 0; i < 3; i++) {
-      run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)',
+      db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)',
         [uuid(), b2, names[i][0], names[i][1], s[5][i + 1], requiredPkg, 1800]);
-      run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[5][i + 1]]);
+      db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[5][i + 1]]);
     }
 
     // Booking 3: Single at Table 42 (chair 1)
     const b3 = uuid(), bi6 = uuid();
-    run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b3, fs, ref(), 3200, 'paid', new Date(Date.now() - 7200000).toISOString()]);
-    run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)', [bi6, b3, 'Alice', 'Williams', s[42][1], requiredPkg, 1800]);
-    run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi6, opt1, 1, 1400]);
-    run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[42][1]]);
+    db.run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b3, fs, ref(), 3200, 'paid', new Date(Date.now() - 7200000).toISOString()]);
+    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)', [bi6, b3, 'Alice', 'Williams', s[42][1], requiredPkg, 1800]);
+    db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi6, opt1, 1, 1400]);
+    db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[42][1]]);
   }
+
+  db.run('COMMIT');
+  saveDb();
 
   const chairsSold = 6; // 2 + 3 + 1
   console.log('Seed complete.');
