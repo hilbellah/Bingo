@@ -105,6 +105,62 @@ export default function BookingPanel({
         {/* Panel Body */}
         <div className="flex-1 overflow-y-auto p-5">
 
+          {/* Party Size Selector */}
+          <div className="bg-brand-blue/5 border-2 border-brand-blue/20 rounded-xl px-4 py-3 mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-bold text-brand-blue uppercase tracking-wide">Your Party</span>
+              <span className="text-xs bg-brand-blue text-white px-2.5 py-1 rounded-full font-semibold">
+                {partySize} {partySize === 1 ? 'Player' : 'Players'}
+              </span>
+            </div>
+
+            {/* Party size chooser: 1-6 */}
+            <div className="grid grid-cols-6 gap-2 mb-3">
+              {[1, 2, 3, 4, 5, 6].map(n => (
+                <button
+                  key={n}
+                  onClick={() => onPartySize(n)}
+                  className={`flex flex-col items-center gap-1 py-2 rounded-xl transition-all border-2 ${
+                    partySize === n
+                      ? 'bg-brand-blue border-brand-blue text-white shadow-md'
+                      : 'bg-white border-gray-200 text-brand-blue hover:border-brand-gold/50 hover:shadow-sm'
+                  }`}
+                >
+                  <span className="text-lg font-bold leading-none">{n}</span>
+                  <div className="flex flex-wrap justify-center gap-px">
+                    {Array.from({ length: n }, (_, i) => (
+                      <svg key={i} className={`w-3 h-3 ${partySize === n ? 'text-brand-gold' : 'text-brand-blue/50'}`} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                      </svg>
+                    ))}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Selected seats badges */}
+            {selectedSeats.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {selectedSeats.map((seatId, i) => {
+                  const info = getSeatInfo(seatId);
+                  return (
+                    <span key={seatId} className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-brand-blue px-2.5 py-1.5 rounded-lg text-xs font-medium">
+                      <span className="w-6 h-6 rounded-md bg-brand-blue text-white flex items-center justify-center shrink-0">
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                        </svg>
+                      </span>
+                      T{info.table} C{info.chair}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            {partySize === 0 && (
+              <p className="text-sm text-gray-400 italic">Choose your party size, then select chairs on the floor plan</p>
+            )}
+          </div>
+
           {/* Instructions */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-5">
             <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-1">Instructions</p>

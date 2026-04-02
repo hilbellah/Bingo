@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { fetchSessions, fetchSeats, fetchPackages, lockSeat, unlockSeat, createBooking } from './api';
 import { useSocket } from './useSocket';
 import BookingPanel from './components/BookingPanel';
-import PartySizeOverlay from './components/PartySizeOverlay';
 import Confirmation from './components/Confirmation';
 import { SECTIONS } from './seatLayout';
 
@@ -70,8 +69,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [panelOpen, setPanelOpen] = useState(false);
-  const [openTable, setOpenTable] = useState(null); // which table's chairs are expanded
-  const [showPartySizeOverlay, setShowPartySizeOverlay] = useState(false); // party size step after chair selection
+  const [openTable, setOpenTable] = useState(null); // which table's chairs are expanded inline
   const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, 1 = next week, etc.
 
   // Load initial data
@@ -165,8 +163,8 @@ export default function App() {
       if (!holdExpiry || new Date(result.holdUntil) > new Date(holdExpiry)) {
         setHoldExpiry(result.holdUntil);
       }
-      // Show party size overlay after selecting first chair
-      setShowPartySizeOverlay(true);
+      // Auto-open booking panel every time a seat is selected
+      setPanelOpen(true);
     } else {
       setError(result.error || 'Could not select chair');
       setTimeout(() => setError(''), 3000);
@@ -411,38 +409,10 @@ export default function App() {
           </div>
         )}
 
-        {/* Chair picker overlay for expanded table */}
-        {openTable && (
-          <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-            onClick={(e) => { if (e.target === e.currentTarget) setOpenTable(null); }}>
-            <ChairPicker
-              tableNum={openTable}
-              chairs={tableMap[openTable] || []}
-              selectedSeats={selectedSeats}
-              holderId={holderId}
-              onChairClick={handleChairClick}
-              onClose={() => setOpenTable(null)}
-            />
-          </div>
-        )}
-
-        {/* Party size overlay — shown after chair selection */}
-        {showPartySizeOverlay && !openTable && (
-          <PartySizeOverlay
-            value={partySize}
-            onChange={handlePartySize}
-            selectedCount={selectedSeats.length}
-            onConfirm={() => {
-              setShowPartySizeOverlay(false);
-              setPanelOpen(true);
-            }}
-            onClose={() => setShowPartySizeOverlay(false)}
-          />
-        )}
 
         {/* Floorplan Room Outline */}
-        <div className="seat-map-container">
-          <div className="floorplan-room">
+        <div className="seat-map-container" onClick={() => setOpenTable(null)}>
+          <div className="floorplan-room" onClick={e => e.stopPropagation()}>
             {/* Front Wall — Caller / Stage Area */}
             <div className="floorplan-front-wall">
               <div className="floorplan-stage-label">
@@ -460,7 +430,8 @@ export default function App() {
                 <div className="self-start">
                   {SECTIONS.filter(s => s.id === 'upper-left').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                      openTable={openTable} onTableClick={setOpenTable} />
+                      openTable={openTable} onTableClick={setOpenTable}
+                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
                   ))}
                 </div>
                 {/* Floor Stage */}
@@ -472,7 +443,8 @@ export default function App() {
                 <div className="self-start">
                   {SECTIONS.filter(s => s.id === 'upper-right').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                      openTable={openTable} onTableClick={setOpenTable} />
+                      openTable={openTable} onTableClick={setOpenTable}
+                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
                   ))}
                 </div>
               </div>
@@ -481,15 +453,18 @@ export default function App() {
               <div className="flex items-start gap-3">
                 {SECTIONS.filter(s => s.id === 'lower-left').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable} />
+                    openTable={openTable} onTableClick={setOpenTable}
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
                 ))}
                 {SECTIONS.filter(s => s.id === 'lower-center-left').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable} />
+                    openTable={openTable} onTableClick={setOpenTable}
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
                 ))}
                 {SECTIONS.filter(s => s.id === 'center-left-inner').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable} />
+                    openTable={openTable} onTableClick={setOpenTable}
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
                 ))}
                 {/* Caller position marker */}
                 <div className="flex items-center justify-center self-center">
@@ -497,11 +472,13 @@ export default function App() {
                 </div>
                 {SECTIONS.filter(s => s.id === 'center-column').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable} />
+                    openTable={openTable} onTableClick={setOpenTable}
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
                 ))}
                 {SECTIONS.filter(s => s.id === 'lower-right').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable} />
+                    openTable={openTable} onTableClick={setOpenTable}
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
                 ))}
               </div>
             </div>
@@ -567,7 +544,7 @@ export default function App() {
 }
 
 // Section component — renders table buttons in venue layout grid
-function TableSection({ section, getTableStatus, openTable, onTableClick }) {
+function TableSection({ section, getTableStatus, openTable, onTableClick, tableMap, selectedSeats, holderId, onChairClick }) {
   return (
     <div className="rounded-2xl p-3 md:p-4 bg-white/5 border border-white/10 shrink-0">
       <div className="flex flex-col gap-1.5">
@@ -576,7 +553,8 @@ function TableSection({ section, getTableStatus, openTable, onTableClick }) {
             {row.map((num, ci) => {
               if (num === null) return <div key={ci} className="w-12 h-12 shrink-0" />;
               return <TableBtn key={num} tableNum={num} status={getTableStatus(num)}
-                isOpen={openTable === num} onClick={onTableClick} />;
+                isOpen={openTable === num} onClick={onTableClick}
+                chairs={tableMap[num] || []} selectedSeats={selectedSeats} holderId={holderId} onChairClick={onChairClick} />;
             })}
           </div>
         ))}
@@ -585,8 +563,34 @@ function TableSection({ section, getTableStatus, openTable, onTableClick }) {
   );
 }
 
-// Table button — shows table number + vacancy count with inline dark-theme colors
-function TableBtn({ tableNum, status, isOpen, onClick }) {
+// Inline chair button for the dropdown
+function InlineChair({ chair, isSelected, holderId, onChairClick }) {
+  const isMyHold = chair.status === 'held' && chair.held_by === holderId;
+  const isOtherHold = chair.status === 'held' && chair.held_by !== holderId;
+  const isSold = chair.status === 'sold';
+  const isDisabled = chair.is_disabled;
+
+  let bgClass, borderClass, textClass;
+  if (isDisabled) { bgClass = 'bg-gray-700/40'; borderClass = 'border-gray-600/30'; textClass = 'text-gray-500'; }
+  else if (isSold) { bgClass = 'bg-gray-600/50'; borderClass = 'border-gray-500/40'; textClass = 'text-gray-400'; }
+  else if (isSelected || isMyHold) { bgClass = 'bg-blue-500/70'; borderClass = 'border-blue-400'; textClass = 'text-white'; }
+  else if (isOtherHold) { bgClass = 'bg-amber-500/50'; borderClass = 'border-amber-400/50'; textClass = 'text-amber-200'; }
+  else { bgClass = 'bg-green-600/60'; borderClass = 'border-green-500/50'; textClass = 'text-white'; }
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onChairClick(chair); }}
+      disabled={isDisabled || isSold || isOtherHold}
+      className={`${bgClass} border-2 ${borderClass} ${textClass} rounded-lg w-10 h-10 flex items-center justify-center shrink-0 transition-all text-sm font-bold hover:scale-110 disabled:hover:scale-100 disabled:cursor-not-allowed`}
+      title={`Chair ${chair.chair_number}`}
+    >
+      {chair.chair_number}
+    </button>
+  );
+}
+
+// Table button — shows table number + vacancy count, with inline chair dropdown
+function TableBtn({ tableNum, status, isOpen, onClick, chairs, selectedSeats, holderId, onChairClick }) {
   if (status === 'empty' || !status) {
     return <div className="w-12 h-12 shrink-0" />;
   }
@@ -606,115 +610,59 @@ function TableBtn({ tableNum, status, isOpen, onClick }) {
     bgClass = 'bg-amber-600/60'; borderClass = 'border-amber-500/50'; textClass = 'text-white';
   }
 
-  return (
-    <button
-      onClick={() => onClick(tableNum)}
-      disabled={allSold}
-      className={`table-btn ${bgClass} border-2 ${borderClass} ${textClass} ${isOpen ? 'ring-2 ring-brand-gold/50 scale-110' : ''}`}
-      aria-label={`Table ${tableNum} — ${vacantChairs} chairs available`}
-      title={`Table ${tableNum} — ${vacantChairs}/6 available`}
-    >
-      <span className="text-sm font-bold leading-none">{tableNum}</span>
-      {!allSold && !isOpen && (
-        <span className="text-[9px] leading-none opacity-70">{vacantChairs}/6</span>
-      )}
-    </button>
-  );
-}
-
-// Chair picker — matches venue layout: chairs 5,3,1 on left / 6,4,2 on right / table in center
-function ChairPicker({ tableNum, chairs, selectedSeats, holderId, onChairClick, onClose }) {
+  // Sort chairs for layout: left [5,3,1], right [6,4,2]
   const chairMap = {};
   for (const c of chairs) chairMap[c.chair_number] = c;
-  const vacantCount = chairs.filter(c => c.status === 'vacant' && !c.is_disabled).length;
-
-  // Layout: left column [5,3,1], right column [6,4,2] — matches venue reference
-  const leftChairs = [5, 3, 1];
-  const rightChairs = [6, 4, 2];
-
-  const renderChair = (num) => {
-    const chair = chairMap[num];
-    if (!chair) return <div key={num} className="w-16 h-16" />;
-
-    const isSelected = selectedSeats.includes(chair.id);
-    const isMyHold = chair.status === 'held' && chair.held_by === holderId;
-    const isOtherHold = chair.status === 'held' && chair.held_by !== holderId;
-    const isSold = chair.status === 'sold';
-    const isDisabled = chair.is_disabled;
-
-    let bgClass, borderClass, textClass;
-    if (isDisabled) { bgClass = 'bg-gray-700/40'; borderClass = 'border-gray-600/30'; textClass = 'text-gray-500'; }
-    else if (isSold) { bgClass = 'bg-gray-600/50'; borderClass = 'border-gray-500/40'; textClass = 'text-gray-400'; }
-    else if (isSelected || isMyHold) { bgClass = 'bg-blue-500/70'; borderClass = 'border-blue-400'; textClass = 'text-white'; }
-    else if (isOtherHold) { bgClass = 'bg-amber-500/50'; borderClass = 'border-amber-400/50'; textClass = 'text-amber-200'; }
-    else { bgClass = 'bg-green-600/60'; borderClass = 'border-green-500/50'; textClass = 'text-white'; }
-
-    return (
-      <button
-        key={chair.id}
-        onClick={() => onChairClick(chair)}
-        disabled={isDisabled || isSold || isOtherHold}
-        className={`${bgClass} border-2 ${borderClass} ${textClass} rounded-xl w-16 h-16 flex flex-col items-center justify-center shrink-0 transition-all hover:scale-110 disabled:hover:scale-100 disabled:cursor-not-allowed`}
-        aria-label={`Chair ${num}${chair.booked_name ? ` — ${chair.booked_name}` : ''}`}
-        title={`Chair ${num}${chair.booked_name ? ` — ${chair.booked_name}` : ''}`}
-      >
-        <span className="text-sm font-bold leading-none">{num}</span>
-        {isSold && chair.booked_name && (
-          <span className="text-[9px] leading-tight mt-0.5 opacity-80 truncate max-w-[56px]">
-            {chair.booked_name}
-          </span>
-        )}
-        {(isSelected || isMyHold) && (
-          <span className="text-[9px] leading-tight mt-0.5 font-semibold text-blue-200">You</span>
-        )}
-        {!isSold && !isSelected && !isMyHold && !isOtherHold && !isDisabled && (
-          <span className="text-[9px] leading-tight mt-0.5 opacity-50">Open</span>
-        )}
-        {isOtherHold && (
-          <span className="text-[9px] leading-tight mt-0.5 opacity-70">Held</span>
-        )}
-      </button>
-    );
-  };
+  const leftNums = [5, 3, 1];
+  const rightNums = [6, 4, 2];
 
   return (
-    <div className="mx-auto max-w-sm" onClick={(e) => e.stopPropagation()}>
-      <div className="bg-white/10 border border-white/20 rounded-2xl p-5 relative">
-        <button onClick={onClose}
-          className="absolute top-3 right-3 text-white/40 hover:text-white/80 text-xl leading-none"
-          aria-label="Close">&times;</button>
+    <div className="relative shrink-0">
+      <button
+        onClick={() => onClick(allSold ? null : (isOpen ? null : tableNum))}
+        disabled={allSold}
+        className={`table-btn ${bgClass} border-2 ${borderClass} ${textClass} ${isOpen ? 'ring-2 ring-brand-gold/50 scale-110 z-10' : ''}`}
+        aria-label={`Table ${tableNum} — ${vacantChairs} chairs available`}
+        title={`Table ${tableNum} — ${vacantChairs}/6 available`}
+      >
+        <span className="text-sm font-bold leading-none">{tableNum}</span>
+        {!allSold && !isOpen && (
+          <span className="text-[9px] leading-none opacity-70">{vacantChairs}/6</span>
+        )}
+      </button>
 
-        <div className="text-center mb-4">
-          <span className="text-brand-gold font-bold text-lg">Table {tableNum}</span>
-          <p className="text-white/50 text-xs mt-0.5">{vacantCount} of 6 chairs available</p>
-        </div>
-
-        {/* Table layout: left chairs — table — right chairs */}
-        <div className="flex items-center justify-center gap-3">
-          {/* Left column: chairs 5, 3, 1 */}
-          <div className="flex flex-col gap-2">
-            {leftChairs.map(num => renderChair(num))}
+      {/* Inline chair picker dropdown */}
+      {isOpen && (
+        <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-1.5 bg-slate-800/95 border border-white/20 rounded-xl p-3 shadow-2xl backdrop-blur-sm"
+          onClick={e => e.stopPropagation()} style={{ minWidth: '160px' }}>
+          <div className="text-[10px] font-bold text-white/50 uppercase tracking-wider mb-2 text-center">
+            Table {tableNum}
           </div>
-
-          {/* Table center */}
-          <div className="w-20 h-[210px] rounded-xl bg-white/5 border border-white/15 flex items-center justify-center shrink-0">
-            <span className="text-white/20 text-[10px] font-bold uppercase tracking-wider [writing-mode:vertical-rl]">
-              Table {tableNum}
-            </span>
-          </div>
-
-          {/* Right column: chairs 6, 4, 2 */}
-          <div className="flex flex-col gap-2">
-            {rightChairs.map(num => renderChair(num))}
+          <div className="flex items-center justify-center gap-2">
+            {/* Left chairs */}
+            <div className="flex flex-col gap-1.5">
+              {leftNums.map(num => chairMap[num] ?
+                <InlineChair key={num} chair={chairMap[num]} isSelected={selectedSeats.includes(chairMap[num].id)}
+                  holderId={holderId} onChairClick={onChairClick} /> :
+                <div key={num} className="w-10 h-10" />
+              )}
+            </div>
+            {/* Table surface */}
+            <div className="w-8 h-[130px] rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+              <span className="text-white/15 text-[8px] font-bold [writing-mode:vertical-rl]">Table {tableNum}</span>
+            </div>
+            {/* Right chairs */}
+            <div className="flex flex-col gap-1.5">
+              {rightNums.map(num => chairMap[num] ?
+                <InlineChair key={num} chair={chairMap[num]} isSelected={selectedSeats.includes(chairMap[num].id)}
+                  holderId={holderId} onChairClick={onChairClick} /> :
+                <div key={num} className="w-10 h-10" />
+              )}
+            </div>
           </div>
         </div>
-
-        <div className="flex items-center justify-center gap-4 mt-4 text-[10px] text-white/40">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-600/60 inline-block"></span> Vacant</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500/70 inline-block"></span> Selected</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-600/50 inline-block"></span> Occupied</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
+
