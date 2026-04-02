@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { getDb, all, get, run, exec } from './database.js';
+import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,7 +68,7 @@ function releaseExpiredHolds() {
      WHERE status = 'held' AND held_until < ?`, [now]
   );
   if (result.changes > 0) {
-    console.log(`Released ${result.changes} expired seat holds`);
+    logger.info('Released expired seat holds', { seats_released: result.changes });
     io.emit('seats:refresh');
   }
 }
@@ -550,14 +551,14 @@ function ensureFutureSessions() {
           [uuid(), id, tNum, ch, 'vacant']);
       }
     }
-    console.log(`Auto-created session for ${dateStr}`);
+    logger.info('Auto-created session', { date: dateStr, seats: 444 });
   }
 }
 
 // ============ START ============
 async function start() {
   await getDb();
-  console.log('Database connected.');
+  logger.info('Database connected');
 
   // Ensure sessions exist for the next 90 days
   ensureFutureSessions();
@@ -569,11 +570,11 @@ async function start() {
   releaseExpiredHolds();
 
   server.listen(PORT, () => {
-    console.log(`Wolastoq Bingo server running on http://localhost:${PORT}`);
+    logger.info('Server started', { port: PORT, url: `http://localhost:${PORT}` });
   });
 }
 
 start().catch(err => {
-  console.error('Failed to start server:', err);
+  logger.error('Failed to start server', { error: err.message, stack: err.stack });
   process.exit(1);
 });
