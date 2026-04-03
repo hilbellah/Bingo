@@ -154,21 +154,27 @@ export default function App() {
     if (result.success) {
       const newSelected = [...selectedSeats, chair.id];
       setSelectedSeats(newSelected);
-      // Auto-update party size and grow attendees
       const newSize = newSelected.length;
-      setPartySize(newSize);
-      setAttendees(prev => {
-        const updated = [...prev];
-        while (updated.length < newSize) {
-          updated.push({ firstName: '', lastName: '', addons: [] });
-        }
-        return updated;
-      });
+      // Only auto-sync party size and attendees when user hasn't explicitly
+      // set a party size via the panel (i.e., not in "pick more chairs" mode)
+      if (!namesFilledBeforeChairs) {
+        setPartySize(newSize);
+        setAttendees(prev => {
+          const updated = [...prev];
+          while (updated.length < newSize) {
+            updated.push({ firstName: '', lastName: '', addons: [] });
+          }
+          return updated;
+        });
+      }
       if (!holdExpiry || new Date(result.holdUntil) > new Date(holdExpiry)) {
         setHoldExpiry(result.holdUntil);
       }
-      // Auto-open booking panel every time a seat is selected
-      setPanelOpen(true);
+      // Only auto-open panel on first seat selection to start the booking flow;
+      // subsequent seats are picked without the overlay covering the chair map
+      if (selectedSeats.length === 0 && !namesFilledBeforeChairs) {
+        setPanelOpen(true);
+      }
     } else {
       setError(result.error || 'Could not select chair');
       setTimeout(() => setError(''), 3000);
