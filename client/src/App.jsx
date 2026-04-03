@@ -350,7 +350,7 @@ export default function App() {
               <div className="flex items-center gap-2 overflow-x-auto pb-1 ml-2">
                 {visibleSessions.map(session => {
                   const isSelected = selectedSession?.id === session.id;
-                  const isSpecial = session.is_special_event;
+                  const isSpecial = !!session.is_special_event;
                   return (
                     <div key={session.id} className="flex-shrink-0 flex flex-col items-center">
                       {isSpecial && (
