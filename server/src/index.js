@@ -5,7 +5,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { getDb, all, get, run, exec } from './database.js';
+import { getDb, all, get, run, exec, saveDb } from './database.js';
 import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
 
@@ -574,6 +574,20 @@ async function start() {
   server.listen(PORT, () => {
     logger.info('Server started', { port: PORT, url: `http://localhost:${PORT}` });
   });
+
+  // Graceful shutdown: flush pending database writes
+  const gracefulShutdown = async (signal) => {
+    logger.info('Received shutdown signal', { signal });
+    server.close(async () => {
+      logger.info('Server closed, flushing database');
+      saveDb(); // Flush any pending writes
+      logger.info('Database flushed, exiting');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
 
 start().catch(err => {
