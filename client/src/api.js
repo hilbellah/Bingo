@@ -153,6 +153,14 @@ export async function deleteAdminAnnouncement(token, id) {
   return res.json();
 }
 
+// Admin Bulk Tickets
+export async function fetchAdminBulkTickets(token, dateFrom, dateTo) {
+  const params = new URLSearchParams({ dateFrom });
+  if (dateTo) params.set('dateTo', dateTo);
+  const res = await fetch(`${API}/admin/bookings/bulk-tickets?${params}`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
 // Admin Session Packages
 export async function fetchAdminSessionPackages(token, sessionId) {
   const res = await fetch(`${API}/admin/sessions/${sessionId}/packages`, { headers: adminHeaders(token) });

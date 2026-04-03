@@ -572,6 +572,84 @@ app.post('/api/admin/sessions/:id/packages', adminAuth, (req, res) => {
   res.json({ success: true, count: pkgs.length });
 });
 
+// ============ ADMIN: BULK TICKETS (Print all tickets for date range) ============
+
+app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
+  const { dateFrom, dateTo } = req.query;
+  if (!dateFrom) return res.status(400).json({ error: 'dateFrom query parameter required' });
+
+  const endDate = dateTo || dateFrom;
+
+  // Check if special event columns exist
+  let hasSpecialEvent = false;
+  try {
+    all('SELECT is_special_event FROM sessions LIMIT 1');
+    hasSpecialEvent = true;
+  } catch (e) { /* column doesn't exist */ }
+
+  const specialCols = hasSpecialEvent ? ', s.is_special_event, s.event_title' : '';
+
+  // Get all paid bookings for sessions within the date range
+  const rows = all(`
+    SELECT b.id as booking_id, b.reference_number, b.total_amount, b.payment_status,
+           s.id as session_id, s.date as session_date, s.time as session_time
+           ${specialCols},
+           bi.first_name, bi.last_name, bi.price as item_price,
+           seats.table_number, seats.chair_number,
+           p.name as package_name, p.price as package_price
+    FROM bookings b
+    JOIN sessions s ON b.session_id = s.id
+    JOIN booking_items bi ON bi.booking_id = b.id
+    JOIN seats ON seats.id = bi.seat_id
+    JOIN packages p ON p.id = bi.package_id
+    WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'
+    ORDER BY s.date ASC, s.time ASC, b.reference_number, seats.table_number, seats.chair_number
+  `, [dateFrom, endDate]);
+
+  // Group by session, then by booking
+  const sessions = {};
+  for (const row of rows) {
+    if (!sessions[row.session_id]) {
+      sessions[row.session_id] = {
+        sessionId: row.session_id,
+        sessionDate: row.session_date,
+        sessionTime: row.session_time,
+        isSpecialEvent: !!(row.is_special_event),
+        eventTitle: row.event_title || null,
+        bookings: {}
+      };
+    }
+    const sess = sessions[row.session_id];
+    if (!sess.bookings[row.booking_id]) {
+      sess.bookings[row.booking_id] = {
+        referenceNumber: row.reference_number,
+        totalAmount: row.total_amount,
+        totalFormatted: '$' + formatPrice(row.total_amount),
+        tickets: []
+      };
+    }
+    sess.bookings[row.booking_id].tickets.push({
+      firstName: row.first_name,
+      lastName: row.last_name,
+      tableNumber: row.table_number,
+      chairNumber: row.chair_number,
+      packageName: row.package_name,
+      packagePrice: row.package_price,
+      packagePriceFormatted: '$' + formatPrice(row.package_price)
+    });
+  }
+
+  // Flatten to array format
+  const result = Object.values(sessions).map(s => ({
+    ...s,
+    bookings: Object.values(s.bookings)
+  }));
+
+  const totalTickets = result.reduce((sum, s) => sum + s.bookings.reduce((bs, b) => bs + b.tickets.length, 0), 0);
+
+  res.json({ dateFrom, dateTo: endDate, sessions: result, totalTickets });
+});
+
 // ============ SOCKET.IO ============
 
 io.on('connection', (socket) => {
