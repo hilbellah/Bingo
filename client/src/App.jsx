@@ -352,34 +352,41 @@ export default function App() {
                   const isSelected = selectedSession?.id === session.id;
                   const isSpecial = session.is_special_event;
                   return (
-                    <button
-                      key={session.id}
-                      onClick={() => {
-                        setSelectedSession(session);
-                        setSelectedSeats([]);
-                        setHoldExpiry(null);
-                        setOpenTable(null);
-                        setBookingStep(0);
-                      }}
-                      className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                        isSelected
-                          ? isSpecial ? 'bg-amber-500 text-white shadow-md shadow-amber-500/30 ring-1 ring-amber-400' : 'bg-brand-gold text-white shadow-md'
-                          : isSpecial ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 ring-1 ring-amber-500/50' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
-                      }`}
-                    >
-                      {isSpecial && <span className="mr-1">&#9733;</span>}
-                      {formatDateShort(session.date)} — {formatTime(session.time)}
-                      {isSpecial && session.event_title && (
-                        <span className={`ml-1.5 text-xs ${isSelected ? 'text-amber-100' : 'text-amber-400'}`}>
-                          {session.event_title}
-                        </span>
+                    <div key={session.id} className="flex-shrink-0 flex flex-col items-center">
+                      {isSpecial && (
+                        <div className="bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-t-lg w-full text-center">
+                          &#9733; Special Event
+                        </div>
                       )}
-                      <span className={`ml-1.5 text-xs ${
-                        isSelected ? 'text-white/80' : session.available_seats > 100 ? 'text-green-400' : session.available_seats > 30 ? 'text-amber-400' : 'text-red-400'
-                      }`}>
-                        ({session.available_seats})
-                      </span>
-                    </button>
+                      <button
+                        onClick={() => {
+                          setSelectedSession(session);
+                          setSelectedSeats([]);
+                          setHoldExpiry(null);
+                          setOpenTable(null);
+                          setBookingStep(0);
+                        }}
+                        className={`w-full px-3 py-1.5 text-sm font-medium transition-all ${
+                          isSpecial ? 'rounded-b-lg' : 'rounded-lg'
+                        } ${
+                          isSelected
+                            ? isSpecial ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/40 ring-2 ring-amber-400' : 'bg-brand-gold text-white shadow-md'
+                            : isSpecial ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 ring-1 ring-amber-500/50' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+                        }`}
+                      >
+                        {formatDateShort(session.date)} — {formatTime(session.time)}
+                        {isSpecial && session.event_title && (
+                          <div className={`text-xs font-semibold ${isSelected ? 'text-amber-100' : 'text-amber-300'}`}>
+                            {session.event_title}
+                          </div>
+                        )}
+                        <span className={`ml-1.5 text-xs ${
+                          isSelected ? 'text-white/80' : session.available_seats > 100 ? 'text-green-400' : session.available_seats > 30 ? 'text-amber-400' : 'text-red-400'
+                        }`}>
+                          ({session.available_seats})
+                        </span>
+                      </button>
+                    </div>
                   );
                 })}
               </div>
