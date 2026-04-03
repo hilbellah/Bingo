@@ -340,6 +340,9 @@ app.post('/api/admin/sessions', adminAuth, (req, res) => {
     }
   }
 
+  // Flush to disk immediately — critical write should not rely on debounced save
+  saveDb();
+
   res.json({ id, date, time, cutoff_time, is_available, is_special_event, event_title, totalChairs: chairCount });
 });
 

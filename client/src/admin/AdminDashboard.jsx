@@ -60,9 +60,13 @@ export default function AdminDashboard() {
       delete payload.event_description;
       delete payload.packages;
     }
-    await createAdminSession(token, payload);
-    setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: false, event_title: '', event_description: '', packages: [] });
-    loadSessions();
+    try {
+      await createAdminSession(token, payload);
+      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: false, event_title: '', event_description: '', packages: [] });
+      loadSessions();
+    } catch (err) {
+      alert('Failed to create session: ' + (err?.message || 'Unknown error. Please try again.'));
+    }
   };
 
   const handleCreateAnnouncement = async () => {
@@ -348,7 +352,7 @@ export default function AdminDashboard() {
                             className="text-xs text-brand-blue hover:underline">
                             {s.is_available ? 'Disable' : 'Enable'}
                           </button>
-                          {s.is_special_event && (
+                          {!!s.is_special_event && (
                             <button onClick={() => handleEditSessionPkgs(s.id)}
                               className="text-xs text-amber-600 hover:underline">
                               Packages
