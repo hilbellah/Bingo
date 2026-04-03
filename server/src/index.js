@@ -93,6 +93,29 @@ app.get('/api/sessions', (req, res) => {
   res.json(sessions);
 });
 
+// --- Session-specific packages (public) ---
+app.get('/api/sessions/:sessionId/packages', (req, res) => {
+  const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.sessionId]);
+  if (sessionPkgs.length > 0) {
+    return res.json(sessionPkgs);
+  }
+  // Fall back to global packages
+  res.json(all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC'));
+});
+
+// --- Announcements (public) ---
+app.get('/api/announcements', (req, res) => {
+  const today = new Date().toISOString().split('T')[0];
+  const announcements = all(
+    `SELECT * FROM announcements
+     WHERE is_active = 1
+       AND (start_date IS NULL OR start_date <= ?)
+       AND (end_date IS NULL OR end_date >= ?)
+     ORDER BY sort_order ASC, created_at DESC`, [today, today]
+  );
+  res.json(announcements);
+});
+
 app.get('/api/sessions/:id', (req, res) => {
   const session = get('SELECT * FROM sessions WHERE id = ?', [req.params.id]);
   if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -175,7 +198,12 @@ app.post('/api/bookings', (req, res) => {
   const session = get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
-  const requiredPkg = get("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 LIMIT 1");
+  // Check for session-specific packages first, then fall back to global
+  const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [sessionId]);
+  const useSessionPkgs = sessionPkgs.length > 0;
+  const requiredPkg = useSessionPkgs
+    ? sessionPkgs.find(p => p.type === 'required')
+    : get("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 LIMIT 1");
   if (!requiredPkg) return res.status(500).json({ error: 'No required package configured' });
 
   // Validate all seats
@@ -202,7 +230,9 @@ app.post('/api/bookings', (req, res) => {
 
       if (att.addons) {
         for (const addon of att.addons) {
-          const pkg = get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
+          const pkg = useSessionPkgs
+            ? sessionPkgs.find(p => p.id === addon.packageId)
+            : get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
           if (pkg) {
             const addonPrice = pkg.price * addon.quantity;
             totalAmount += addonPrice;
@@ -286,10 +316,10 @@ app.get('/api/admin/sessions', adminAuth, (req, res) => {
 });
 
 app.post('/api/admin/sessions', adminAuth, (req, res) => {
-  const { date, time, cutoff_time, is_available } = req.body;
+  const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, packages: pkgs } = req.body;
   const id = uuid();
-  run('INSERT INTO sessions (id, date, time, cutoff_time, is_available) VALUES (?, ?, ?, ?, ?)',
-    [id, date, time, cutoff_time || '12:00', is_available !== false ? 1 : 0]);
+  run('INSERT INTO sessions (id, date, time, cutoff_time, is_available, is_special_event, event_title, event_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, date, time, cutoff_time || '12:00', is_available !== false ? 1 : 0, is_special_event ? 1 : 0, event_title || null, event_description || null]);
 
   // Create 74 tables x 6 chairs = 444 chairs per session
   let chairCount = 0;
@@ -302,17 +332,28 @@ app.post('/api/admin/sessions', adminAuth, (req, res) => {
     }
   }
 
-  res.json({ id, date, time, cutoff_time, is_available, totalChairs: chairCount });
+  // Create session-specific packages if provided
+  if (Array.isArray(pkgs) && pkgs.length > 0) {
+    for (const pkg of pkgs) {
+      run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [uuid(), id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0]);
+    }
+  }
+
+  res.json({ id, date, time, cutoff_time, is_available, is_special_event, event_title, totalChairs: chairCount });
 });
 
 app.patch('/api/admin/sessions/:id', adminAuth, (req, res) => {
-  const { date, time, cutoff_time, is_available } = req.body;
+  const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description } = req.body;
   const updates = [];
   const values = [];
   if (date !== undefined) { updates.push('date = ?'); values.push(date); }
   if (time !== undefined) { updates.push('time = ?'); values.push(time); }
   if (cutoff_time !== undefined) { updates.push('cutoff_time = ?'); values.push(cutoff_time); }
   if (is_available !== undefined) { updates.push('is_available = ?'); values.push(is_available ? 1 : 0); }
+  if (is_special_event !== undefined) { updates.push('is_special_event = ?'); values.push(is_special_event ? 1 : 0); }
+  if (event_title !== undefined) { updates.push('event_title = ?'); values.push(event_title || null); }
+  if (event_description !== undefined) { updates.push('event_description = ?'); values.push(event_description || null); }
   if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
   values.push(req.params.id);
   run(`UPDATE sessions SET ${updates.join(', ')} WHERE id = ?`, values);
@@ -465,6 +506,67 @@ app.post('/api/admin/bookings/:id/cancel', adminAuth, (req, res) => {
 
   io.to(`session:${booking.session_id}`).emit('seats:refresh');
   res.json({ success: true });
+});
+
+// ============ ADMIN: ANNOUNCEMENTS ============
+
+app.get('/api/admin/announcements', adminAuth, (req, res) => {
+  res.json(all('SELECT * FROM announcements ORDER BY sort_order ASC, created_at DESC'));
+});
+
+app.post('/api/admin/announcements', adminAuth, (req, res) => {
+  const { title, message, type, is_active, start_date, end_date, sort_order } = req.body;
+  if (!message) return res.status(400).json({ error: 'Message is required' });
+  const id = uuid();
+  const now = new Date().toISOString();
+  run('INSERT INTO announcements (id, title, message, type, is_active, start_date, end_date, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, title || null, message, type || 'info', is_active !== false ? 1 : 0, start_date || null, end_date || null, sort_order || 0, now, now]);
+  io.emit('announcements:refresh');
+  res.json({ id, title, message, type: type || 'info' });
+});
+
+app.patch('/api/admin/announcements/:id', adminAuth, (req, res) => {
+  const { title, message, type, is_active, start_date, end_date, sort_order } = req.body;
+  const updates = [];
+  const values = [];
+  if (title !== undefined) { updates.push('title = ?'); values.push(title); }
+  if (message !== undefined) { updates.push('message = ?'); values.push(message); }
+  if (type !== undefined) { updates.push('type = ?'); values.push(type); }
+  if (is_active !== undefined) { updates.push('is_active = ?'); values.push(is_active ? 1 : 0); }
+  if (start_date !== undefined) { updates.push('start_date = ?'); values.push(start_date || null); }
+  if (end_date !== undefined) { updates.push('end_date = ?'); values.push(end_date || null); }
+  if (sort_order !== undefined) { updates.push('sort_order = ?'); values.push(sort_order); }
+  if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
+  updates.push("updated_at = ?"); values.push(new Date().toISOString());
+  values.push(req.params.id);
+  run(`UPDATE announcements SET ${updates.join(', ')} WHERE id = ?`, values);
+  io.emit('announcements:refresh');
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/announcements/:id', adminAuth, (req, res) => {
+  run('DELETE FROM announcements WHERE id = ?', [req.params.id]);
+  io.emit('announcements:refresh');
+  res.json({ success: true });
+});
+
+// ============ ADMIN: SESSION PACKAGES (Special Events) ============
+
+app.get('/api/admin/sessions/:id/packages', adminAuth, (req, res) => {
+  res.json(all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.id]));
+});
+
+app.post('/api/admin/sessions/:id/packages', adminAuth, (req, res) => {
+  const { packages: pkgs } = req.body;
+  if (!Array.isArray(pkgs)) return res.status(400).json({ error: 'packages array required' });
+  // Replace all session packages
+  run('DELETE FROM session_packages WHERE session_id = ?', [req.params.id]);
+  for (const pkg of pkgs) {
+    const id = uuid();
+    run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, req.params.id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0]);
+  }
+  res.json({ success: true, count: pkgs.length });
 });
 
 // ============ SOCKET.IO ============

@@ -79,6 +79,45 @@ async function migrate() {
   try { exec('CREATE INDEX idx_booking_items_seat ON booking_items(seat_id)'); } catch(e) {}
   try { exec('CREATE INDEX idx_bookings_reference ON bookings(reference_number)'); } catch(e) {}
 
+  // --- Special Events & Announcements migration ---
+  console.log('Running special events & announcements migration...');
+
+  // Add special event columns to sessions (safe: IF NOT EXISTS not available for columns, use try/catch)
+  try { exec('ALTER TABLE sessions ADD COLUMN is_special_event INTEGER DEFAULT 0'); } catch(e) {}
+  try { exec('ALTER TABLE sessions ADD COLUMN event_title TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE sessions ADD COLUMN event_description TEXT'); } catch(e) {}
+
+  // Session-specific package overrides
+  exec(`
+    CREATE TABLE IF NOT EXISTS session_packages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      price INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      max_quantity INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { exec('CREATE INDEX idx_session_packages_session ON session_packages(session_id)'); } catch(e) {}
+
+  // Announcements table
+  exec(`
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      message TEXT NOT NULL,
+      type TEXT DEFAULT 'info',
+      is_active INTEGER DEFAULT 1,
+      start_date TEXT,
+      end_date TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   console.log('Migrations complete.');
 }
 

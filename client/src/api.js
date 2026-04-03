@@ -15,6 +15,16 @@ export async function fetchPackages() {
   return res.json();
 }
 
+export async function fetchSessionPackages(sessionId) {
+  const res = await fetch(`${API}/sessions/${sessionId}/packages`);
+  return res.json();
+}
+
+export async function fetchAnnouncements() {
+  const res = await fetch(`${API}/announcements`);
+  return res.json();
+}
+
 export async function lockSeat(seatId, holderId) {
   const res = await fetch(`${API}/seats/${seatId}/lock`, {
     method: 'POST',
@@ -114,4 +124,44 @@ export async function cancelAdminBooking(token, id) {
 export function getExportUrl(token, sessionId) {
   const base = `${API}/admin/bookings/export`;
   return sessionId ? `${base}?sessionId=${sessionId}` : base;
+}
+
+// Admin Announcements
+export async function fetchAdminAnnouncements(token) {
+  const res = await fetch(`${API}/admin/announcements`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
+export async function createAdminAnnouncement(token, data) {
+  const res = await fetch(`${API}/admin/announcements`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  return res.json();
+}
+
+export async function updateAdminAnnouncement(token, id, data) {
+  const res = await fetch(`${API}/admin/announcements/${id}`, {
+    method: 'PATCH', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  return res.json();
+}
+
+export async function deleteAdminAnnouncement(token, id) {
+  const res = await fetch(`${API}/admin/announcements/${id}`, {
+    method: 'DELETE', headers: adminHeaders(token)
+  });
+  return res.json();
+}
+
+// Admin Session Packages
+export async function fetchAdminSessionPackages(token, sessionId) {
+  const res = await fetch(`${API}/admin/sessions/${sessionId}/packages`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
+export async function setAdminSessionPackages(token, sessionId, packages) {
+  const res = await fetch(`${API}/admin/sessions/${sessionId}/packages`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ packages })
+  });
+  return res.json();
 }

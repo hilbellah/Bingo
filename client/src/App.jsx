@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchSessions, fetchSeats, fetchPackages, lockSeat, unlockSeat, createBooking } from './api';
+import { fetchSessions, fetchSeats, fetchPackages, fetchSessionPackages, lockSeat, unlockSeat, createBooking } from './api';
+import AnnouncementBanner from './components/AnnouncementBanner';
 import { useSocket } from './useSocket';
 import BookingPanel from './components/BookingPanel';
 import Confirmation from './components/Confirmation';
@@ -80,13 +81,13 @@ export default function App() {
       setSessions(data);
       if (data.length > 0) setSelectedSession(data[0]);
     });
-    fetchPackages().then(setPackages);
   }, []);
 
-  // Load seats when session changes
+  // Load seats and session-specific packages when session changes
   useEffect(() => {
     if (!selectedSession) return;
     fetchSeats(selectedSession.id).then(setSeats);
+    fetchSessionPackages(selectedSession.id).then(setPackages);
     setOpenTable(null);
 
     const socket = socketRef.current;
@@ -382,6 +383,9 @@ export default function App() {
 
       {/* Main Content: Table Map */}
       <div className="flex-1 overflow-auto p-4 md:p-6">
+        {/* Announcement Banner */}
+        <AnnouncementBanner socket={socketRef.current} />
+
         {/* Legend */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-4 text-sm">

@@ -17,15 +17,20 @@ async function seed() {
   try { exec('DROP TABLE IF EXISTS booking_addons'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS booking_items'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS bookings'); } catch(e) {}
+  try { exec('DROP TABLE IF EXISTS session_packages'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS seats'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS sessions'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS packages'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS tables_layout'); } catch(e) {}
+  try { exec('DROP TABLE IF EXISTS announcements'); } catch(e) {}
 
   exec(`
     CREATE TABLE sessions (
       id TEXT PRIMARY KEY, date TEXT NOT NULL, time TEXT NOT NULL,
       cutoff_time TEXT NOT NULL DEFAULT '12:00', is_available INTEGER NOT NULL DEFAULT 1,
+      is_special_event INTEGER DEFAULT 0,
+      event_title TEXT,
+      event_description TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE seats (
@@ -67,11 +72,35 @@ async function seed() {
       FOREIGN KEY (package_id) REFERENCES packages(id)
     );
 
+    CREATE TABLE session_packages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      price INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      max_quantity INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE announcements (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      message TEXT NOT NULL,
+      type TEXT DEFAULT 'info',
+      is_active INTEGER DEFAULT 1,
+      start_date TEXT,
+      end_date TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX idx_seats_session ON seats(session_id);
     CREATE INDEX idx_seats_table ON seats(session_id, table_number);
     CREATE INDEX idx_seats_status ON seats(session_id, status);
     CREATE INDEX idx_bookings_session ON bookings(session_id);
     CREATE INDEX idx_booking_items_booking ON booking_items(booking_id);
+    CREATE INDEX idx_session_packages_session ON session_packages(session_id);
   `);
 
   console.log('Seeding database...');

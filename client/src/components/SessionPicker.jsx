@@ -91,6 +91,7 @@ export default function SessionPicker({ sessions, selected, onSelect }) {
             {visibleSessions.map(session => {
               const d = formatDate(session.date);
               const isSelected = selected?.id === session.id;
+              const isSpecial = session.is_special_event;
               return (
                 <button
                   key={session.id}
@@ -98,11 +99,25 @@ export default function SessionPicker({ sessions, selected, onSelect }) {
                   className={`
                     relative p-5 rounded-2xl text-left transition-all duration-200
                     ${isSelected
-                      ? 'bg-gradient-to-br from-brand-blue to-brand-blue-mid text-white glow-gold scale-[1.03]'
-                      : 'bg-white hover:bg-brand-cream border-2 border-gray-100 hover:border-brand-gold/50 hover:shadow-lg'
+                      ? isSpecial
+                        ? 'bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-200 scale-[1.03]'
+                        : 'bg-gradient-to-br from-brand-blue to-brand-blue-mid text-white glow-gold scale-[1.03]'
+                      : isSpecial
+                        ? 'bg-amber-50 hover:bg-amber-100 border-2 border-amber-300 hover:border-amber-400 hover:shadow-lg'
+                        : 'bg-white hover:bg-brand-cream border-2 border-gray-100 hover:border-brand-gold/50 hover:shadow-lg'
                     }
                   `}
                 >
+                  {isSpecial && !isSelected && (
+                    <div className="absolute top-2 right-2">
+                      <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                        Special
+                      </span>
+                    </div>
+                  )}
                   {isSelected && (
                     <div className="absolute top-3 right-3">
                       <svg className="w-6 h-6 text-brand-gold" fill="currentColor" viewBox="0 0 20 20">
@@ -111,12 +126,17 @@ export default function SessionPicker({ sessions, selected, onSelect }) {
                     </div>
                   )}
 
-                  <div className={`text-xs font-bold uppercase tracking-widest ${isSelected ? 'text-brand-gold' : 'text-brand-gold'}`}>
+                  <div className={`text-xs font-bold uppercase tracking-widest ${isSelected ? 'text-brand-gold' : isSpecial ? 'text-amber-600' : 'text-brand-gold'}`}>
                     {d.dayShort}
                   </div>
-                  <div className={`text-3xl font-bold mt-1 ${isSelected ? 'text-white' : 'text-brand-blue'}`}>
+                  <div className={`text-3xl font-bold mt-1 ${isSelected ? 'text-white' : isSpecial ? 'text-amber-700' : 'text-brand-blue'}`}>
                     {d.monthShort} {d.date}
                   </div>
+                  {isSpecial && session.event_title && (
+                    <div className={`text-xs font-bold mt-1 truncate ${isSelected ? 'text-amber-100' : 'text-amber-600'}`}>
+                      {session.event_title}
+                    </div>
+                  )}
                   <div className={`text-base font-medium mt-1 ${isSelected ? 'text-blue-200' : 'text-gray-500'}`}>
                     {formatTime(session.time)}
                   </div>
