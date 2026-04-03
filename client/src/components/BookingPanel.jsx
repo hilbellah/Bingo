@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 function formatPrice(cents) {
   return '$' + (cents / 100).toFixed(2);
@@ -22,10 +22,12 @@ export default function BookingPanel({
   isOpen, onClose, onPickChairs, session, partySize, onPartySize,
   attendees, onAttendees, selectedSeats, seats,
   requiredPkg, optionalPkgs, total,
-  allNamesValid, allSeatsSelected, loading, onSubmit, holdExpiry
+  allNamesValid, allSeatsSelected, loading, onSubmit, holdExpiry,
+  step, onStepChange
 }) {
   // Steps: 0 = party size & names, 1 = packages & add-ons, 2 = review & pay
-  const [step, setStep] = useState(0);
+  const setStep = onStepChange;
+  const [selectedCard, setSelectedCard] = useState('visa');
 
   // Auto-advance: when panel opens and all names valid + all seats selected, go to step 1
   useEffect(() => {
@@ -376,45 +378,166 @@ export default function BookingPanel({
           )}
 
           {/* ========== STEP 2: Review & Pay ========== */}
-          {step === 2 && (
+          {step === 2 && (() => {
+            const subtotal = partySize * (requiredPkg?.price || 0);
+            const addonsTotal = attendees.reduce((sum, att) => {
+              return sum + (att.addons || []).reduce((aSum, addon) => {
+                const pkg = optionalPkgs.find(p => p.id === addon.packageId);
+                return aSum + (pkg ? pkg.price * addon.quantity : 0);
+              }, 0);
+            }, 0);
+
+            return (
             <div>
               <h3 className="font-bold text-brand-blue text-lg mb-4">Confirm & Pay</h3>
 
-              {/* Summary */}
-              <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-2">
-                {attendees.map((att, i) => {
-                  const info = getSeatInfo(selectedSeats[i]);
-                  return (
-                    <div key={i} className="flex justify-between text-sm">
-                      <span className="font-medium">{att.firstName} {att.lastName}</span>
-                      <span className="text-gray-500">T{info?.table} C{info?.chair}</span>
+              {/* Itemized Order Summary */}
+              <div className="bg-white border-2 border-gray-100 rounded-xl overflow-hidden mb-4">
+                <div className="bg-brand-blue/5 px-4 py-2.5 border-b border-gray-100">
+                  <span className="text-xs font-bold text-brand-blue uppercase tracking-wide">Order Summary</span>
+                </div>
+
+                <div className="divide-y divide-gray-100">
+                  {attendees.map((att, i) => {
+                    const info = getSeatInfo(selectedSeats[i]);
+                    const playerAddons = (att.addons || []).filter(a => a.quantity > 0);
+                    return (
+                      <div key={i} className="px-4 py-3">
+                        {/* Player header */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="w-6 h-6 rounded-full bg-brand-blue text-white flex items-center justify-center text-xs font-bold">{i + 1}</span>
+                          <span className="font-semibold text-brand-blue text-sm">{att.firstName} {att.lastName}</span>
+                          {info && (
+                            <span className="ml-auto text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+                              Table {info.table}, Chair {info.chair}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Required package line */}
+                        {requiredPkg && (
+                          <div className="flex justify-between text-sm ml-8 py-1">
+                            <span className="text-gray-600">{requiredPkg.name}</span>
+                            <span className="font-medium text-gray-800">{formatPrice(requiredPkg.price)}</span>
+                          </div>
+                        )}
+
+                        {/* Add-on lines */}
+                        {playerAddons.map(addon => {
+                          const pkg = optionalPkgs.find(p => p.id === addon.packageId);
+                          if (!pkg) return null;
+                          return (
+                            <div key={addon.packageId} className="flex justify-between text-sm ml-8 py-1">
+                              <span className="text-gray-600">
+                                {pkg.name}
+                                {addon.quantity > 1 && <span className="text-gray-400 ml-1">x{addon.quantity}</span>}
+                              </span>
+                              <span className="font-medium text-gray-800">{formatPrice(pkg.price * addon.quantity)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Subtotal / Add-ons / Total breakdown */}
+                <div className="border-t-2 border-gray-100 px-4 py-3 space-y-1.5">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Subtotal ({partySize} {partySize === 1 ? 'player' : 'players'})</span>
+                    <span className="text-gray-700 font-medium">{formatPrice(subtotal)}</span>
+                  </div>
+                  {addonsTotal > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Add-ons</span>
+                      <span className="text-gray-700 font-medium">{formatPrice(addonsTotal)}</span>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
               </div>
 
+              {/* Total Due */}
               <div className="bg-brand-blue rounded-xl px-4 py-3 flex justify-between items-center mb-5">
-                <span className="text-white font-medium">Total Due</span>
+                <span className="text-white font-medium text-base">Total Due</span>
                 <span className="text-brand-gold text-2xl font-bold">{formatPrice(total)}</span>
               </div>
 
               {/* Demo payment notice */}
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-4 text-sm text-amber-700 font-medium">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-4 text-sm text-amber-700 font-medium flex items-center gap-2">
+                <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
                 Demo mode — no real charges
+              </div>
+
+              {/* Card Type Selection */}
+              <div className="mb-4">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 block">Select Card Type</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { id: 'visa', name: 'Visa', bg: 'bg-[#1A1F71]', color: 'text-white',
+                      logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#1A1F71"/><text x="24" y="20" textAnchor="middle" fill="#FFFFFF" fontSize="12" fontWeight="bold" fontStyle="italic" fontFamily="Arial">VISA</text></svg> },
+                    { id: 'mastercard', name: 'Mastercard', bg: 'bg-gray-800', color: 'text-white',
+                      logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#252525"/><circle cx="19" cy="16" r="8" fill="#EB001B"/><circle cx="29" cy="16" r="8" fill="#F79E1B"/><path d="M24 9.86A8 8 0 0124 22.14 8 8 0 0124 9.86z" fill="#FF5F00"/></svg> },
+                    { id: 'amex', name: 'Amex', bg: 'bg-[#006FCF]', color: 'text-white',
+                      logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#006FCF"/><text x="24" y="20" textAnchor="middle" fill="#FFFFFF" fontSize="8" fontWeight="bold" fontFamily="Arial">AMEX</text></svg> },
+                    { id: 'discover', name: 'Discover', bg: 'bg-white', color: 'text-gray-800',
+                      logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#FFFFFF" stroke="#E0E0E0"/><circle cx="28" cy="16" r="7" fill="#F47216"/><text x="18" y="20" textAnchor="middle" fill="#000" fontSize="6" fontWeight="bold" fontFamily="Arial">D</text></svg> },
+                  ].map(card => (
+                    <button key={card.id}
+                      onClick={() => setSelectedCard(card.id)}
+                      className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all ${
+                        selectedCard === card.id
+                          ? 'border-brand-gold shadow-md ring-2 ring-brand-gold/30'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                      {card.logo}
+                      <span className="text-[10px] font-semibold text-gray-600">{card.name}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Payment fields */}
               <div className="space-y-3 mb-5">
-                <input className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold outline-none"
-                  placeholder="Cardholder name" />
-                <input className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold outline-none"
-                  placeholder="Card number" maxLength={19} />
-                <div className="grid grid-cols-2 gap-3">
-                  <input className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold outline-none"
-                    placeholder="MM/YY" maxLength={5} />
-                  <input className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold outline-none"
-                    placeholder="CVV" maxLength={4} />
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Cardholder Name</label>
+                  <input className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition"
+                    placeholder="Name on card" />
                 </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Card Number</label>
+                  <div className="relative">
+                    <input className="w-full px-3 py-2.5 pr-14 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition tracking-wider"
+                      placeholder="0000 0000 0000 0000" maxLength={19} />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40">
+                      {selectedCard === 'visa' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#1A1F71"/><text x="18" y="15" textAnchor="middle" fill="#FFF" fontSize="9" fontWeight="bold" fontStyle="italic" fontFamily="Arial">VISA</text></svg>}
+                      {selectedCard === 'mastercard' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#252525"/><circle cx="14" cy="12" r="6" fill="#EB001B"/><circle cx="22" cy="12" r="6" fill="#F79E1B"/></svg>}
+                      {selectedCard === 'amex' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#006FCF"/><text x="18" y="15" textAnchor="middle" fill="#FFF" fontSize="6" fontWeight="bold" fontFamily="Arial">AMEX</text></svg>}
+                      {selectedCard === 'discover' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#FFF" stroke="#E0E0E0"/><circle cx="21" cy="12" r="5" fill="#F47216"/></svg>}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Expiry</label>
+                    <input className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition"
+                      placeholder="MM/YY" maxLength={5} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">CVV</label>
+                    <input className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition"
+                      placeholder="123" maxLength={4} type="password" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Secure payment indicator */}
+              <div className="flex items-center justify-center gap-1.5 mb-4 text-xs text-gray-400">
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                </svg>
+                Secure payment — your data is encrypted
               </div>
 
               <button onClick={onSubmit} disabled={loading}
@@ -432,7 +555,8 @@ export default function BookingPanel({
                 )}
               </button>
             </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </>

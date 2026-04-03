@@ -72,6 +72,7 @@ export default function App() {
   const [openTable, setOpenTable] = useState(null); // which table's chairs are expanded inline
   const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, 1 = next week, etc.
   const [namesFilledBeforeChairs, setNamesFilledBeforeChairs] = useState(false); // track if user filled names and went to pick chairs
+  const [bookingStep, setBookingStep] = useState(0); // 0 = party/names, 1 = packages, 2 = review/pay
 
   // Load initial data
   useEffect(() => {
@@ -127,6 +128,8 @@ export default function App() {
   const handleChairClick = async (chair) => {
     if (chair.is_disabled || chair.status === 'sold') return;
     if (chair.status === 'held' && chair.held_by !== holderId) return;
+    // Block chair changes during payment step
+    if (bookingStep === 2) return;
 
     // Deselect
     if (selectedSeats.includes(chair.id)) {
@@ -348,6 +351,7 @@ export default function App() {
                         setSelectedSeats([]);
                         setHoldExpiry(null);
                         setOpenTable(null);
+                        setBookingStep(0);
                       }}
                       className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                         isSelected
@@ -541,6 +545,8 @@ export default function App() {
         loading={loading}
         onSubmit={handleSubmit}
         holdExpiry={holdExpiry}
+        step={bookingStep}
+        onStepChange={setBookingStep}
       />
 
       {/* Footer */}
