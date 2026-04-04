@@ -27,7 +27,27 @@ export default function BookingPanel({
 }) {
   // Steps: 0 = party size & names, 1 = packages & add-ons, 2 = review & pay
   const setStep = onStepChange;
-  const [selectedCard, setSelectedCard] = useState('visa');
+  const [cardNumber, setCardNumber] = useState('');
+  const [selectedCard, setSelectedCard] = useState('');
+
+  // Auto-detect card type from number using IIN/BIN ranges
+  const detectCardType = (number) => {
+    const n = number.replace(/\s/g, '');
+    if (/^4/.test(n)) return 'visa';
+    if (/^5[1-5]/.test(n) || /^2[2-7]/.test(n)) return 'mastercard';
+    if (/^3[47]/.test(n)) return 'amex';
+    if (/^6(?:011|5)/.test(n)) return 'discover';
+    return '';
+  };
+
+  const handleCardNumberChange = (e) => {
+    // Strip non-digits, limit to 16 (19 with spaces)
+    const raw = e.target.value.replace(/\D/g, '').slice(0, 16);
+    // Format as groups of 4
+    const formatted = raw.replace(/(.{4})/g, '$1 ').trim();
+    setCardNumber(formatted);
+    setSelectedCard(detectCardType(raw));
+  };
 
   // Auto-advance: when panel opens and all names valid + all seats selected, go to step 1
   useEffect(() => {
@@ -470,30 +490,31 @@ export default function BookingPanel({
                 Demo mode — no real charges
               </div>
 
-              {/* Card Type Selection */}
+              {/* Card Type Auto-Detection Display */}
               <div className="mb-4">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 block">Select Card Type</label>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 block">Card Type {selectedCard ? `— ${selectedCard === 'visa' ? 'Visa' : selectedCard === 'mastercard' ? 'Mastercard' : selectedCard === 'amex' ? 'American Express' : 'Discover'} detected` : '— enter card number'}</label>
                 <div className="grid grid-cols-4 gap-2">
                   {[
-                    { id: 'visa', name: 'Visa', bg: 'bg-[#1A1F71]', color: 'text-white',
+                    { id: 'visa', name: 'Visa',
                       logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#1A1F71"/><text x="24" y="20" textAnchor="middle" fill="#FFFFFF" fontSize="12" fontWeight="bold" fontStyle="italic" fontFamily="Arial">VISA</text></svg> },
-                    { id: 'mastercard', name: 'Mastercard', bg: 'bg-gray-800', color: 'text-white',
+                    { id: 'mastercard', name: 'Mastercard',
                       logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#252525"/><circle cx="19" cy="16" r="8" fill="#EB001B"/><circle cx="29" cy="16" r="8" fill="#F79E1B"/><path d="M24 9.86A8 8 0 0124 22.14 8 8 0 0124 9.86z" fill="#FF5F00"/></svg> },
-                    { id: 'amex', name: 'Amex', bg: 'bg-[#006FCF]', color: 'text-white',
+                    { id: 'amex', name: 'Amex',
                       logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#006FCF"/><text x="24" y="20" textAnchor="middle" fill="#FFFFFF" fontSize="8" fontWeight="bold" fontFamily="Arial">AMEX</text></svg> },
-                    { id: 'discover', name: 'Discover', bg: 'bg-white', color: 'text-gray-800',
+                    { id: 'discover', name: 'Discover',
                       logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#FFFFFF" stroke="#E0E0E0"/><circle cx="28" cy="16" r="7" fill="#F47216"/><text x="18" y="20" textAnchor="middle" fill="#000" fontSize="6" fontWeight="bold" fontFamily="Arial">D</text></svg> },
                   ].map(card => (
-                    <button key={card.id}
-                      onClick={() => setSelectedCard(card.id)}
+                    <div key={card.id}
                       className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all ${
                         selectedCard === card.id
-                          ? 'border-brand-gold shadow-md ring-2 ring-brand-gold/30'
-                          : 'border-gray-200 hover:border-gray-300'
+                          ? 'border-brand-gold shadow-md ring-2 ring-brand-gold/30 scale-105'
+                          : cardNumber.replace(/\s/g, '').length > 0 && selectedCard !== card.id
+                            ? 'border-gray-100 opacity-30'
+                            : 'border-gray-200'
                       }`}>
                       {card.logo}
                       <span className="text-[10px] font-semibold text-gray-600">{card.name}</span>
-                    </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -509,7 +530,7 @@ export default function BookingPanel({
                   <label className="text-xs font-medium text-gray-500 mb-1 block">Card Number</label>
                   <div className="relative">
                     <input className="w-full px-3 py-2.5 pr-14 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition tracking-wider"
-                      placeholder="0000 0000 0000 0000" maxLength={19} />
+                      placeholder="0000 0000 0000 0000" maxLength={19} value={cardNumber} onChange={handleCardNumberChange} />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40">
                       {selectedCard === 'visa' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#1A1F71"/><text x="18" y="15" textAnchor="middle" fill="#FFF" fontSize="9" fontWeight="bold" fontStyle="italic" fontFamily="Arial">VISA</text></svg>}
                       {selectedCard === 'mastercard' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#252525"/><circle cx="14" cy="12" r="6" fill="#EB001B"/><circle cx="22" cy="12" r="6" fill="#F79E1B"/></svg>}
