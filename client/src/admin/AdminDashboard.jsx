@@ -775,8 +775,8 @@ export default function AdminDashboard() {
                               <div className="ticket-inner">
                                 <div className="ticket-section ticket-sec-left">
                                   <h2 className="ticket-title">Mega Bucks Bingo</h2>
-                                  <div className="ticket-logo">
-                                    <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
+                                  <div className="ticket-name-prominent">
+                                    {ticket.firstName} {ticket.lastName}
                                   </div>
                                   <p className="ticket-price">${(ticket.packagePrice / 100).toFixed(2)}</p>
                                   <p className="ticket-pkg">{ticket.packageName}</p>
@@ -805,9 +805,9 @@ export default function AdminDashboard() {
                                     <span className="ticket-label">Seat</span>
                                     <span className="ticket-value">{ticket.chairNumber}</span>
                                   </div>
-                                  <div className="ticket-detail-sm">
-                                    <span className="ticket-label-sm">Name</span>
-                                    <span className="ticket-value-sm">{ticket.firstName} {ticket.lastName}</span>
+                                  <div className="ticket-detail">
+                                    <span className="ticket-label">Name</span>
+                                    <span className="ticket-name-right">{ticket.firstName} {ticket.lastName}</span>
                                   </div>
                                   <div className="ticket-detail-sm">
                                     <span className="ticket-label-sm">Date</span>
@@ -959,6 +959,15 @@ export default function AdminDashboard() {
               .bulk-ticket-page .ticket-ref-value {
                 display: block; font-size: 11px; font-weight: 700;
                 color: #1a3a5c; font-family: monospace; letter-spacing: 0.5px;
+              }
+              .bulk-ticket-page .ticket-name-prominent {
+                font-size: 18px; font-weight: 700;
+                color: #1a3a5c; margin: 4px 0 8px 0;
+                line-height: 1.2; word-break: break-word; max-width: 100%;
+              }
+              .bulk-ticket-page .ticket-name-right {
+                display: block; font-size: 18px; font-weight: 700;
+                color: #1a3a5c; line-height: 1.2; word-break: break-word;
               }
             `}</style>
           </div>
