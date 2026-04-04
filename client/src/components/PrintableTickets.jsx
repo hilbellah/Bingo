@@ -19,19 +19,24 @@ function formatPrice(cents) {
   return '$' + (cents / 100).toFixed(2);
 }
 
-function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber }) {
+function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTitle }) {
+  const displayTitle = eventTitle || 'Mega Bucks Bingo';
+
   return (
     <div className="ticket-card">
       <div className="ticket-inner">
-        {/* Section 1: Event info (left stub - kept by venue) */}
+        {/* Section 1: Left stub (kept by venue) */}
         <div className="ticket-section ticket-sec-left">
-          <h2 className="ticket-title">Mega Bucks Bingo</h2>
           <div className="ticket-name-prominent">
             {ticket.firstName} {ticket.lastName}
           </div>
+          <h2 className="ticket-title">{displayTitle}</h2>
+          <div className="ticket-logo">
+            <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
+          </div>
           <p className="ticket-price">{formatPrice(ticket.packagePrice)}</p>
           <p className="ticket-pkg">{ticket.packageName}</p>
-          <div className="ticket-detail-sm" style={{ marginTop: '8px' }}>
+          <div className="ticket-ref-block">
             <span className="ticket-label-sm">Ref</span>
             <span className="ticket-ref-value">{referenceNumber}</span>
           </div>
@@ -51,7 +56,7 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber }) {
 
         {/* Section 3: Attendee stub (right - kept by attendee) */}
         <div className="ticket-section ticket-sec-right">
-          <h2 className="ticket-title">Mega Bucks Bingo</h2>
+          <h2 className="ticket-title">{displayTitle}</h2>
           <div className="ticket-detail">
             <span className="ticket-label">Table</span>
             <span className="ticket-value">{ticket.tableNumber}</span>
@@ -217,6 +222,7 @@ export default function PrintableTickets() {
               sessionDate={data.sessionDate}
               sessionTime={data.sessionTime}
               referenceNumber={data.referenceNumber}
+              eventTitle={data.isSpecialEvent ? data.eventTitle : null}
             />
           ))}
         </div>
@@ -382,10 +388,10 @@ export default function PrintableTickets() {
         }
 
         .ticket-name-prominent {
-          font-size: 18px;
+          font-size: 22px;
           font-weight: 700;
           color: #1a3a5c;
-          margin: 4px 0 8px 0;
+          margin: 0 0 4px 0;
           line-height: 1.2;
           word-break: break-word;
           max-width: 100%;
@@ -400,9 +406,14 @@ export default function PrintableTickets() {
           word-break: break-word;
         }
 
+        .ticket-ref-block {
+          margin-top: 8px;
+          text-align: center;
+        }
+
         .ticket-ref-value {
           display: block;
-          font-size: 11px;
+          font-size: 14px;
           font-weight: 700;
           color: #1a3a5c;
           font-family: monospace;

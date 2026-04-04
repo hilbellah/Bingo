@@ -770,17 +770,22 @@ export default function AdminDashboard() {
 
                       {pages.map((pageTickets, pageIdx) => (
                         <div className="bulk-ticket-page" key={`${session.sessionId}-${pageIdx}`}>
-                          {pageTickets.map((ticket, i) => (
+                          {pageTickets.map((ticket, i) => {
+                            const displayTitle = (session.isSpecialEvent && session.eventTitle) ? session.eventTitle : 'Mega Bucks Bingo';
+                            return (
                             <div className="ticket-card" key={i}>
                               <div className="ticket-inner">
                                 <div className="ticket-section ticket-sec-left">
-                                  <h2 className="ticket-title">Mega Bucks Bingo</h2>
                                   <div className="ticket-name-prominent">
                                     {ticket.firstName} {ticket.lastName}
                                   </div>
+                                  <h2 className="ticket-title">{displayTitle}</h2>
+                                  <div className="ticket-logo">
+                                    <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
+                                  </div>
                                   <p className="ticket-price">${(ticket.packagePrice / 100).toFixed(2)}</p>
                                   <p className="ticket-pkg">{ticket.packageName}</p>
-                                  <div className="ticket-detail-sm" style={{ marginTop: '8px' }}>
+                                  <div className="ticket-ref-block">
                                     <span className="ticket-label-sm">Ref</span>
                                     <span className="ticket-ref-value">{ticket.referenceNumber}</span>
                                   </div>
@@ -796,7 +801,7 @@ export default function AdminDashboard() {
                                   </div>
                                 </div>
                                 <div className="ticket-section ticket-sec-right">
-                                  <h2 className="ticket-title">Mega Bucks Bingo</h2>
+                                  <h2 className="ticket-title">{displayTitle}</h2>
                                   <div className="ticket-detail">
                                     <span className="ticket-label">Table</span>
                                     <span className="ticket-value">{ticket.tableNumber}</span>
@@ -830,7 +835,8 @@ export default function AdminDashboard() {
                                 </div>
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ))}
                     </div>
@@ -956,13 +962,16 @@ export default function AdminDashboard() {
                 display: block; font-size: 13px; font-weight: 600;
                 color: #333; line-height: 1.3;
               }
+              .bulk-ticket-page .ticket-ref-block {
+                margin-top: 8px; text-align: center;
+              }
               .bulk-ticket-page .ticket-ref-value {
-                display: block; font-size: 11px; font-weight: 700;
+                display: block; font-size: 14px; font-weight: 700;
                 color: #1a3a5c; font-family: monospace; letter-spacing: 0.5px;
               }
               .bulk-ticket-page .ticket-name-prominent {
-                font-size: 18px; font-weight: 700;
-                color: #1a3a5c; margin: 4px 0 8px 0;
+                font-size: 22px; font-weight: 700;
+                color: #1a3a5c; margin: 0 0 4px 0;
                 line-height: 1.2; word-break: break-word; max-width: 100%;
               }
               .bulk-ticket-page .ticket-name-right {

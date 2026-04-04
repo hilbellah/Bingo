@@ -671,7 +671,7 @@ io.on('connection', (socket) => {
 // --- Ticket data for printing (public, by reference number) ---
 app.get('/api/bookings/:ref/tickets', (req, res) => {
   const { ref } = req.params;
-  const booking = get('SELECT b.*, s.date as session_date, s.time as session_time FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE b.reference_number = ?', [ref]);
+  const booking = get('SELECT b.*, s.date as session_date, s.time as session_time, s.is_special_event, s.event_title FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE b.reference_number = ?', [ref]);
   if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
   const items = all(`
@@ -689,6 +689,8 @@ app.get('/api/bookings/:ref/tickets', (req, res) => {
     referenceNumber: booking.reference_number,
     sessionDate: booking.session_date,
     sessionTime: booking.session_time,
+    isSpecialEvent: !!(booking.is_special_event),
+    eventTitle: booking.event_title || null,
     totalAmount: booking.total_amount,
     totalFormatted: '$' + formatPrice(booking.total_amount),
     paymentStatus: booking.payment_status,
