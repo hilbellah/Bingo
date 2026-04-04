@@ -25,8 +25,8 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
   return (
     <div className="ticket-card">
       <div className="ticket-inner">
-        {/* Section 1: Left stub (kept by venue) */}
-        <div className="ticket-section ticket-sec-left">
+        {/* Left half: Client/Venue copy — name prominent */}
+        <div className="ticket-half ticket-half-left">
           <div className="ticket-name-prominent">
             {ticket.firstName} {ticket.lastName}
           </div>
@@ -34,48 +34,53 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
           <div className="ticket-logo">
             <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
           </div>
+          <div className="ticket-half-row">
+            <div className="ticket-detail-compact">
+              <span className="ticket-label-sm">Table</span>
+              <span className="ticket-value-md">{ticket.tableNumber}</span>
+            </div>
+            <div className="ticket-detail-compact">
+              <span className="ticket-label-sm">Seat</span>
+              <span className="ticket-value-md">{ticket.chairNumber}</span>
+            </div>
+          </div>
           <p className="ticket-price">{formatPrice(ticket.packagePrice)}</p>
           <p className="ticket-pkg">{ticket.packageName}</p>
+          <div className="ticket-half-row ticket-meta">
+            <span className="ticket-meta-text">{formatDate(sessionDate)}</span>
+            <span className="ticket-meta-text">{formatTime(sessionTime)}</span>
+          </div>
           <div className="ticket-ref-block">
-            <span className="ticket-label-sm">Ref</span>
             <span className="ticket-ref-value">{referenceNumber}</span>
           </div>
         </div>
 
-        {/* Section 2: Perforation center (narrow tear strip) */}
-        <div className="ticket-section ticket-sec-center">
-          <div className="ticket-detail">
-            <span className="ticket-label">Table</span>
-            <span className="ticket-value">{ticket.tableNumber}</span>
-          </div>
-          <div className="ticket-detail">
-            <span className="ticket-label">Seat</span>
-            <span className="ticket-value">{ticket.chairNumber}</span>
-          </div>
-        </div>
-
-        {/* Section 3: Attendee stub (right - kept by attendee) */}
-        <div className="ticket-section ticket-sec-right">
+        {/* Right half: Customer/Attendee copy — table/seat prominent */}
+        <div className="ticket-half ticket-half-right">
           <h2 className="ticket-title">{displayTitle}</h2>
-          <div className="ticket-detail">
-            <span className="ticket-label">Table</span>
-            <span className="ticket-value">{ticket.tableNumber}</span>
+          <div className="ticket-logo">
+            <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
           </div>
-          <div className="ticket-detail">
-            <span className="ticket-label">Seat</span>
-            <span className="ticket-value">{ticket.chairNumber}</span>
+          <div className="ticket-half-row">
+            <div className="ticket-detail">
+              <span className="ticket-label">Table</span>
+              <span className="ticket-value">{ticket.tableNumber}</span>
+            </div>
+            <div className="ticket-detail">
+              <span className="ticket-label">Seat</span>
+              <span className="ticket-value">{ticket.chairNumber}</span>
+            </div>
           </div>
-          <div className="ticket-detail">
-            <span className="ticket-label">Name</span>
-            <span className="ticket-name-right">{ticket.firstName} {ticket.lastName}</span>
+          <div className="ticket-name-secondary">
+            {ticket.firstName} {ticket.lastName}
           </div>
-          <div className="ticket-detail-sm">
-            <span className="ticket-label-sm">Date</span>
-            <span className="ticket-value-sm">{formatDate(sessionDate)}</span>
+          <p className="ticket-price-sm">{formatPrice(ticket.packagePrice)} — {ticket.packageName}</p>
+          <div className="ticket-half-row ticket-meta">
+            <span className="ticket-meta-text">{formatDate(sessionDate)}</span>
+            <span className="ticket-meta-text">{formatTime(sessionTime)}</span>
           </div>
-          <div className="ticket-detail-sm">
-            <span className="ticket-label-sm">Time</span>
-            <span className="ticket-value-sm">{formatTime(sessionTime)}</span>
+          <div className="ticket-ref-block">
+            <span className="ticket-ref-value">{referenceNumber}</span>
           </div>
         </div>
       </div>
@@ -278,51 +283,46 @@ export default function PrintableTickets() {
           gap: 0;
         }
 
-        .ticket-section {
+        /* 50/50 ticket halves */
+        .ticket-half {
+          flex: 1;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           text-align: center;
           box-sizing: border-box;
+          padding: 0 0.2in;
+          gap: 2px;
         }
 
-        /* Three sections inside each ticket */
-        .ticket-sec-left {
-          flex: 1.3;
+        .ticket-half-left {
           border-right: 2px dashed #c5a55a;
-          padding-right: 0.2in;
         }
 
-        .ticket-sec-center {
-          flex: 0.4;
-          border-right: 2px dashed #c5a55a;
-          padding: 0 0.15in;
-          gap: 6px;
-        }
-
-        .ticket-sec-right {
-          flex: 1.3;
-          padding-left: 0.2in;
-          gap: 6px;
+        .ticket-half-row {
+          display: flex;
+          gap: 16px;
+          justify-content: center;
+          align-items: center;
         }
 
         .ticket-title {
           font-family: 'Georgia', serif;
-          font-size: 20px;
+          font-size: 16px;
           font-weight: bold;
           color: #1a3a5c;
-          margin: 0 0 10px 0;
+          margin: 0 0 4px 0;
           line-height: 1.2;
         }
 
         .ticket-logo {
-          width: 80px;
-          height: 60px;
+          width: 50px;
+          height: 35px;
           display: flex;
           align-items: center;
           justify-content: center;
-          margin-bottom: 8px;
+          margin-bottom: 4px;
         }
 
         .ticket-logo-img {
@@ -332,23 +332,72 @@ export default function PrintableTickets() {
           opacity: 0.7;
         }
 
-        .ticket-price {
-          font-family: 'Georgia', serif;
-          font-size: 26px;
-          font-weight: bold;
-          color: #c5a55a;
-          margin: 0;
+        /* Left half: name big */
+        .ticket-name-prominent {
+          font-size: 22px;
+          font-weight: 700;
+          color: #1a3a5c;
+          margin: 0 0 2px 0;
+          line-height: 1.2;
+          word-break: break-word;
+          max-width: 100%;
         }
 
-        .ticket-pkg {
-          font-size: 12px;
-          color: #888;
+        /* Right half: name smaller */
+        .ticket-name-secondary {
+          font-size: 16px;
+          font-weight: 700;
+          color: #1a3a5c;
+          line-height: 1.2;
+          word-break: break-word;
+          margin: 2px 0;
+        }
+
+        .ticket-price {
+          font-family: 'Georgia', serif;
+          font-size: 20px;
+          font-weight: bold;
+          color: #c5a55a;
           margin: 2px 0 0 0;
         }
 
+        .ticket-price-sm {
+          font-size: 12px;
+          font-weight: 600;
+          color: #c5a55a;
+          margin: 2px 0;
+        }
+
+        .ticket-pkg {
+          font-size: 11px;
+          color: #888;
+          margin: 0;
+        }
+
+        /* Table/Seat on left (compact) */
+        .ticket-detail-compact {
+          text-align: center;
+        }
+
+        .ticket-detail-compact .ticket-label-sm {
+          display: block;
+          font-size: 9px;
+          color: #aaa;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .ticket-value-md {
+          display: block;
+          font-size: 22px;
+          font-weight: bold;
+          color: #1a3a5c;
+          line-height: 1.1;
+        }
+
+        /* Table/Seat on right (prominent) */
         .ticket-detail {
           text-align: center;
-          margin-bottom: 6px;
         }
 
         .ticket-label {
@@ -367,10 +416,6 @@ export default function PrintableTickets() {
           line-height: 1.1;
         }
 
-        .ticket-detail-sm {
-          text-align: center;
-        }
-
         .ticket-label-sm {
           display: block;
           font-size: 9px;
@@ -379,41 +424,24 @@ export default function PrintableTickets() {
           letter-spacing: 0.5px;
         }
 
-        .ticket-value-sm {
-          display: block;
-          font-size: 13px;
+        .ticket-meta {
+          margin-top: 2px;
+        }
+
+        .ticket-meta-text {
+          font-size: 11px;
           font-weight: 600;
-          color: #333;
-          line-height: 1.3;
-        }
-
-        .ticket-name-prominent {
-          font-size: 22px;
-          font-weight: 700;
-          color: #1a3a5c;
-          margin: 0 0 4px 0;
-          line-height: 1.2;
-          word-break: break-word;
-          max-width: 100%;
-        }
-
-        .ticket-name-right {
-          display: block;
-          font-size: 18px;
-          font-weight: 700;
-          color: #1a3a5c;
-          line-height: 1.2;
-          word-break: break-word;
+          color: #555;
         }
 
         .ticket-ref-block {
-          margin-top: 8px;
+          margin-top: 2px;
           text-align: center;
         }
 
         .ticket-ref-value {
           display: block;
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 700;
           color: #1a3a5c;
           font-family: monospace;

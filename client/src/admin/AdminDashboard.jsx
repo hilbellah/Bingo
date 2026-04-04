@@ -772,10 +772,23 @@ export default function AdminDashboard() {
                         <div className="bulk-ticket-page" key={`${session.sessionId}-${pageIdx}`}>
                           {pageTickets.map((ticket, i) => {
                             const displayTitle = (session.isSpecialEvent && session.eventTitle) ? session.eventTitle : 'Mega Bucks Bingo';
+                            const fmtDate = (() => {
+                              const d = new Date(session.sessionDate + 'T12:00:00');
+                              const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                              const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                              return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+                            })();
+                            const fmtTime = (() => {
+                              const [h, m] = session.sessionTime.split(':').map(Number);
+                              const ampm = h >= 12 ? 'PM' : 'AM';
+                              const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
+                              return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+                            })();
                             return (
                             <div className="ticket-card" key={i}>
                               <div className="ticket-inner">
-                                <div className="ticket-section ticket-sec-left">
+                                {/* Left half: Client copy — name prominent */}
+                                <div className="ticket-half ticket-half-left">
                                   <div className="ticket-name-prominent">
                                     {ticket.firstName} {ticket.lastName}
                                   </div>
@@ -783,54 +796,52 @@ export default function AdminDashboard() {
                                   <div className="ticket-logo">
                                     <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
                                   </div>
+                                  <div className="ticket-half-row">
+                                    <div className="ticket-detail-compact">
+                                      <span className="ticket-label-sm">Table</span>
+                                      <span className="ticket-value-md">{ticket.tableNumber}</span>
+                                    </div>
+                                    <div className="ticket-detail-compact">
+                                      <span className="ticket-label-sm">Seat</span>
+                                      <span className="ticket-value-md">{ticket.chairNumber}</span>
+                                    </div>
+                                  </div>
                                   <p className="ticket-price">${(ticket.packagePrice / 100).toFixed(2)}</p>
                                   <p className="ticket-pkg">{ticket.packageName}</p>
+                                  <div className="ticket-half-row ticket-meta">
+                                    <span className="ticket-meta-text">{fmtDate}</span>
+                                    <span className="ticket-meta-text">{fmtTime}</span>
+                                  </div>
                                   <div className="ticket-ref-block">
-                                    <span className="ticket-label-sm">Ref</span>
                                     <span className="ticket-ref-value">{ticket.referenceNumber}</span>
                                   </div>
                                 </div>
-                                <div className="ticket-section ticket-sec-center">
-                                  <div className="ticket-detail">
-                                    <span className="ticket-label">Table</span>
-                                    <span className="ticket-value">{ticket.tableNumber}</span>
-                                  </div>
-                                  <div className="ticket-detail">
-                                    <span className="ticket-label">Seat</span>
-                                    <span className="ticket-value">{ticket.chairNumber}</span>
-                                  </div>
-                                </div>
-                                <div className="ticket-section ticket-sec-right">
+                                {/* Right half: Customer copy — table/seat prominent */}
+                                <div className="ticket-half ticket-half-right">
                                   <h2 className="ticket-title">{displayTitle}</h2>
-                                  <div className="ticket-detail">
-                                    <span className="ticket-label">Table</span>
-                                    <span className="ticket-value">{ticket.tableNumber}</span>
+                                  <div className="ticket-logo">
+                                    <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
                                   </div>
-                                  <div className="ticket-detail">
-                                    <span className="ticket-label">Seat</span>
-                                    <span className="ticket-value">{ticket.chairNumber}</span>
+                                  <div className="ticket-half-row">
+                                    <div className="ticket-detail">
+                                      <span className="ticket-label">Table</span>
+                                      <span className="ticket-value">{ticket.tableNumber}</span>
+                                    </div>
+                                    <div className="ticket-detail">
+                                      <span className="ticket-label">Seat</span>
+                                      <span className="ticket-value">{ticket.chairNumber}</span>
+                                    </div>
                                   </div>
-                                  <div className="ticket-detail">
-                                    <span className="ticket-label">Name</span>
-                                    <span className="ticket-name-right">{ticket.firstName} {ticket.lastName}</span>
+                                  <div className="ticket-name-secondary">
+                                    {ticket.firstName} {ticket.lastName}
                                   </div>
-                                  <div className="ticket-detail-sm">
-                                    <span className="ticket-label-sm">Date</span>
-                                    <span className="ticket-value-sm">{(() => {
-                                      const d = new Date(session.sessionDate + 'T12:00:00');
-                                      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                                      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                                      return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-                                    })()}</span>
+                                  <p className="ticket-price-sm">${(ticket.packagePrice / 100).toFixed(2)} — {ticket.packageName}</p>
+                                  <div className="ticket-half-row ticket-meta">
+                                    <span className="ticket-meta-text">{fmtDate}</span>
+                                    <span className="ticket-meta-text">{fmtTime}</span>
                                   </div>
-                                  <div className="ticket-detail-sm">
-                                    <span className="ticket-label-sm">Time</span>
-                                    <span className="ticket-value-sm">{(() => {
-                                      const [h, m] = session.sessionTime.split(':').map(Number);
-                                      const ampm = h >= 12 ? 'PM' : 'AM';
-                                      const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
-                                      return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-                                    })()}</span>
+                                  <div className="ticket-ref-block">
+                                    <span className="ticket-ref-value">{ticket.referenceNumber}</span>
                                   </div>
                                 </div>
                               </div>
@@ -891,60 +902,62 @@ export default function AdminDashboard() {
                 gap: 0;
               }
 
-              .bulk-ticket-page .ticket-section {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                text-align: center;
-                box-sizing: border-box;
+              .bulk-ticket-page .ticket-half {
+                flex: 1;
+                display: flex; flex-direction: column;
+                align-items: center; justify-content: center;
+                text-align: center; box-sizing: border-box;
+                padding: 0 0.2in; gap: 2px;
               }
-
-              .bulk-ticket-page .ticket-sec-left {
-                flex: 1.3;
+              .bulk-ticket-page .ticket-half-left {
                 border-right: 2px dashed #c5a55a;
-                padding-right: 0.2in;
               }
-              .bulk-ticket-page .ticket-sec-center {
-                flex: 0.4;
-                border-right: 2px dashed #c5a55a;
-                padding: 0 0.15in;
-                gap: 6px;
+              .bulk-ticket-page .ticket-half-row {
+                display: flex; gap: 16px;
+                justify-content: center; align-items: center;
               }
-              .bulk-ticket-page .ticket-sec-right {
-                flex: 1.3;
-                padding-left: 0.2in;
-                gap: 6px;
-              }
-
               .bulk-ticket-page .ticket-title {
                 font-family: 'Georgia', serif;
-                font-size: 20px;
-                font-weight: bold;
-                color: #1a3a5c;
-                margin: 0 0 10px 0;
-                line-height: 1.2;
+                font-size: 16px; font-weight: bold;
+                color: #1a3a5c; margin: 0 0 4px 0; line-height: 1.2;
               }
               .bulk-ticket-page .ticket-logo {
-                width: 100px; height: 80px;
+                width: 50px; height: 35px;
                 display: flex; align-items: center; justify-content: center;
-                margin-bottom: 8px;
+                margin-bottom: 4px;
               }
               .bulk-ticket-page .ticket-logo-img {
                 max-width: 100%; max-height: 100%;
                 object-fit: contain; opacity: 0.7;
               }
+              .bulk-ticket-page .ticket-name-prominent {
+                font-size: 22px; font-weight: 700;
+                color: #1a3a5c; margin: 0 0 2px 0;
+                line-height: 1.2; word-break: break-word; max-width: 100%;
+              }
+              .bulk-ticket-page .ticket-name-secondary {
+                font-size: 16px; font-weight: 700;
+                color: #1a3a5c; line-height: 1.2;
+                word-break: break-word; margin: 2px 0;
+              }
               .bulk-ticket-page .ticket-price {
                 font-family: 'Georgia', serif;
-                font-size: 26px; font-weight: bold;
-                color: #c5a55a; margin: 0;
+                font-size: 20px; font-weight: bold;
+                color: #c5a55a; margin: 2px 0 0 0;
+              }
+              .bulk-ticket-page .ticket-price-sm {
+                font-size: 12px; font-weight: 600;
+                color: #c5a55a; margin: 2px 0;
               }
               .bulk-ticket-page .ticket-pkg {
-                font-size: 12px; color: #888; margin: 2px 0 0 0;
+                font-size: 11px; color: #888; margin: 0;
               }
-              .bulk-ticket-page .ticket-detail {
-                text-align: center; margin-bottom: 6px;
+              .bulk-ticket-page .ticket-detail-compact { text-align: center; }
+              .bulk-ticket-page .ticket-value-md {
+                display: block; font-size: 22px; font-weight: bold;
+                color: #1a3a5c; line-height: 1.1;
               }
+              .bulk-ticket-page .ticket-detail { text-align: center; }
               .bulk-ticket-page .ticket-label {
                 display: block; font-size: 11px; color: #888;
                 text-transform: uppercase; letter-spacing: 1px;
@@ -953,26 +966,20 @@ export default function AdminDashboard() {
                 display: block; font-size: 36px; font-weight: bold;
                 color: #1a3a5c; line-height: 1.1;
               }
-              .bulk-ticket-page .ticket-detail-sm { text-align: center; }
               .bulk-ticket-page .ticket-label-sm {
                 display: block; font-size: 9px; color: #aaa;
                 text-transform: uppercase; letter-spacing: 0.5px;
               }
-              .bulk-ticket-page .ticket-value-sm {
-                display: block; font-size: 13px; font-weight: 600;
-                color: #333; line-height: 1.3;
+              .bulk-ticket-page .ticket-meta { margin-top: 2px; }
+              .bulk-ticket-page .ticket-meta-text {
+                font-size: 11px; font-weight: 600; color: #555;
               }
               .bulk-ticket-page .ticket-ref-block {
-                margin-top: 8px; text-align: center;
+                margin-top: 2px; text-align: center;
               }
               .bulk-ticket-page .ticket-ref-value {
-                display: block; font-size: 14px; font-weight: 700;
+                display: block; font-size: 13px; font-weight: 700;
                 color: #1a3a5c; font-family: monospace; letter-spacing: 0.5px;
-              }
-              .bulk-ticket-page .ticket-name-prominent {
-                font-size: 22px; font-weight: 700;
-                color: #1a3a5c; margin: 0 0 4px 0;
-                line-height: 1.2; word-break: break-word; max-width: 100%;
               }
               .bulk-ticket-page .ticket-name-right {
                 display: block; font-size: 18px; font-weight: 700;
