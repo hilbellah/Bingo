@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
 
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
@@ -21,22 +20,24 @@ function formatPrice(cents) {
 }
 
 function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber }) {
-  const qrValue = `${window.location.origin}/tickets/${referenceNumber}`;
-
   return (
     <div className="ticket-card">
       <div className="ticket-inner">
-        {/* Section 1: Event info (left square) */}
+        {/* Section 1: Event info (left stub - kept by venue) */}
         <div className="ticket-section ticket-sec-left">
           <h2 className="ticket-title">Mega Bucks Bingo</h2>
-          <div className="ticket-logo">
-            <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
+          <div className="ticket-name-prominent">
+            {ticket.firstName} {ticket.lastName}
           </div>
           <p className="ticket-price">{formatPrice(ticket.packagePrice)}</p>
           <p className="ticket-pkg">{ticket.packageName}</p>
+          <div className="ticket-detail-sm" style={{ marginTop: '8px' }}>
+            <span className="ticket-label-sm">Ref</span>
+            <span className="ticket-ref-value">{referenceNumber}</span>
+          </div>
         </div>
 
-        {/* Section 2: Seat details (center square) */}
+        {/* Section 2: Perforation center (narrow tear strip) */}
         <div className="ticket-section ticket-sec-center">
           <div className="ticket-detail">
             <span className="ticket-label">Table</span>
@@ -46,9 +47,22 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber }) {
             <span className="ticket-label">Seat</span>
             <span className="ticket-value">{ticket.chairNumber}</span>
           </div>
-          <div className="ticket-detail-sm">
-            <span className="ticket-label-sm">Name</span>
-            <span className="ticket-value-sm">{ticket.firstName} {ticket.lastName}</span>
+        </div>
+
+        {/* Section 3: Attendee stub (right - kept by attendee) */}
+        <div className="ticket-section ticket-sec-right">
+          <h2 className="ticket-title">Mega Bucks Bingo</h2>
+          <div className="ticket-detail">
+            <span className="ticket-label">Table</span>
+            <span className="ticket-value">{ticket.tableNumber}</span>
+          </div>
+          <div className="ticket-detail">
+            <span className="ticket-label">Seat</span>
+            <span className="ticket-value">{ticket.chairNumber}</span>
+          </div>
+          <div className="ticket-detail">
+            <span className="ticket-label">Name</span>
+            <span className="ticket-name-right">{ticket.firstName} {ticket.lastName}</span>
           </div>
           <div className="ticket-detail-sm">
             <span className="ticket-label-sm">Date</span>
@@ -57,17 +71,6 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber }) {
           <div className="ticket-detail-sm">
             <span className="ticket-label-sm">Time</span>
             <span className="ticket-value-sm">{formatTime(sessionTime)}</span>
-          </div>
-        </div>
-
-        {/* Section 3: QR code + ref (right square) */}
-        <div className="ticket-section ticket-sec-right">
-          <div className="ticket-qr">
-            <QRCodeSVG value={qrValue} size={100} level="M" />
-          </div>
-          <div className="ticket-ref-block">
-            <span className="ticket-label-sm">Ref</span>
-            <span className="ticket-ref-value">{referenceNumber}</span>
           </div>
         </div>
       </div>
@@ -280,22 +283,22 @@ export default function PrintableTickets() {
 
         /* Three sections inside each ticket */
         .ticket-sec-left {
-          flex: 1;
-          border-right: 1px dashed #c5a55a;
+          flex: 1.3;
+          border-right: 2px dashed #c5a55a;
           padding-right: 0.2in;
         }
 
         .ticket-sec-center {
-          flex: 1;
-          border-right: 1px dashed #c5a55a;
-          padding: 0 0.2in;
+          flex: 0.4;
+          border-right: 2px dashed #c5a55a;
+          padding: 0 0.15in;
           gap: 6px;
         }
 
         .ticket-sec-right {
-          flex: 0.7;
+          flex: 1.3;
           padding-left: 0.2in;
-          gap: 8px;
+          gap: 6px;
         }
 
         .ticket-title {
@@ -308,8 +311,8 @@ export default function PrintableTickets() {
         }
 
         .ticket-logo {
-          width: 100px;
-          height: 80px;
+          width: 80px;
+          height: 60px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -378,19 +381,23 @@ export default function PrintableTickets() {
           line-height: 1.3;
         }
 
-        .ticket-qr {
-          display: flex;
-          align-items: center;
-          justify-content: center;
+        .ticket-name-prominent {
+          font-size: 18px;
+          font-weight: 700;
+          color: #1a3a5c;
+          margin: 4px 0 8px 0;
+          line-height: 1.2;
+          word-break: break-word;
+          max-width: 100%;
         }
 
-        .ticket-qr svg {
-          width: 100px !important;
-          height: 100px !important;
-        }
-
-        .ticket-ref-block {
-          text-align: center;
+        .ticket-name-right {
+          display: block;
+          font-size: 18px;
+          font-weight: 700;
+          color: #1a3a5c;
+          line-height: 1.2;
+          word-break: break-word;
         }
 
         .ticket-ref-value {
