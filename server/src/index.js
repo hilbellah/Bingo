@@ -312,7 +312,7 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
 });
 
 app.get('/api/admin/sessions', adminAuth, (req, res) => {
-  res.json(all('SELECT * FROM sessions ORDER BY date DESC, time ASC'));
+  res.json(all('SELECT * FROM sessions ORDER BY date ASC, time ASC'));
 });
 
 app.post('/api/admin/sessions', adminAuth, (req, res) => {
