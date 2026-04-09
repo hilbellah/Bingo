@@ -195,8 +195,14 @@ export default function BookingPanel({
               {/* Name Forms — shown immediately based on party size */}
               {partySize > 0 && (
                 <div>
-                  <h3 className="font-bold text-brand-blue text-lg mb-3">Player Names</h3>
-                  <p className="text-sm text-gray-500 mb-4">Enter everyone's name, then you'll pick chairs on the floor plan.</p>
+                  <h3 className="font-bold text-brand-blue text-lg mb-3">
+                    {session?.is_special_event ? 'Player Name' : 'Player Names'}
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    {session?.is_special_event
+                      ? 'Enter Name below and pick your chair on the floor plan.'
+                      : "Enter everyone's name, then you'll pick chairs on the floor plan."}
+                  </p>
 
                   <div className="space-y-3">
                     {attendees.map((att, i) => {
