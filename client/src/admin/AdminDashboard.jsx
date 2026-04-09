@@ -278,8 +278,45 @@ export default function AdminDashboard() {
               <div className="flex flex-wrap gap-3 items-end">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Date</label>
-                  <input type="date" value={newSession.date} onChange={e => setNewSession({...newSession, date: e.target.value})}
-                    className="px-3 py-2 border rounded-lg text-sm" />
+                  <div className="flex gap-1 items-center">
+                    <select value={newSession.date ? new Date(newSession.date + 'T12:00:00').getMonth() : ''} onChange={e => {
+                      const m = parseInt(e.target.value);
+                      const prev = newSession.date ? new Date(newSession.date + 'T12:00:00') : new Date();
+                      prev.setMonth(m);
+                      const y = prev.getFullYear();
+                      const d = Math.min(prev.getDate(), new Date(y, m + 1, 0).getDate());
+                      setNewSession({...newSession, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
+                    }} className="px-2 py-2 border rounded-lg text-sm">
+                      <option value="" disabled>Month</option>
+                      {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) => (
+                        <option key={i} value={i}>{m}</option>
+                      ))}
+                    </select>
+                    <select value={newSession.date ? new Date(newSession.date + 'T12:00:00').getDate() : ''} onChange={e => {
+                      const d = parseInt(e.target.value);
+                      const prev = newSession.date ? new Date(newSession.date + 'T12:00:00') : new Date();
+                      const y = prev.getFullYear();
+                      const m = prev.getMonth();
+                      setNewSession({...newSession, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
+                    }} className="px-2 py-2 border rounded-lg text-sm">
+                      <option value="" disabled>Day</option>
+                      {Array.from({length: 31}, (_, i) => (
+                        <option key={i+1} value={i+1}>{i+1}</option>
+                      ))}
+                    </select>
+                    <select value={newSession.date ? new Date(newSession.date + 'T12:00:00').getFullYear() : ''} onChange={e => {
+                      const y = parseInt(e.target.value);
+                      const prev = newSession.date ? new Date(newSession.date + 'T12:00:00') : new Date();
+                      const m = prev.getMonth();
+                      const d = Math.min(prev.getDate(), new Date(y, m + 1, 0).getDate());
+                      setNewSession({...newSession, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
+                    }} className="px-2 py-2 border rounded-lg text-sm">
+                      <option value="" disabled>Year</option>
+                      {[2025, 2026, 2027, 2028].map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Time</label>
@@ -330,7 +367,7 @@ export default function AdminDashboard() {
                           }} className="flex-1 px-2 py-1.5 border rounded text-sm" placeholder="Package name" />
                           <div className="relative w-24">
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">USD</span>
-                            <input type="number" value={pkg.price / 100} onChange={e => {
+                            <input type="number" value={(pkg.price / 100).toFixed(2)} onChange={e => {
                               const pkgs = [...newSession.packages];
                               pkgs[i] = {...pkgs[i], price: Math.round(parseFloat(e.target.value || 0) * 100)};
                               setNewSession({...newSession, packages: pkgs});
@@ -431,8 +468,45 @@ export default function AdminDashboard() {
                     <div className="grid grid-cols-3 gap-3">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Date</label>
-                        <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg text-sm" />
+                        <div className="flex gap-1">
+                          <select value={editForm.date ? new Date(editForm.date + 'T12:00:00').getMonth() : ''} onChange={e => {
+                            const m = parseInt(e.target.value);
+                            const prev = editForm.date ? new Date(editForm.date + 'T12:00:00') : new Date();
+                            prev.setMonth(m);
+                            const y = prev.getFullYear();
+                            const d = Math.min(prev.getDate(), new Date(y, m + 1, 0).getDate());
+                            setEditForm({...editForm, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
+                          }} className="px-1 py-2 border rounded-lg text-sm">
+                            <option value="" disabled>Mon</option>
+                            {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) => (
+                              <option key={i} value={i}>{m}</option>
+                            ))}
+                          </select>
+                          <select value={editForm.date ? new Date(editForm.date + 'T12:00:00').getDate() : ''} onChange={e => {
+                            const d = parseInt(e.target.value);
+                            const prev = editForm.date ? new Date(editForm.date + 'T12:00:00') : new Date();
+                            const y = prev.getFullYear();
+                            const m = prev.getMonth();
+                            setEditForm({...editForm, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
+                          }} className="px-1 py-2 border rounded-lg text-sm">
+                            <option value="" disabled>Day</option>
+                            {Array.from({length: 31}, (_, i) => (
+                              <option key={i+1} value={i+1}>{i+1}</option>
+                            ))}
+                          </select>
+                          <select value={editForm.date ? new Date(editForm.date + 'T12:00:00').getFullYear() : ''} onChange={e => {
+                            const y = parseInt(e.target.value);
+                            const prev = editForm.date ? new Date(editForm.date + 'T12:00:00') : new Date();
+                            const m = prev.getMonth();
+                            const d = Math.min(prev.getDate(), new Date(y, m + 1, 0).getDate());
+                            setEditForm({...editForm, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
+                          }} className="px-1 py-2 border rounded-lg text-sm">
+                            <option value="" disabled>Year</option>
+                            {[2025, 2026, 2027, 2028].map(y => (
+                              <option key={y} value={y}>{y}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Time</label>
