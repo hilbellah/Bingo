@@ -106,6 +106,13 @@ export async function fetchAdminPackages(token) {
   return res.json();
 }
 
+export async function createAdminPackage(token, data) {
+  const res = await fetch(`${API}/admin/packages`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  return res.json();
+}
+
 export async function updateAdminPackage(token, id, data) {
   const res = await fetch(`${API}/admin/packages/${id}`, {
     method: 'PATCH', headers: adminHeaders(token), body: JSON.stringify(data)
@@ -178,5 +185,29 @@ export async function setAdminSessionPackages(token, sessionId, packages) {
   const res = await fetch(`${API}/admin/sessions/${sessionId}/packages`, {
     method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ packages })
   });
+  return res.json();
+}
+
+// Admin Archive & Audit
+export async function fetchDeletedSessions(token) {
+  const res = await fetch(`${API}/admin/sessions/deleted`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
+export async function restoreSession(token, id) {
+  const res = await fetch(`${API}/admin/sessions/${id}/restore`, {
+    method: 'POST', headers: adminHeaders(token)
+  });
+  return res.json();
+}
+
+export async function fetchSessionBookings(token, id) {
+  const res = await fetch(`${API}/admin/sessions/${id}/bookings`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
+export async function fetchAuditLog(token, params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${API}/admin/audit-log${qs ? '?' + qs : ''}`, { headers: adminHeaders(token) });
   return res.json();
 }
