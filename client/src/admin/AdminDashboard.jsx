@@ -328,11 +328,14 @@ export default function AdminDashboard() {
                             pkgs[i] = {...pkgs[i], name: e.target.value};
                             setNewSession({...newSession, packages: pkgs});
                           }} className="flex-1 px-2 py-1.5 border rounded text-sm" placeholder="Package name" />
-                          <input type="number" value={pkg.price / 100} onChange={e => {
-                            const pkgs = [...newSession.packages];
-                            pkgs[i] = {...pkgs[i], price: Math.round(parseFloat(e.target.value || 0) * 100)};
-                            setNewSession({...newSession, packages: pkgs});
-                          }} className="w-20 px-2 py-1.5 border rounded text-sm" placeholder="$" step="0.01" />
+                          <div className="relative w-24">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">USD</span>
+                            <input type="number" value={pkg.price / 100} onChange={e => {
+                              const pkgs = [...newSession.packages];
+                              pkgs[i] = {...pkgs[i], price: Math.round(parseFloat(e.target.value || 0) * 100)};
+                              setNewSession({...newSession, packages: pkgs});
+                            }} className="w-full pl-9 pr-2 py-1.5 border rounded text-sm" placeholder="0.00" step="0.01" />
+                          </div>
                           <select value={pkg.type} onChange={e => {
                             const pkgs = [...newSession.packages];
                             pkgs[i] = {...pkgs[i], type: e.target.value};
