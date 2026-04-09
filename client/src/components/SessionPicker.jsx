@@ -130,7 +130,7 @@ export default function SessionPicker({ sessions, selected, onSelect }) {
                     {d.dayShort}
                   </div>
                   <div className={`text-3xl font-bold mt-1 ${isSelected ? 'text-white' : isSpecial ? 'text-amber-700' : 'text-brand-blue'}`}>
-                    {d.monthShort} {d.date}
+                    {d.monthShort} {d.date}, {d.year}
                   </div>
                   {isSpecial && session.event_title && (
                     <div className={`text-xs font-bold mt-1 truncate ${isSelected ? 'text-amber-100' : 'text-amber-600'}`}>

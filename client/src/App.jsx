@@ -25,7 +25,7 @@ function formatDateShort(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
 function CountdownTimer({ expiry }) {
@@ -79,7 +79,13 @@ export default function App() {
   useEffect(() => {
     fetchSessions().then(data => {
       setSessions(data);
-      if (data.length > 0) setSelectedSession(data[0]);
+      if (data.length > 0) {
+        setSelectedSession(data[0]);
+        if (data[0].is_special_event) {
+          setPartySize(1);
+          setAttendees([{ firstName: '', lastName: '', addons: [] }]);
+        }
+      }
     });
   }, []);
 
@@ -144,9 +150,12 @@ export default function App() {
       return;
     }
 
-    // Max 6 chairs per booking
-    if (selectedSeats.length >= 6) {
-      setError('Maximum 6 chairs per booking. Tap a selected chair to deselect.');
+    // Max chairs per booking (1 for special events, 6 otherwise)
+    const maxChairs = selectedSession?.is_special_event ? 1 : 6;
+    if (selectedSeats.length >= maxChairs) {
+      setError(selectedSession?.is_special_event
+        ? 'Special events are limited to 1 player. Tap a selected chair to deselect.'
+        : 'Maximum 6 chairs per booking. Tap a selected chair to deselect.');
       setTimeout(() => setError(''), 4000);
       return;
     }
@@ -183,6 +192,7 @@ export default function App() {
   };
 
   const handlePartySize = (size) => {
+    if (selectedSession?.is_special_event && size > 1) return;
     setPartySize(size);
     setAttendees(Array.from({ length: size }, (_, i) => ({
       firstName: attendees[i]?.firstName || '',
@@ -365,6 +375,13 @@ export default function App() {
                           setHoldExpiry(null);
                           setOpenTable(null);
                           setBookingStep(0);
+                          if (session.is_special_event) {
+                            setPartySize(1);
+                            setAttendees([{ firstName: '', lastName: '', addons: [] }]);
+                          } else {
+                            setPartySize(0);
+                            setAttendees([]);
+                          }
                         }}
                         className={`w-full px-3 py-1.5 text-sm font-medium transition-all ${
                           isSpecial ? 'rounded-b-lg' : 'rounded-lg'

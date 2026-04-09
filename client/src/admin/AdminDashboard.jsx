@@ -28,6 +28,8 @@ export default function AdminDashboard() {
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '' });
   const [editingSessionPkgs, setEditingSessionPkgs] = useState(null); // session id being edited
   const [sessionPkgList, setSessionPkgList] = useState([]);
+  const [editingSession, setEditingSession] = useState(null); // session object being edited
+  const [editForm, setEditForm] = useState({ date: '', time: '', cutoff_time: '', is_special_event: false, event_title: '', event_description: '' });
   const [bulkDateFrom, setBulkDateFrom] = useState('');
   const [bulkDateTo, setBulkDateTo] = useState('');
   const [bulkData, setBulkData] = useState(null);
@@ -122,6 +124,34 @@ export default function AdminDashboard() {
   const handleToggleSession = async (id, currentAvail) => {
     await updateAdminSession(token, id, { is_available: !currentAvail });
     loadSessions();
+  };
+
+  const handleStartEdit = (session) => {
+    setEditingSession(session);
+    setEditForm({
+      date: session.date || '',
+      time: session.time || '',
+      cutoff_time: session.cutoff_time || '12:00',
+      is_special_event: !!session.is_special_event,
+      event_title: session.event_title || '',
+      event_description: session.event_description || '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingSession || !editForm.date) return;
+    const payload = { ...editForm };
+    if (!payload.is_special_event) {
+      payload.event_title = '';
+      payload.event_description = '';
+    }
+    try {
+      await updateAdminSession(token, editingSession.id, payload);
+      setEditingSession(null);
+      loadSessions();
+    } catch (err) {
+      alert('Failed to update session: ' + (err?.message || 'Unknown error'));
+    }
   };
 
   const handleTogglePackage = async (id, currentActive) => {
@@ -367,6 +397,10 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td className="py-2 flex gap-2">
+                          <button onClick={() => handleStartEdit(s)}
+                            className="text-xs text-brand-blue hover:underline font-medium">
+                            Edit
+                          </button>
                           <button onClick={() => handleToggleSession(s.id, s.is_available)}
                             className="text-xs text-brand-blue hover:underline">
                             {s.is_available ? 'Disable' : 'Enable'}
@@ -384,6 +418,69 @@ export default function AdminDashboard() {
                 </table>
               </div>
             </div>
+
+            {/* Edit Session Modal */}
+            {editingSession && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
+                  <h3 className="font-semibold text-brand-blue mb-4">Edit Session</h3>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Date</label>
+                        <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Time</label>
+                        <input type="time" value={editForm.time} onChange={e => setEditForm({...editForm, time: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Cutoff</label>
+                        <input type="time" value={editForm.cutoff_time} onChange={e => setEditForm({...editForm, cutoff_time: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg text-sm" />
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={editForm.is_special_event}
+                          onChange={e => setEditForm({...editForm, is_special_event: e.target.checked})}
+                          className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-500" />
+                        <span className="text-sm font-medium text-gray-700">Special Event</span>
+                      </label>
+
+                      {editForm.is_special_event && (
+                        <div className="mt-3 space-y-3 bg-amber-50 rounded-lg p-4 border border-amber-200">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Event Title</label>
+                            <input value={editForm.event_title} onChange={e => setEditForm({...editForm, event_title: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. Special Bingo Event 1" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Description (optional)</label>
+                            <textarea value={editForm.event_description} onChange={e => setEditForm({...editForm, event_description: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg text-sm" rows={2} placeholder="Event details..." />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button onClick={handleSaveEdit}
+                        className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90">
+                        Save Changes
+                      </button>
+                      <button onClick={() => setEditingSession(null)}
+                        className="text-gray-500 px-4 py-2 rounded-lg text-sm hover:bg-gray-100">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Session Packages Editor Modal */}
             {editingSessionPkgs && (
@@ -776,7 +873,7 @@ export default function AdminDashboard() {
                               const d = new Date(session.sessionDate + 'T12:00:00');
                               const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                               const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                              return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+                              return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
                             })();
                             const fmtTime = (() => {
                               const [h, m] = session.sessionTime.split(':').map(Number);

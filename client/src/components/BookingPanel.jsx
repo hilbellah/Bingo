@@ -8,7 +8,7 @@ function formatDate(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
 function formatTime(timeStr) {
@@ -162,6 +162,11 @@ export default function BookingPanel({
                   )}
                 </div>
 
+                {session?.is_special_event ? (
+                  <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-center">
+                    <p className="text-sm font-semibold text-amber-700">Special Event — 1 Player Only</p>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-6 gap-2">
                   {[1, 2, 3, 4, 5, 6].map(n => (
                     <button
@@ -184,6 +189,7 @@ export default function BookingPanel({
                     </button>
                   ))}
                 </div>
+                )}
               </div>
 
               {/* Name Forms — shown immediately based on party size */}
