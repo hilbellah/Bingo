@@ -462,11 +462,12 @@ export default function AdminDashboard() {
                           }} className="flex-1 px-2 py-1.5 border rounded text-sm" placeholder="Package name" />
                           <div className="relative w-24">
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">USD</span>
-                            <input type="number" value={(pkg.price / 100).toFixed(2)} onChange={e => {
+                            <input type="text" inputMode="decimal" value={(pkg.price / 100).toFixed(2)} onChange={e => {
+                              const val = e.target.value.replace(/[^0-9.]/g, '');
                               const pkgs = [...newSession.packages];
-                              pkgs[i] = {...pkgs[i], price: Math.round(parseFloat(e.target.value || 0) * 100)};
+                              pkgs[i] = {...pkgs[i], price: Math.round(parseFloat(val || 0) * 100)};
                               setNewSession({...newSession, packages: pkgs});
-                            }} className="w-full pl-9 pr-2 py-1.5 border rounded text-sm" placeholder="0.00" step="0.01" />
+                            }} className="w-full pl-9 pr-2 py-1.5 border rounded text-sm" placeholder="0.00" />
                           </div>
                           <select value={pkg.type} onChange={e => {
                             const pkgs = [...newSession.packages];
@@ -670,11 +671,12 @@ export default function AdminDashboard() {
                         list[i] = {...list[i], name: e.target.value};
                         setSessionPkgList(list);
                       }} className="flex-1 px-2 py-1.5 border rounded text-sm" placeholder="Package name" />
-                      <input type="number" value={pkg.price / 100} onChange={e => {
+                      <input type="text" inputMode="decimal" value={pkg.price / 100} onChange={e => {
+                        const val = e.target.value.replace(/[^0-9.]/g, '');
                         const list = [...sessionPkgList];
-                        list[i] = {...list[i], price: Math.round(parseFloat(e.target.value || 0) * 100)};
+                        list[i] = {...list[i], price: Math.round(parseFloat(val || 0) * 100)};
                         setSessionPkgList(list);
-                      }} className="w-20 px-2 py-1.5 border rounded text-sm" placeholder="$" step="0.01" />
+                      }} className="w-20 px-2 py-1.5 border rounded text-sm" placeholder="$" />
                       <select value={pkg.type} onChange={e => {
                         const list = [...sessionPkgList];
                         list[i] = {...list[i], type: e.target.value};
@@ -726,7 +728,7 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 mb-1">Price ($)</label>
-                    <input type="number" step="0.01" min="0" value={newPackage.price} onChange={e => setNewPackage({...newPackage, price: e.target.value})}
+                    <input type="text" inputMode="decimal" value={newPackage.price} onChange={e => setNewPackage({...newPackage, price: e.target.value.replace(/[^0-9.]/g, '')})}
                       className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="5.00" />
                   </div>
                 </div>
