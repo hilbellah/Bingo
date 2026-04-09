@@ -23,6 +23,7 @@ async function seed() {
   try { exec('DROP TABLE IF EXISTS packages'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS tables_layout'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS announcements'); } catch(e) {}
+  try { exec('DROP TABLE IF EXISTS audit_log'); } catch(e) {}
 
   exec(`
     CREATE TABLE sessions (
