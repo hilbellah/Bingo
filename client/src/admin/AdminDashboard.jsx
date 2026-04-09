@@ -40,6 +40,7 @@ export default function AdminDashboard() {
   const [deletedSessions, setDeletedSessions] = useState([]);
   const [archiveBookings, setArchiveBookings] = useState(null); // { session, bookings }
   const [auditLogs, setAuditLogs] = useState([]);
+  const [bookingSearch, setBookingSearch] = useState('');
 
   useEffect(() => {
     if (!token) { navigate('/admin'); return; }
@@ -904,7 +905,7 @@ export default function AdminDashboard() {
                   <label className="block text-xs text-gray-400 mb-1">Filter by Session</label>
                   <select
                     value={reportSession}
-                    onChange={e => { setReportSession(e.target.value); loadBookings(e.target.value); }}
+                    onChange={e => { setReportSession(e.target.value); setBookingSearch(''); loadBookings(e.target.value); }}
                     className="w-full px-3 py-2 border rounded-lg text-sm"
                   >
                     <option value="">All Sessions</option>
@@ -912,6 +913,16 @@ export default function AdminDashboard() {
                       <option key={s.id} value={s.id}>{s.date} — {s.time}</option>
                     ))}
                   </select>
+                </div>
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-xs text-gray-400 mb-1">Search by Name</label>
+                  <input
+                    type="text"
+                    value={bookingSearch}
+                    onChange={e => setBookingSearch(e.target.value)}
+                    placeholder="Type a name to filter..."
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
                 </div>
                 <button onClick={handleExport}
                   className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-blue/90">
@@ -925,11 +936,18 @@ export default function AdminDashboard() {
                 Bookings {bookings.length > 0 && `(${bookings.length})`}
               </h3>
 
-              {bookings.length === 0 ? (
-                <p className="text-gray-400 text-center py-8">No bookings found</p>
+              {(() => {
+                const q = bookingSearch.trim().toLowerCase();
+                const filtered = q
+                  ? bookings.filter(b => b.items.some(item =>
+                      `${item.firstName} ${item.lastName}`.toLowerCase().includes(q)
+                    ))
+                  : bookings;
+                return filtered.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">{q ? 'No bookings match your search' : 'No bookings found'}</p>
               ) : (
                 <div className="space-y-4">
-                  {bookings.map(b => (
+                  {filtered.map(b => (
                     <div key={b.id} className="border border-gray-200 rounded-lg p-4">
                       <div className="flex justify-between items-start mb-3">
                         <div>
@@ -1001,7 +1019,8 @@ export default function AdminDashboard() {
                     </div>
                   ))}
                 </div>
-              )}
+              );
+              })()}
             </div>
           </div>
         )}
