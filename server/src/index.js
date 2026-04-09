@@ -73,6 +73,13 @@ function releaseExpiredHolds() {
   }
 }
 
+// ============ AUDIT HELPER ============
+
+function logAudit(action, entityType, entityId, details) {
+  run('INSERT INTO audit_log (id, action, entity_type, entity_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [uuid(), action, entityType, entityId, typeof details === 'string' ? details : JSON.stringify(details), new Date().toISOString()]);
+}
+
 // ============ API ROUTES ============
 
 // --- Sessions ---
@@ -86,7 +93,7 @@ app.get('/api/sessions', (req, res) => {
       COALESCE(SUM(CASE WHEN st.is_disabled = 0 THEN 1 ELSE 0 END), 0) as total_seats
     FROM sessions s
     LEFT JOIN seats st ON st.session_id = s.id
-    WHERE s.date >= ? AND s.is_available = 1
+    WHERE s.date >= ? AND s.is_available = 1 AND s.deleted_at IS NULL
     GROUP BY s.id
     ORDER BY s.date ASC, s.time ASC`, [today]
   );
@@ -117,7 +124,7 @@ app.get('/api/announcements', (req, res) => {
 });
 
 app.get('/api/sessions/:id', (req, res) => {
-  const session = get('SELECT * FROM sessions WHERE id = ?', [req.params.id]);
+  const session = get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
   if (!session) return res.status(404).json({ error: 'Session not found' });
   res.json(session);
 });
@@ -250,6 +257,13 @@ app.post('/api/bookings', (req, res) => {
       io.to(`session:${sessionId}`).emit('seat:sold', { seatId: att.seatId, sessionId });
     }
 
+    logAudit('booking_created', 'booking', bookingId, {
+      referenceNumber: refNumber,
+      sessionId,
+      totalAmount,
+      attendees: attendees.map(a => ({ firstName: a.firstName, lastName: a.lastName, seatId: a.seatId }))
+    });
+
     res.json({
       bookingId,
       referenceNumber: refNumber,
@@ -300,7 +314,7 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
       (SELECT COUNT(*) FROM seats WHERE session_id = s.id AND status = 'sold') as sold,
       (SELECT COUNT(*) FROM seats WHERE session_id = s.id AND status = 'held') as held,
       (SELECT COUNT(*) FROM seats WHERE session_id = s.id AND is_disabled = 0) as total
-    FROM sessions s WHERE s.date >= ? ORDER BY s.date ASC LIMIT 7`, [today]
+    FROM sessions s WHERE s.date >= ? AND s.deleted_at IS NULL ORDER BY s.date ASC LIMIT 7`, [today]
   );
 
   res.json({
@@ -312,7 +326,9 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
 });
 
 app.get('/api/admin/sessions', adminAuth, (req, res) => {
-  res.json(all('SELECT * FROM sessions ORDER BY date ASC, time ASC'));
+  const includeDeleted = req.query.includeDeleted === 'true';
+  const where = includeDeleted ? '' : 'WHERE deleted_at IS NULL';
+  res.json(all(`SELECT * FROM sessions ${where} ORDER BY date ASC, time ASC`));
 });
 
 app.post('/api/admin/sessions', adminAuth, (req, res) => {
@@ -340,6 +356,8 @@ app.post('/api/admin/sessions', adminAuth, (req, res) => {
     }
   }
 
+  logAudit('session_created', 'session', id, { date, time, cutoff_time, is_special_event, event_title });
+
   // Flush to disk immediately — critical write should not rely on debounced save
   saveDb();
 
@@ -364,8 +382,36 @@ app.patch('/api/admin/sessions/:id', adminAuth, (req, res) => {
 });
 
 app.delete('/api/admin/sessions/:id', adminAuth, (req, res) => {
-  run('DELETE FROM seats WHERE session_id = ?', [req.params.id]);
-  run('DELETE FROM sessions WHERE id = ?', [req.params.id]);
+  const session = get('SELECT * FROM sessions WHERE id = ?', [req.params.id]);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  // Capture booking/attendee data before soft-deleting
+  const bookings = all(`
+    SELECT b.id, b.reference_number, b.total_amount, b.payment_status,
+           bi.first_name, bi.last_name, seats.table_number, seats.chair_number
+    FROM bookings b
+    JOIN booking_items bi ON bi.booking_id = b.id
+    JOIN seats ON seats.id = bi.seat_id
+    WHERE b.session_id = ?
+  `, [req.params.id]);
+
+  const now = new Date().toISOString();
+  run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [now, req.params.id]);
+
+  logAudit('session_deleted', 'session', req.params.id, {
+    date: session.date,
+    time: session.time,
+    bookings: bookings.map(b => ({
+      ref: b.reference_number,
+      amount: b.total_amount,
+      status: b.payment_status,
+      attendee: `${b.first_name} ${b.last_name}`,
+      table: b.table_number,
+      chair: b.chair_number
+    }))
+  });
+
+  saveDb();
   res.json({ success: true });
 });
 
@@ -501,14 +547,103 @@ app.post('/api/admin/bookings/:id/cancel', adminAuth, (req, res) => {
   const booking = get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
   if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
-  const items = all('SELECT * FROM booking_items WHERE booking_id = ?', [req.params.id]);
+  const items = all('SELECT bi.*, seats.table_number, seats.chair_number FROM booking_items bi JOIN seats ON seats.id = bi.seat_id WHERE bi.booking_id = ?', [req.params.id]);
   for (const item of items) {
     run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [item.seat_id]);
   }
   run(`UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?`, [req.params.id]);
 
+  logAudit('booking_cancelled', 'booking', req.params.id, {
+    referenceNumber: booking.reference_number,
+    sessionId: booking.session_id,
+    totalAmount: booking.total_amount,
+    attendees: items.map(i => ({
+      name: `${i.first_name} ${i.last_name}`,
+      table: i.table_number,
+      chair: i.chair_number
+    }))
+  });
+
   io.to(`session:${booking.session_id}`).emit('seats:refresh');
   res.json({ success: true });
+});
+
+// ============ ADMIN: DELETED SESSIONS & AUDIT LOG ============
+
+app.get('/api/admin/sessions/deleted', adminAuth, (req, res) => {
+  const sessions = all(`
+    SELECT s.*,
+      (SELECT COUNT(*) FROM bookings WHERE session_id = s.id AND payment_status = 'paid') as paid_bookings,
+      (SELECT COALESCE(SUM(total_amount), 0) FROM bookings WHERE session_id = s.id AND payment_status = 'paid') as total_revenue
+    FROM sessions s
+    WHERE s.deleted_at IS NOT NULL
+    ORDER BY s.deleted_at DESC
+  `);
+  res.json(sessions);
+});
+
+app.get('/api/admin/sessions/:id/bookings', adminAuth, (req, res) => {
+  const rows = all(`
+    SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
+           bi.first_name, bi.last_name, bi.price as item_price,
+           seats.table_number, seats.chair_number,
+           p.name as package_name
+    FROM bookings b
+    JOIN booking_items bi ON bi.booking_id = b.id
+    JOIN seats ON seats.id = bi.seat_id
+    JOIN packages p ON p.id = bi.package_id
+    WHERE b.session_id = ?
+    ORDER BY b.created_at DESC, b.id, bi.id
+  `, [req.params.id]);
+
+  const bookings = {};
+  for (const row of rows) {
+    if (!bookings[row.id]) {
+      bookings[row.id] = {
+        id: row.id,
+        referenceNumber: row.reference_number,
+        totalAmount: row.total_amount,
+        totalFormatted: '$' + formatPrice(row.total_amount),
+        paymentStatus: row.payment_status,
+        createdAt: row.created_at,
+        attendees: []
+      };
+    }
+    bookings[row.id].attendees.push({
+      firstName: row.first_name,
+      lastName: row.last_name,
+      tableNumber: row.table_number,
+      chairNumber: row.chair_number,
+      packageName: row.package_name,
+      itemPrice: row.item_price,
+      itemPriceFormatted: '$' + formatPrice(row.item_price)
+    });
+  }
+  res.json(Object.values(bookings));
+});
+
+app.post('/api/admin/sessions/:id/restore', adminAuth, (req, res) => {
+  const session = get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NOT NULL', [req.params.id]);
+  if (!session) return res.status(404).json({ error: 'Deleted session not found' });
+
+  run('UPDATE sessions SET deleted_at = NULL WHERE id = ?', [req.params.id]);
+  logAudit('session_restored', 'session', req.params.id, { date: session.date, time: session.time });
+  saveDb();
+  res.json({ success: true });
+});
+
+app.get('/api/admin/audit-log', adminAuth, (req, res) => {
+  const { action, entity_type, entity_id, limit: lim } = req.query;
+  let where = [];
+  const params = [];
+  if (action) { where.push('action = ?'); params.push(action); }
+  if (entity_type) { where.push('entity_type = ?'); params.push(entity_type); }
+  if (entity_id) { where.push('entity_id = ?'); params.push(entity_id); }
+  const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+  const limitVal = Math.min(parseInt(lim) || 100, 500);
+  const logs = all(`SELECT * FROM audit_log ${whereClause} ORDER BY created_at DESC LIMIT ?`, [...params, limitVal]);
+  // Parse details JSON for convenience
+  res.json(logs.map(l => ({ ...l, details: l.details ? JSON.parse(l.details) : null })));
 });
 
 // ============ ADMIN: ANNOUNCEMENTS ============
@@ -713,13 +848,24 @@ app.get('*', (req, res) => {
 
 // ============ AUTO-SESSION GENERATION ============
 
-const SESSION_HORIZON_DAYS = 90; // Keep sessions available 3 months ahead
+const MAX_FUTURE_SESSIONS = 10; // Keep up to 10 upcoming sessions
 
 function ensureFutureSessions() {
   const today = new Date();
-  for (let i = 0; i < SESSION_HORIZON_DAYS; i++) {
+  const todayStr = today.toISOString().split('T')[0];
+
+  // Count existing future sessions
+  const { count: existingCount } = get('SELECT COUNT(*) as count FROM sessions WHERE date >= ? AND deleted_at IS NULL', [todayStr]);
+  if (existingCount >= MAX_FUTURE_SESSIONS) return;
+
+  const needed = MAX_FUTURE_SESSIONS - existingCount;
+  let created = 0;
+  let dayOffset = 0;
+
+  while (created < needed) {
     const d = new Date(today);
-    d.setDate(today.getDate() + i);
+    d.setDate(today.getDate() + dayOffset);
+    dayOffset++;
     if (d.getDay() === 3) continue; // Skip Wednesday (no bingo)
     const dateStr = d.toISOString().split('T')[0];
 
@@ -739,6 +885,7 @@ function ensureFutureSessions() {
       }
     }
     logger.info('Auto-created session', { date: dateStr, seats: 444 });
+    created++;
   }
 }
 
@@ -747,7 +894,7 @@ async function start() {
   await getDb();
   logger.info('Database connected');
 
-  // Ensure sessions exist for the next 90 days
+  // Ensure up to 10 upcoming sessions exist
   ensureFutureSessions();
   // Re-check daily (every 24 hours)
   setInterval(ensureFutureSessions, 24 * 60 * 60 * 1000);

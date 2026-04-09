@@ -118,6 +118,27 @@ async function migrate() {
     )
   `);
 
+  // --- Soft-delete & Audit Log migration ---
+  console.log('Running audit log migration...');
+
+  // Add deleted_at column to sessions for soft-delete
+  try { exec('ALTER TABLE sessions ADD COLUMN deleted_at TEXT'); } catch(e) {}
+
+  // Audit log table
+  exec(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { exec('CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_audit_log_action ON audit_log(action)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_audit_log_created ON audit_log(created_at)'); } catch(e) {}
+
   console.log('Migrations complete.');
 }
 

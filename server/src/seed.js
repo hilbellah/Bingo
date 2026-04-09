@@ -31,6 +31,7 @@ async function seed() {
       is_special_event INTEGER DEFAULT 0,
       event_title TEXT,
       event_description TEXT,
+      deleted_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE seats (
@@ -95,12 +96,24 @@ async function seed() {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE audit_log (
+      id TEXT PRIMARY KEY,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX idx_seats_session ON seats(session_id);
     CREATE INDEX idx_seats_table ON seats(session_id, table_number);
     CREATE INDEX idx_seats_status ON seats(session_id, status);
     CREATE INDEX idx_bookings_session ON bookings(session_id);
     CREATE INDEX idx_booking_items_booking ON booking_items(booking_id);
     CREATE INDEX idx_session_packages_session ON session_packages(session_id);
+    CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);
+    CREATE INDEX idx_audit_log_action ON audit_log(action);
+    CREATE INDEX idx_audit_log_created ON audit_log(created_at);
   `);
 
   console.log('Seeding database...');
@@ -127,12 +140,14 @@ async function seed() {
     db.run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)', p);
   }
 
-  // --- Sessions (next 90 days, skip Wednesdays) ---
+  // --- Sessions (next 10 upcoming sessions, skip Wednesdays) ---
   const sessionIds = [];
   const today = new Date();
-  for (let i = 0; i < 90; i++) {
+  let dayOffset = 0;
+  while (sessionIds.length < 10) {
     const d = new Date(today);
-    d.setDate(today.getDate() + i);
+    d.setDate(today.getDate() + dayOffset);
+    dayOffset++;
     if (d.getDay() === 3) continue; // Skip Wednesday
     const dateStr = d.toISOString().split('T')[0];
     const sid = uuid();
