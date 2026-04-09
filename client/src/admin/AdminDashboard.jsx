@@ -62,6 +62,47 @@ export default function AdminDashboard() {
     });
   };
 
+  const handlePrintPurchasers = () => {
+    const el = document.getElementById('sold-modal-content');
+    if (!el) return;
+    const w = window.open('', '_blank', 'width=800,height=600');
+    w.document.write(`<html><head><title>Ticket Purchasers - ${soldModal.session.date}</title>
+      <style>body{font-family:Arial,sans-serif;padding:20px;color:#333}
+      h2{margin:0 0 4px}p.sub{color:#666;font-size:14px;margin:0 0 20px}
+      .booking{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:16px}
+      .ref{font-family:monospace;font-weight:600;color:#1a3a5c}.total{float:right}
+      table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+      th{text-align:left;color:#999;border-bottom:1px solid #ddd;padding:4px 0}
+      td{padding:4px 0;border-bottom:1px solid #f0f0f0}
+      @media print{body{padding:0}.booking{break-inside:avoid}}</style></head><body>`);
+    w.document.write(`<h2>Ticket Purchasers</h2><p class="sub">${soldModal.session.date} at ${soldModal.session.time} — ${soldModal.session.sold} sold</p>`);
+    w.document.write(el.innerHTML);
+    w.document.write('</body></html>');
+    w.document.close();
+    w.print();
+  };
+
+  const handleSavePurchasersCsv = () => {
+    if (!soldModal) return;
+    const rows = [['Reference', 'First Name', 'Last Name', 'Table', 'Chair', 'Package', 'Add-ons', 'Booking Total']];
+    for (const b of soldModal.bookings) {
+      for (const item of b.items) {
+        const addons = item.addons.length > 0
+          ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join('; ')
+          : '';
+        rows.push([b.referenceNumber, item.firstName, item.lastName, item.tableNumber, item.chairNumber, item.packageName, addons, b.totalFormatted]);
+      }
+    }
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `purchasers-${soldModal.session.date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleLogout = () => {
     sessionStorage.removeItem('admin_token');
     navigate('/admin');
@@ -1187,9 +1228,13 @@ export default function AdminDashboard() {
                 <h3 className="font-bold text-brand-blue text-lg">Ticket Purchasers</h3>
                 <p className="text-sm text-gray-500">{soldModal.session.date} at {soldModal.session.time} &mdash; {soldModal.session.sold} sold</p>
               </div>
-              <button onClick={() => setSoldModal(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+              <div className="flex items-center gap-2">
+                <button onClick={handlePrintPurchasers} className="px-3 py-1.5 text-sm bg-brand-blue text-white rounded-lg hover:bg-blue-800" title="Print">Print</button>
+                <button onClick={handleSavePurchasersCsv} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700" title="Save CSV">Save CSV</button>
+                <button onClick={() => setSoldModal(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none ml-2">&times;</button>
+              </div>
             </div>
-            <div className="overflow-y-auto p-5" style={{ maxHeight: 'calc(80vh - 80px)' }}>
+            <div id="sold-modal-content" className="overflow-y-auto p-5" style={{ maxHeight: 'calc(80vh - 80px)' }}>
               {soldModal.bookings.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No bookings found.</p>
               ) : (
