@@ -94,6 +94,13 @@ export async function updateAdminSession(token, id, data) {
   return res.json();
 }
 
+export async function deleteAdminSession(token, id) {
+  const res = await fetch(`${API}/admin/sessions/${id}`, {
+    method: 'DELETE', headers: adminHeaders(token)
+  });
+  return res.json();
+}
+
 export async function fetchAdminPackages(token) {
   const res = await fetch(`${API}/admin/packages`, { headers: adminHeaders(token) });
   return res.json();

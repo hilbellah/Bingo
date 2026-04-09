@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
-  updateAdminSession, fetchAdminPackages, updateAdminPackage,
+  updateAdminSession, deleteAdminSession, fetchAdminPackages, updateAdminPackage,
   fetchAdminBookings, cancelAdminBooking, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
@@ -172,6 +172,12 @@ export default function AdminDashboard() {
 
   const handleToggleSession = async (id, currentAvail) => {
     await updateAdminSession(token, id, { is_available: !currentAvail });
+    loadSessions();
+  };
+
+  const handleDeleteSession = async (id, date, time) => {
+    if (!window.confirm(`Delete session on ${date} at ${time}? This will soft-delete it (can be restored later).`)) return;
+    await deleteAdminSession(token, id);
     loadSessions();
   };
 
@@ -506,6 +512,10 @@ export default function AdminDashboard() {
                               Packages
                             </button>
                           )}
+                          <button onClick={() => handleDeleteSession(s.id, s.date, s.time)}
+                            className="text-xs text-red-500 hover:underline font-medium">
+                            Delete
+                          </button>
                         </td>
                       </tr>
                     ))}
