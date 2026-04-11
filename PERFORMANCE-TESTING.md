@@ -54,11 +54,11 @@ This guide provides procedures for:
 ```bash
 # API Performance
 for i in {1..100}; do
-  curl -w "%{time_total}\n" -o /dev/null -s https://bingo.onrender.com/api/sessions
+  curl -w "%{time_total}\n" -o /dev/null -s https://bingo-jk2h.onrender.com/api/sessions
 done | awk '{sum+=$1; if($1>max)max=$1; if(NR==1||$1<min)min=$1} END {print "Avg: " sum/NR " Min: " min " Max: " max}'
 
 # Page Load Time (from browser DevTools)
-1. Open https://bingo.onrender.com
+1. Open https://bingo-jk2h.onrender.com
 2. F12 → Network tab
 3. Record page load time
 
@@ -153,7 +153,7 @@ export const options = {
 
 export default function() {
   // Test 1: Get sessions
-  let res = http.get('https://bingo.onrender.com/api/sessions');
+  let res = http.get('https://bingo-jk2h.onrender.com/api/sessions');
   check(res, {
     'sessions status 200': (r) => r.status === 200,
     'sessions response < 100ms': (r) => r.timings.duration < 100,
@@ -162,7 +162,7 @@ export default function() {
 
   // Test 2: Get seats for first session
   let sessionId = JSON.parse(res.body)[0].id;
-  res = http.get(`https://bingo.onrender.com/api/sessions/${sessionId}/seats`);
+  res = http.get(`https://bingo-jk2h.onrender.com/api/sessions/${sessionId}/seats`);
   check(res, {
     'seats status 200': (r) => r.status === 200,
     'seats response < 150ms': (r) => r.timings.duration < 150,
@@ -173,7 +173,7 @@ export default function() {
   let seatId = JSON.parse(res.body)[0].id;
   let holderId = `holder-${__VU}-${__ITER}`;
   res = http.post(
-    `https://bingo.onrender.com/api/seats/${seatId}/lock`,
+    `https://bingo-jk2h.onrender.com/api/seats/${seatId}/lock`,
     JSON.stringify({ holderId, holdMinutes: 10 }),
     { headers: { 'Content-Type': 'application/json' } }
   );
@@ -184,7 +184,7 @@ export default function() {
 
   // Test 4: Unlock seat
   res = http.post(
-    `https://bingo.onrender.com/api/seats/${seatId}/unlock`,
+    `https://bingo-jk2h.onrender.com/api/seats/${seatId}/unlock`,
     JSON.stringify({ holderId }),
     { headers: { 'Content-Type': 'application/json' } }
   );

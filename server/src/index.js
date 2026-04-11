@@ -302,11 +302,12 @@ app.post('/api/admin/login', (req, res) => {
 
 app.get('/api/admin/dashboard', adminAuth, (req, res) => {
   const today = new Date().toISOString().split('T')[0];
+  const filterDate = req.query.date || today;
   const todayBookings = get(
-    `SELECT COUNT(*) as count FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date = ? AND b.payment_status = 'paid'`, [today]
+    `SELECT COUNT(*) as count FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date = ? AND b.payment_status = 'paid'`, [filterDate]
   );
   const todayRevenue = get(
-    `SELECT COALESCE(SUM(b.total_amount), 0) as total FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date = ? AND b.payment_status = 'paid'`, [today]
+    `SELECT COALESCE(SUM(b.total_amount), 0) as total FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date = ? AND b.payment_status = 'paid'`, [filterDate]
   );
   const upcomingSessions = all(
     `SELECT s.*,
@@ -317,12 +318,120 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
     FROM sessions s WHERE s.date >= ? AND s.deleted_at IS NULL ORDER BY s.date ASC LIMIT 7`, [today]
   );
 
+  // Table/chair metrics for the filter date sessions
+  const seatMetrics = get(
+    `SELECT
+      COUNT(DISTINCT CASE WHEN st.is_disabled = 0 THEN st.table_number END) as totalTables,
+      COUNT(CASE WHEN st.is_disabled = 0 THEN 1 END) as totalChairs,
+      COUNT(CASE WHEN st.status = 'vacant' AND st.is_disabled = 0 THEN 1 END) as availableChairs,
+      COUNT(CASE WHEN st.status = 'sold' THEN 1 END) as soldChairs,
+      COUNT(CASE WHEN st.status = 'held' THEN 1 END) as heldChairs
+    FROM seats st
+    JOIN sessions s ON st.session_id = s.id
+    WHERE s.date = ? AND s.deleted_at IS NULL`, [filterDate]
+  );
+
+  // Tables breakdown: available (all chairs vacant), partially occupied, fully occupied
+  const tableBreakdown = all(
+    `SELECT st.table_number,
+      COUNT(CASE WHEN st.status = 'vacant' AND st.is_disabled = 0 THEN 1 END) as vacant,
+      COUNT(CASE WHEN st.status = 'sold' THEN 1 END) as sold,
+      COUNT(CASE WHEN st.status = 'held' THEN 1 END) as held,
+      COUNT(CASE WHEN st.is_disabled = 0 THEN 1 END) as total
+    FROM seats st
+    JOIN sessions s ON st.session_id = s.id
+    WHERE s.date = ? AND s.deleted_at IS NULL AND st.is_disabled = 0
+    GROUP BY st.session_id, st.table_number`, [filterDate]
+  );
+
+  let availableTables = 0, partialTables = 0, fullTables = 0;
+  for (const t of tableBreakdown) {
+    if (t.sold === 0 && t.held === 0) availableTables++;
+    else if (t.vacant === 0) fullTables++;
+    else partialTables++;
+  }
+
+  // Number of persons (booking items) for filter date
+  const personsCount = get(
+    `SELECT COUNT(*) as count FROM booking_items bi
+     JOIN bookings b ON bi.booking_id = b.id
+     JOIN sessions s ON b.session_id = s.id
+     WHERE s.date = ? AND b.payment_status = 'paid'`, [filterDate]
+  );
+
   res.json({
+    filterDate,
     todayBookings: todayBookings?.count || 0,
     todayRevenue: todayRevenue?.total || 0,
     todayRevenueFormatted: '$' + formatPrice(todayRevenue?.total || 0),
-    upcomingSessions
+    upcomingSessions,
+    totalTables: seatMetrics?.totalTables || 0,
+    totalChairs: seatMetrics?.totalChairs || 0,
+    availableChairs: seatMetrics?.availableChairs || 0,
+    soldChairs: seatMetrics?.soldChairs || 0,
+    heldChairs: seatMetrics?.heldChairs || 0,
+    availableTables,
+    partialTables,
+    fullTables,
+    totalPersons: personsCount?.count || 0
   });
+});
+
+app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
+  const date = req.query.date || new Date().toISOString().split('T')[0];
+  const rows = all(`
+    SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
+           s.date as session_date, s.time as session_time,
+           s.is_special_event, s.event_title,
+           (SELECT COUNT(*) FROM booking_items WHERE booking_id = b.id) as person_count
+    FROM bookings b
+    JOIN sessions s ON b.session_id = s.id
+    WHERE s.date = ? AND b.payment_status = 'paid'
+    ORDER BY b.created_at ASC
+  `, [date]);
+  const grandTotal = rows.reduce((sum, r) => sum + r.total_amount, 0);
+  res.json({
+    date,
+    items: rows.map((r, i) => ({
+      rowNum: i + 1,
+      id: r.id,
+      referenceNumber: r.reference_number,
+      description: r.is_special_event && r.event_title ? r.event_title : `Bingo Session ${r.session_time}`,
+      sessionDate: r.session_date,
+      sessionTime: r.session_time,
+      personCount: r.person_count,
+      totalAmount: r.total_amount,
+      totalFormatted: '$' + formatPrice(r.total_amount),
+      createdAt: r.created_at
+    })),
+    totalBookings: rows.length,
+    grandTotal,
+    grandTotalFormatted: '$' + formatPrice(grandTotal)
+  });
+});
+
+app.get('/api/admin/booking-sales', adminAuth, (req, res) => {
+  const rows = all(`
+    SELECT s.id, s.date, s.time, s.is_special_event, s.event_title,
+      COUNT(DISTINCT b.id) as quantity,
+      COALESCE(SUM(b.total_amount), 0) as total_amount
+    FROM sessions s
+    LEFT JOIN bookings b ON b.session_id = s.id AND b.payment_status = 'paid'
+    WHERE s.deleted_at IS NULL
+    GROUP BY s.id
+    ORDER BY s.date DESC, s.time DESC
+  `);
+  res.json(rows.map(r => ({
+    id: r.id,
+    date: r.date,
+    time: r.time,
+    description: r.is_special_event && r.event_title ? r.event_title : `${r.date} — ${r.time}`,
+    isSpecialEvent: !!r.is_special_event,
+    eventTitle: r.event_title,
+    quantity: r.quantity,
+    totalAmount: r.total_amount,
+    totalFormatted: '$' + formatPrice(r.total_amount)
+  })));
 });
 
 app.get('/api/admin/sessions', adminAuth, (req, res) => {

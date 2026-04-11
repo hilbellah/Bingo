@@ -94,11 +94,11 @@ Render will immediately start building and deploying. This takes 3-5 minutes.
 
 ## Step 4: Verify Deployment
 
-Once deployed, Render will provide a public URL (e.g., `https://wolastoq-bingo.onrender.com`).
+Once deployed, Render will provide a public URL (e.g., `https://bingo-jk2h.onrender.com`).
 
 ### Test Booking Flow
 ```
-1. Visit https://wolastoq-bingo.onrender.com
+1. Visit https://bingo-jk2h.onrender.com
 2. Select a session (date/time)
 3. Choose party size
 4. Enter attendee names
@@ -110,7 +110,7 @@ Once deployed, Render will provide a public URL (e.g., `https://wolastoq-bingo.o
 
 ### Test Admin Panel
 ```
-1. Visit https://wolastoq-bingo.onrender.com/admin
+1. Visit https://bingo-jk2h.onrender.com/admin
 2. Login: admin / [PASSWORD YOU SET]
 3. Check dashboard (today's bookings, revenue)
 4. View booking report
@@ -129,8 +129,8 @@ Once deployed, Render will provide a public URL (e.g., `https://wolastoq-bingo.o
 
 **Deliver to Client:**
 ```
-Booking Page: https://wolastoq-bingo.onrender.com
-Admin Panel: https://wolastoq-bingo.onrender.com/admin
+Booking Page: https://bingo-jk2h.onrender.com
+Admin Panel: https://bingo-jk2h.onrender.com/admin
 
 Admin Credentials:
   Username: [YOUR_ADMIN_USERNAME]

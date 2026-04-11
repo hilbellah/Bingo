@@ -70,8 +70,9 @@ export async function adminLogin(username, password) {
   return res.json();
 }
 
-export async function fetchAdminDashboard(token) {
-  const res = await fetch(`${API}/admin/dashboard`, { headers: adminHeaders(token) });
+export async function fetchAdminDashboard(token, date) {
+  const params = date ? `?date=${date}` : '';
+  const res = await fetch(`${API}/admin/dashboard${params}`, { headers: adminHeaders(token) });
   return res.json();
 }
 
@@ -117,6 +118,17 @@ export async function updateAdminPackage(token, id, data) {
   const res = await fetch(`${API}/admin/packages/${id}`, {
     method: 'PATCH', headers: adminHeaders(token), body: JSON.stringify(data)
   });
+  return res.json();
+}
+
+export async function fetchDailySales(token, date) {
+  const params = date ? `?date=${date}` : '';
+  const res = await fetch(`${API}/admin/daily-sales${params}`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
+export async function fetchBookingSales(token) {
+  const res = await fetch(`${API}/admin/booking-sales`, { headers: adminHeaders(token) });
   return res.json();
 }
 

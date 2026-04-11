@@ -7,7 +7,8 @@ import {
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
-  fetchDeletedSessions, restoreSession, fetchSessionBookings, fetchAuditLog
+  fetchDeletedSessions, restoreSession, fetchSessionBookings, fetchAuditLog,
+  fetchBookingSales, fetchDailySales
 } from '../api';
 
 function formatPrice(cents) {
@@ -41,24 +42,32 @@ export default function AdminDashboard() {
   const [archiveBookings, setArchiveBookings] = useState(null); // { session, bookings }
   const [auditLogs, setAuditLogs] = useState([]);
   const [bookingSearch, setBookingSearch] = useState('');
+  const [bookingSales, setBookingSales] = useState([]);
+  const [salesDrilldown, setSalesDrilldown] = useState(null); // { session, bookings }
+  const [dailySales, setDailySales] = useState(null);
+  const [dailySalesDate, setDailySalesDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dashboardDate, setDashboardDate] = useState(new Date().toISOString().split('T')[0]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     if (!token) { navigate('/admin'); return; }
     loadDashboard();
   }, []);
 
-  const loadDashboard = () => fetchAdminDashboard(token).then(setDashboard);
+  const loadDashboard = (date) => fetchAdminDashboard(token, date || dashboardDate).then(setDashboard);
   const loadSessions = () => fetchAdminSessions(token).then(setSessions);
   const loadPackages = () => fetchAdminPackages(token).then(setPackages);
   const loadBookings = (sid) => fetchAdminBookings(token, sid).then(setBookings);
   const loadAnnouncements = () => fetchAdminAnnouncements(token).then(setAnnouncements);
   const loadDeletedSessions = () => fetchDeletedSessions(token).then(setDeletedSessions);
   const loadAuditLogs = () => fetchAuditLog(token, { limit: 50 }).then(setAuditLogs);
+  const loadBookingSales = () => fetchBookingSales(token).then(setBookingSales);
+  const loadDailySales = (date) => fetchDailySales(token, date).then(setDailySales);
 
   useEffect(() => {
     if (tab === 'sessions') loadSessions();
     if (tab === 'packages') loadPackages();
-    if (tab === 'bookings') { loadSessions(); loadBookings(reportSession); }
+    if (tab === 'bookings') { loadBookingSales(); loadDailySales(dailySalesDate); }
     if (tab === 'dashboard') loadDashboard();
     if (tab === 'announcements') loadAnnouncements();
     if (tab === 'archive') { loadDeletedSessions(); loadAuditLogs(); }
@@ -110,6 +119,135 @@ export default function AdminDashboard() {
     a.download = `purchasers-${soldModal.session.date}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleSalesDrilldown = (sale) => {
+    if (sale.quantity === 0) return;
+    fetchAdminBookings(token, sale.id).then(data => {
+      setSalesDrilldown({ session: sale, bookings: data });
+    });
+  };
+
+  const handlePrintSalesDrilldown = () => {
+    const el = document.getElementById('sales-drilldown-content');
+    if (!el || !salesDrilldown) return;
+    const w = window.open('', '_blank', 'width=800,height=600');
+    w.document.write(`<html><head><title>Bookings - ${salesDrilldown.session.description}</title>
+      <style>body{font-family:Arial,sans-serif;padding:20px;color:#333}
+      h2{margin:0 0 4px}p.sub{color:#666;font-size:14px;margin:0 0 20px}
+      .booking{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:16px}
+      .ref{font-family:monospace;font-weight:600;color:#1a3a5c}.total{float:right}
+      table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+      th{text-align:left;color:#999;border-bottom:1px solid #ddd;padding:4px 0}
+      td{padding:4px 0;border-bottom:1px solid #f0f0f0}
+      @media print{body{padding:0}.booking{break-inside:avoid}}</style></head><body>`);
+    w.document.write(`<h2>Bookings — ${salesDrilldown.session.description}</h2><p class="sub">${salesDrilldown.session.date} at ${salesDrilldown.session.time} — ${salesDrilldown.session.quantity} booking(s) — ${salesDrilldown.session.totalFormatted}</p>`);
+    w.document.write(el.innerHTML);
+    w.document.write('</body></html>');
+    w.document.close();
+    w.print();
+  };
+
+  const handleSaveSalesDrilldownCsv = () => {
+    if (!salesDrilldown) return;
+    const rows = [['Reference', 'First Name', 'Last Name', 'Table', 'Chair', 'Package', 'Add-ons', 'Booking Total', 'Status']];
+    for (const b of salesDrilldown.bookings) {
+      for (const item of b.items) {
+        const addons = item.addons.length > 0
+          ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join('; ')
+          : '';
+        rows.push([b.referenceNumber, item.firstName, item.lastName, item.tableNumber, item.chairNumber, item.packageName, addons, b.totalFormatted, b.paymentStatus]);
+      }
+    }
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bookings-${salesDrilldown.session.date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Thermal receipt print helper (80mm width, monospace)
+  const printReceipt = (title, lines) => {
+    const w = window.open('', '_blank', 'width=350,height=600');
+    w.document.write(`<html><head><title>Receipt</title>
+      <style>
+        @page { size: 80mm auto; margin: 0; }
+        body { font-family: 'Courier New', monospace; font-size: 12px; width: 72mm; margin: 4mm auto; padding: 0; color: #000; line-height: 1.4; }
+        .center { text-align: center; }
+        .right { text-align: right; }
+        .bold { font-weight: bold; }
+        .line { border-top: 1px dashed #000; margin: 4px 0; }
+        .dbl-line { border-top: 2px solid #000; margin: 6px 0; }
+        .row { display: flex; justify-content: space-between; }
+        .row span:last-child { text-align: right; }
+        .header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+        .sub-header { font-size: 10px; text-align: center; color: #333; margin-bottom: 8px; }
+        .item-row { display: flex; justify-content: space-between; padding: 1px 0; }
+        .item-qty { width: 30px; text-align: center; }
+        .item-desc { flex: 1; padding: 0 4px; }
+        .item-amt { width: 60px; text-align: right; }
+        .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; padding: 2px 0; }
+        @media print { body { width: 72mm; margin: 0 auto; } }
+      </style></head><body>`);
+    w.document.write(lines.join(''));
+    w.document.write('</body></html>');
+    w.document.close();
+    w.print();
+  };
+
+  const handlePrintDailySalesReceipt = () => {
+    if (!dailySales || dailySales.items.length === 0) return;
+    const lines = [
+      '<div class="header">SMEC BINGO</div>',
+      '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
+      '<div class="line"></div>',
+      '<div class="center bold">DAILY SALES REPORT</div>',
+      `<div class="center">${dailySales.date}</div>`,
+      '<div class="line"></div>',
+      '<div class="item-row"><span class="item-qty bold">#</span><span class="item-desc bold">Description</span><span class="item-amt bold">Amount</span></div>',
+      '<div class="line"></div>',
+    ];
+    for (const item of dailySales.items) {
+      lines.push(`<div class="item-row"><span class="item-qty">${item.rowNum}</span><span class="item-desc">${item.description}</span><span class="item-amt">${item.totalFormatted}</span></div>`);
+      lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">${item.referenceNumber} · ${item.personCount} person(s)</div>`);
+    }
+    lines.push('<div class="dbl-line"></div>');
+    lines.push(`<div class="total-row"><span>TOTAL (${dailySales.totalBookings} bookings)</span><span>${dailySales.grandTotalFormatted}</span></div>`);
+    lines.push('<div class="line"></div>');
+    lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${new Date().toLocaleString()}</div>`);
+    printReceipt('Daily Sales', lines);
+  };
+
+  const handlePrintBookingReceipt = (booking) => {
+    const lines = [
+      '<div class="header">SMEC BINGO</div>',
+      '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
+      '<div class="line"></div>',
+      '<div class="center bold">BOOKING RECEIPT</div>',
+      `<div class="center">${booking.sessionDate} at ${booking.sessionTime}</div>`,
+      '<div class="line"></div>',
+      `<div class="row"><span>Ref:</span><span class="bold">${booking.referenceNumber}</span></div>`,
+      `<div class="row"><span>Status:</span><span>${booking.paymentStatus.toUpperCase()}</span></div>`,
+      '<div class="line"></div>',
+      '<div class="bold">Attendees:</div>',
+    ];
+    for (const item of booking.items) {
+      lines.push(`<div style="padding:2px 0">${item.firstName} ${item.lastName}</div>`);
+      lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${item.tableNumber}/C${item.chairNumber} · ${item.packageName}</span><span class="item-amt">${item.packagePriceFormatted || ''}</span></div>`);
+      if (item.addons.length > 0) {
+        for (const addon of item.addons) {
+          lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  + ${addon.packageName} x${addon.quantity}</span><span class="item-amt">${addon.priceFormatted}</span></div>`);
+        }
+      }
+    }
+    lines.push('<div class="dbl-line"></div>');
+    lines.push(`<div class="total-row"><span>TOTAL</span><span>${booking.totalFormatted}</span></div>`);
+    lines.push('<div class="line"></div>');
+    lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${new Date(booking.createdAt).toLocaleString()}</div>`);
+    printReceipt('Booking Receipt', lines);
   };
 
   const handleLogout = () => {
@@ -268,68 +406,166 @@ export default function AdminDashboard() {
   };
 
   const tabs = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'sessions', label: 'Sessions' },
-    { id: 'packages', label: 'Packages' },
-    { id: 'announcements', label: 'Announcements' },
-    { id: 'bookings', label: 'Bookings & Reports' },
-    { id: 'bulkprint', label: 'Bulk Print' },
-    { id: 'archive', label: 'Archive & Audit' },
+    { id: 'dashboard', label: 'Dashboard', icon: '\u{1F4CA}' },
+    { id: 'sessions', label: 'Sessions', icon: '\u{1F4C5}' },
+    { id: 'packages', label: 'Packages', icon: '\u{1F4E6}' },
+    { id: 'announcements', label: 'Announcements', icon: '\u{1F4E2}' },
+    { id: 'bookings', label: 'Bookings & Reports', icon: '\u{1F4B0}' },
+    { id: 'bulkprint', label: 'Bulk Print', icon: '\u{1F5A8}' },
+    { id: 'archive', label: 'Archive & Audit', icon: '\u{1F5C3}' },
   ];
 
+  const handleDashboardDateChange = (e) => {
+    const newDate = e.target.value;
+    setDashboardDate(newDate);
+    loadDashboard(newDate);
+  };
+
   return (
-    <div className="min-h-screen bg-brand-light">
-      {/* Admin Header */}
-      <header className="bg-brand-blue text-white px-4 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold">SMEC Admin Panel</h1>
-          <p className="text-xs text-gray-300">Saint Mary's Entertainment Centre</p>
-        </div>
-        <div className="flex gap-3 items-center">
-          <a href="/tickets" className="text-xs text-gray-300 hover:text-white">Reprint Tickets</a>
-          <a href="/" className="text-xs text-gray-300 hover:text-white">View Booking Page</a>
-          <button onClick={handleLogout} className="text-xs bg-white/10 px-3 py-1.5 rounded hover:bg-white/20">
-            Logout
+    <div className="min-h-screen bg-brand-light flex">
+      {/* Sidebar Navigation */}
+      <aside className={`bg-brand-blue text-white flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-56'} min-h-screen`}>
+        <div className="p-4 border-b border-white/10">
+          {!sidebarCollapsed && (
+            <>
+              <h1 className="text-lg font-bold leading-tight">SMEC</h1>
+              <p className="text-xs text-gray-300 mt-0.5">Admin Panel</p>
+            </>
+          )}
+          <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="mt-2 text-xs text-gray-300 hover:text-white">
+            {sidebarCollapsed ? '\u{25B6}' : '\u{25C0}'}
           </button>
         </div>
-      </header>
-
-      {/* Tabs */}
-      <div className="bg-white border-b px-4">
-        <div className="max-w-6xl mx-auto flex gap-1">
+        <nav className="flex-1 py-2">
           {tabs.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition ${
-                tab === t.id ? 'border-brand-gold text-brand-blue' : 'border-transparent text-gray-400 hover:text-gray-600'
+              className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+                tab === t.id
+                  ? 'bg-white/20 text-white font-semibold border-r-4 border-brand-gold'
+                  : 'text-gray-300 hover:bg-white/10 hover:text-white'
               }`}
+              title={sidebarCollapsed ? t.label : undefined}
             >
-              {t.label}
+              <span className="text-lg">{t.icon}</span>
+              {!sidebarCollapsed && <span>{t.label}</span>}
             </button>
           ))}
+        </nav>
+        <div className="p-3 border-t border-white/10 space-y-2">
+          {!sidebarCollapsed && (
+            <>
+              <a href="/tickets" className="block text-xs text-gray-300 hover:text-white">Reprint Tickets</a>
+              <a href="/" className="block text-xs text-gray-300 hover:text-white">View Booking Page</a>
+            </>
+          )}
+          <button onClick={handleLogout} className={`w-full text-xs bg-white/10 py-2 rounded hover:bg-white/20 ${sidebarCollapsed ? 'px-1' : 'px-3'}`}>
+            {sidebarCollapsed ? '\u{1F6AA}' : 'Logout'}
+          </button>
         </div>
-      </div>
+      </aside>
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-h-screen overflow-auto">
+        {/* Top Bar */}
+        <header className="bg-white border-b px-6 py-3 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-brand-blue">{tabs.find(t => t.id === tab)?.label || 'Dashboard'}</h2>
+          <p className="text-xs text-gray-400">Saint Mary's Entertainment Centre</p>
+        </header>
+
+        <div className="flex-1 px-6 py-6">
         {/* DASHBOARD TAB */}
         {tab === 'dashboard' && dashboard && (
           <div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-              <div className="bg-white rounded-xl p-5 shadow-sm">
-                <p className="text-sm text-gray-400">Today's Bookings</p>
-                <p className="text-3xl font-bold text-brand-blue mt-1">{dashboard.todayBookings}</p>
+            {/* Date Filter */}
+            <div className="flex items-center gap-3 mb-6">
+              <label className="text-sm font-medium text-gray-600">Date:</label>
+              <input
+                type="date"
+                value={dashboardDate}
+                onChange={handleDashboardDateChange}
+                className="border rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-blue"
+              />
+              <button
+                onClick={() => { setDashboardDate(new Date().toISOString().split('T')[0]); loadDashboard(new Date().toISOString().split('T')[0]); }}
+                className="text-xs text-brand-blue hover:underline"
+              >
+                Today
+              </button>
+            </div>
+
+            {/* Metric Cards Row 1 - Key Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#2563eb' }}>
+                <p className="text-sm opacity-80">Total Bookings</p>
+                <p className="text-4xl font-bold mt-1">{dashboard.todayBookings}</p>
+                <p className="text-xs opacity-60 mt-1">paid bookings</p>
               </div>
-              <div className="bg-white rounded-xl p-5 shadow-sm">
-                <p className="text-sm text-gray-400">Today's Revenue</p>
-                <p className="text-3xl font-bold text-brand-gold mt-1">{dashboard.todayRevenueFormatted}</p>
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#16a34a' }}>
+                <p className="text-sm opacity-80">Revenue</p>
+                <p className="text-4xl font-bold mt-1">{dashboard.todayRevenueFormatted}</p>
+                <p className="text-xs opacity-60 mt-1">total earned</p>
               </div>
-              <div className="bg-white rounded-xl p-5 shadow-sm">
-                <p className="text-sm text-gray-400">Upcoming Sessions</p>
-                <p className="text-3xl font-bold text-brand-blue mt-1">{dashboard.upcomingSessions?.length || 0}</p>
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#0d9488' }}>
+                <p className="text-sm opacity-80">Total Persons</p>
+                <p className="text-4xl font-bold mt-1">{dashboard.totalPersons || 0}</p>
+                <p className="text-xs opacity-60 mt-1">attendees</p>
+              </div>
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#7c3aed' }}>
+                <p className="text-sm opacity-80">Upcoming Sessions</p>
+                <p className="text-4xl font-bold mt-1">{dashboard.upcomingSessions?.length || 0}</p>
+                <p className="text-xs opacity-60 mt-1">next 7 days</p>
               </div>
             </div>
 
+            {/* Metric Cards Row 2 - Table & Chair Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#059669' }}>
+                <p className="text-sm opacity-80">Available Tables</p>
+                <p className="text-4xl font-bold mt-1">{dashboard.availableTables || 0}</p>
+                <p className="text-xs opacity-60 mt-1">of {dashboard.totalTables || 0} total</p>
+              </div>
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#d97706' }}>
+                <p className="text-sm opacity-80">Partial Tables</p>
+                <p className="text-4xl font-bold mt-1">{dashboard.partialTables || 0}</p>
+                <p className="text-xs opacity-60 mt-1">partially occupied</p>
+              </div>
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#dc2626' }}>
+                <p className="text-sm opacity-80">Full Tables</p>
+                <p className="text-4xl font-bold mt-1">{dashboard.fullTables || 0}</p>
+                <p className="text-xs opacity-60 mt-1">fully occupied</p>
+              </div>
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#4f46e5' }}>
+                <p className="text-sm opacity-80">Chairs Available</p>
+                <p className="text-4xl font-bold mt-1">{dashboard.availableChairs || 0}</p>
+                <p className="text-xs opacity-60 mt-1">of {dashboard.totalChairs || 0} total</p>
+              </div>
+            </div>
+
+            {/* Sold / Held Chair Summary */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-white rounded-xl p-5 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-400">Chairs Sold</p>
+                  <p className="text-3xl font-bold text-red-600">{dashboard.soldChairs || 0}</p>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-2xl">
+                  {'\u{1F4BA}'}
+                </div>
+              </div>
+              <div className="bg-white rounded-xl p-5 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-400">Chairs Held</p>
+                  <p className="text-3xl font-bold text-amber-500">{dashboard.heldChairs || 0}</p>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-2xl">
+                  {'\u{23F3}'}
+                </div>
+              </div>
+            </div>
+
+            {/* Upcoming Sessions Table */}
             <div className="bg-white rounded-xl p-5 shadow-sm">
               <h3 className="font-semibold text-brand-blue mb-3">Upcoming Sessions</h3>
               <div className="overflow-x-auto">
@@ -341,6 +577,7 @@ export default function AdminDashboard() {
                       <th className="pb-2">Available</th>
                       <th className="pb-2">Sold</th>
                       <th className="pb-2">Held</th>
+                      <th className="pb-2">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -357,6 +594,7 @@ export default function AdminDashboard() {
                           )}
                         </td>
                         <td className="py-2 text-amber-500">{s.held}</td>
+                        <td className="py-2 text-gray-600">{s.total}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -896,131 +1134,185 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* BOOKINGS TAB */}
+        {/* BOOKINGS TAB — Booking Sales Summary */}
         {tab === 'bookings' && (
           <div>
-            <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-              <div className="flex flex-wrap gap-3 items-end">
-                <div className="flex-1 min-w-[200px]">
-                  <label className="block text-xs text-gray-400 mb-1">Filter by Session</label>
-                  <select
-                    value={reportSession}
-                    onChange={e => { setReportSession(e.target.value); setBookingSearch(''); loadBookings(e.target.value); }}
-                    className="w-full px-3 py-2 border rounded-lg text-sm"
-                  >
-                    <option value="">All Sessions</option>
-                    {sessions.map(s => (
-                      <option key={s.id} value={s.id}>{s.date} — {s.time}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex-1 min-w-[200px]">
-                  <label className="block text-xs text-gray-400 mb-1">Search by Name</label>
-                  <input
-                    type="text"
-                    value={bookingSearch}
-                    onChange={e => setBookingSearch(e.target.value)}
-                    placeholder="Type a name to filter..."
-                    className="w-full px-3 py-2 border rounded-lg text-sm"
-                  />
-                </div>
-                <button onClick={handleExport}
-                  className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-blue/90">
-                  Export CSV
-                </button>
-              </div>
+            <div className="bg-white rounded-xl p-5 shadow-sm">
+              <h3 className="font-semibold text-brand-blue mb-4">Booking Sales</h3>
+              {bookingSales.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">No sessions found</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-gray-400 border-b">
+                          <th className="pb-2 pl-2">#</th>
+                          <th className="pb-2">Description</th>
+                          <th className="pb-2 text-center">Quantity</th>
+                          <th className="pb-2 text-right pr-2">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bookingSales.map((sale, idx) => (
+                          <tr key={sale.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                            <td className="py-2.5 pl-2 text-gray-400 text-xs">{idx + 1}</td>
+                            <td className="py-2.5">
+                              <span className="font-medium text-gray-800">{sale.description}</span>
+                              {sale.isSpecialEvent && (
+                                <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700 font-medium">Event</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 text-center">
+                              {sale.quantity > 0 ? (
+                                <button
+                                  onClick={() => handleSalesDrilldown(sale)}
+                                  className="text-brand-blue underline hover:text-blue-800 font-semibold cursor-pointer min-w-[32px] inline-block"
+                                >
+                                  {sale.quantity}
+                                </button>
+                              ) : (
+                                <span className="text-gray-400">0</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 text-right pr-2 font-medium text-gray-800">{sale.totalFormatted}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-200">
+                          <td className="py-3 pl-2" colSpan={2}>
+                            <span className="font-semibold text-brand-blue">Total</span>
+                          </td>
+                          <td className="py-3 text-center font-bold text-brand-blue">
+                            {bookingSales.reduce((sum, s) => sum + s.quantity, 0)}
+                          </td>
+                          <td className="py-3 text-right pr-2 font-bold text-brand-gold">
+                            {formatPrice(bookingSales.reduce((sum, s) => sum + s.totalAmount, 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
 
-            <div className="bg-white rounded-xl p-5 shadow-sm">
-              <h3 className="font-semibold text-brand-blue mb-3">
-                Bookings {bookings.length > 0 && `(${bookings.length})`}
-              </h3>
-
-              {(() => {
-                const q = bookingSearch.trim().toLowerCase();
-                const filtered = q
-                  ? bookings.filter(b => b.items.some(item =>
-                      `${item.firstName} ${item.lastName}`.toLowerCase().includes(q)
-                    ))
-                  : bookings;
-                return filtered.length === 0 ? (
-                <p className="text-gray-400 text-center py-8">{q ? 'No bookings match your search' : 'No bookings found'}</p>
-              ) : (
-                <div className="space-y-4">
-                  {filtered.map(b => (
-                    <div key={b.id} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <p className="font-mono font-bold text-brand-blue">{b.referenceNumber}</p>
-                          <p className="text-xs text-gray-400">{b.sessionDate} at {b.sessionTime}</p>
-                          <p className="text-xs text-gray-400">{new Date(b.createdAt).toLocaleString()}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-brand-gold">{b.totalFormatted}</p>
-                          <span className={`px-2 py-0.5 rounded-full text-xs ${
-                            b.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
-                            b.paymentStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
-                            'bg-gray-100 text-gray-600'
-                          }`}>
-                            {b.paymentStatus}
-                          </span>
-                        </div>
-                      </div>
-
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="text-gray-400 border-b">
-                            <th className="pb-1 text-left">Name</th>
-                            <th className="pb-1 text-left">Table</th>
-                            <th className="pb-1 text-left">Chair</th>
-                            <th className="pb-1 text-left">Package</th>
-                            <th className="pb-1 text-left">Add-ons</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {b.items.map((item, j) => (
-                            <tr key={j} className="border-b border-gray-50">
-                              <td className="py-1">{item.firstName} {item.lastName}</td>
-                              <td className="py-1">{item.tableNumber}</td>
-                              <td className="py-1">{item.chairNumber}</td>
-                              <td className="py-1">{item.packageName}</td>
-                              <td className="py-1">
-                                {item.addons.length > 0
-                                  ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
-                                  : '-'
-                                }
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-
-                      <div className="flex gap-3 mt-2">
-                        {b.paymentStatus === 'paid' && (
-                          <a
-                            href={`/tickets/${b.referenceNumber}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-brand-blue hover:underline flex items-center gap-1"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                            </svg>
-                            Print Tickets
-                          </a>
-                        )}
-                        {b.paymentStatus === 'paid' && (
-                          <button onClick={() => handleCancelBooking(b.id)}
-                            className="text-xs text-red-500 hover:underline">
-                            Cancel Booking
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+            {/* Daily Sales Report */}
+            <div className="bg-white rounded-xl p-5 shadow-sm mt-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-brand-blue">Daily Sales</h3>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="date"
+                    value={dailySalesDate}
+                    onChange={e => { setDailySalesDate(e.target.value); loadDailySales(e.target.value); }}
+                    className="px-3 py-1.5 border rounded-lg text-sm"
+                  />
+                  {dailySales && dailySales.items.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const rows = [['#', 'Reference', 'Description', 'Persons', 'Amount', 'Time']];
+                        for (const item of dailySales.items) {
+                          rows.push([item.rowNum, item.referenceNumber, item.description, item.personCount, item.totalFormatted, new Date(item.createdAt).toLocaleTimeString()]);
+                        }
+                        rows.push(['', '', 'GRAND TOTAL', dailySales.totalBookings, dailySales.grandTotalFormatted, '']);
+                        const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+                        const blob = new Blob([csv], { type: 'text/csv' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `daily-sales-${dailySales.date}.csv`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700"
+                    >
+                      Export CSV
+                    </button>
+                  )}
+                  {dailySales && dailySales.items.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const w = window.open('', '_blank', 'width=800,height=600');
+                        w.document.write(`<html><head><title>Daily Sales - ${dailySales.date}</title>
+                          <style>body{font-family:Arial,sans-serif;padding:20px;color:#333}
+                          h2{margin:0 0 4px}p.sub{color:#666;font-size:14px;margin:0 0 16px}
+                          table{width:100%;border-collapse:collapse;font-size:13px}
+                          th{text-align:left;color:#666;border-bottom:2px solid #ddd;padding:8px 4px;font-weight:600}
+                          td{padding:6px 4px;border-bottom:1px solid #f0f0f0}
+                          .right{text-align:right}.center{text-align:center}
+                          tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:10px}
+                          @media print{body{padding:0}}</style></head><body>`);
+                        w.document.write(`<h2>Daily Sales Report</h2><p class="sub">${dailySales.date} — ${dailySales.totalBookings} booking(s) — ${dailySales.grandTotalFormatted}</p>`);
+                        w.document.write('<table><thead><tr><th>#</th><th>Reference</th><th>Description</th><th class="center">Persons</th><th class="right">Amount</th><th>Time</th></tr></thead><tbody>');
+                        for (const item of dailySales.items) {
+                          w.document.write(`<tr><td>${item.rowNum}</td><td style="font-family:monospace">${item.referenceNumber}</td><td>${item.description}</td><td class="center">${item.personCount}</td><td class="right">${item.totalFormatted}</td><td>${new Date(item.createdAt).toLocaleTimeString()}</td></tr>`);
+                        }
+                        w.document.write(`</tbody><tfoot><tr><td colspan="3">GRAND TOTAL</td><td class="center">${dailySales.totalBookings}</td><td class="right">${dailySales.grandTotalFormatted}</td><td></td></tr></tfoot></table>`);
+                        w.document.write('</body></html>');
+                        w.document.close();
+                        w.print();
+                      }}
+                      className="px-3 py-1.5 text-sm bg-brand-blue text-white rounded-lg hover:bg-blue-800"
+                    >
+                      Print
+                    </button>
+                  )}
+                  {dailySales && dailySales.items.length > 0 && (
+                    <button
+                      onClick={handlePrintDailySalesReceipt}
+                      className="px-3 py-1.5 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800"
+                      title="Print as thermal receipt"
+                    >
+                      Receipt
+                    </button>
+                  )}
                 </div>
-              );
-              })()}
+              </div>
+
+              {!dailySales ? (
+                <p className="text-gray-400 text-center py-8">Loading...</p>
+              ) : dailySales.items.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">No sales for {dailySales.date}</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-400 border-b">
+                        <th className="pb-2 pl-2">#</th>
+                        <th className="pb-2">Reference</th>
+                        <th className="pb-2">Description</th>
+                        <th className="pb-2 text-center">Persons</th>
+                        <th className="pb-2 text-right">Amount</th>
+                        <th className="pb-2 text-right pr-2">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dailySales.items.map(item => (
+                        <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                          <td className="py-2.5 pl-2 text-gray-400 text-xs">{item.rowNum}</td>
+                          <td className="py-2.5 font-mono text-sm font-medium text-brand-blue">{item.referenceNumber}</td>
+                          <td className="py-2.5 text-gray-800">{item.description}</td>
+                          <td className="py-2.5 text-center">{item.personCount}</td>
+                          <td className="py-2.5 text-right font-medium text-gray-800">{item.totalFormatted}</td>
+                          <td className="py-2.5 text-right pr-2 text-gray-500 text-xs">{new Date(item.createdAt).toLocaleTimeString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-200">
+                        <td className="py-3 pl-2" colSpan={3}>
+                          <span className="font-semibold text-brand-blue">Grand Total</span>
+                        </td>
+                        <td className="py-3 text-center font-bold text-brand-blue">{dailySales.totalBookings}</td>
+                        <td className="py-3 text-right font-bold text-brand-gold">{dailySales.grandTotalFormatted}</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1470,6 +1762,84 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+      </div>
+
+      {/* Sales Drilldown Modal */}
+      {salesDrilldown && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSalesDrilldown(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b">
+              <div>
+                <h3 className="font-bold text-brand-blue text-lg">Booking Details</h3>
+                <p className="text-sm text-gray-500">
+                  {salesDrilldown.session.description} &mdash; {salesDrilldown.session.quantity} booking(s) &mdash; {salesDrilldown.session.totalFormatted}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={handlePrintSalesDrilldown} className="px-3 py-1.5 text-sm bg-brand-blue text-white rounded-lg hover:bg-blue-800" title="Print">Print</button>
+                <button onClick={handleSaveSalesDrilldownCsv} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700" title="Save CSV">Save CSV</button>
+                <button onClick={() => setSalesDrilldown(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none ml-2">&times;</button>
+              </div>
+            </div>
+            <div id="sales-drilldown-content" className="overflow-y-auto p-5" style={{ maxHeight: 'calc(85vh - 80px)' }}>
+              {salesDrilldown.bookings.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No bookings found.</p>
+              ) : (
+                salesDrilldown.bookings.map(b => (
+                  <div key={b.id} className="mb-4 border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="font-mono text-sm font-semibold text-brand-blue">{b.referenceNumber}</span>
+                        <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                          b.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                          b.paymentStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>{b.paymentStatus}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{b.totalFormatted}</span>
+                        <button
+                          onClick={() => handlePrintBookingReceipt({...b, sessionDate: salesDrilldown.session.date, sessionTime: salesDrilldown.session.time})}
+                          className="px-2 py-0.5 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
+                          title="Print thermal receipt"
+                        >
+                          Receipt
+                        </button>
+                      </div>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-gray-400 border-b">
+                          <th className="pb-1">Name</th>
+                          <th className="pb-1">Table</th>
+                          <th className="pb-1">Chair</th>
+                          <th className="pb-1">Package</th>
+                          <th className="pb-1">Add-ons</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.items.map((item, i) => (
+                          <tr key={i} className="border-b border-gray-50">
+                            <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
+                            <td className="py-1">{item.tableNumber}</td>
+                            <td className="py-1">{item.chairNumber}</td>
+                            <td className="py-1">{item.packageName}</td>
+                            <td className="py-1 text-xs text-gray-500">
+                              {item.addons.length > 0
+                                ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sold Tickets Modal */}
       {soldModal && (
