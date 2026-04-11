@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage,
@@ -46,15 +47,21 @@ export default function AdminDashboard() {
   const [salesDrilldown, setSalesDrilldown] = useState(null); // { session, bookings }
   const [dailySales, setDailySales] = useState(null);
   const [dailySalesDate, setDailySalesDate] = useState(new Date().toISOString().split('T')[0]);
-  const [dashboardDate, setDashboardDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dailySalesSearch, setDailySalesSearch] = useState('');
+  const [dashboardDateFrom, setDashboardDateFrom] = useState(new Date().toISOString().split('T')[0]);
+  const [dashboardDateTo, setDashboardDateTo] = useState(new Date().toISOString().split('T')[0]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [autoPrint, setAutoPrint] = useState(false);
+  const [recentReceipts, setRecentReceipts] = useState([]);
+  const socketRef = useRef(null);
+  const autoPrintRef = useRef(false);
 
   useEffect(() => {
     if (!token) { navigate('/admin'); return; }
     loadDashboard();
   }, []);
 
-  const loadDashboard = (date) => fetchAdminDashboard(token, date || dashboardDate).then(setDashboard);
+  const loadDashboard = (from, to) => fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard);
   const loadSessions = () => fetchAdminSessions(token).then(setSessions);
   const loadPackages = () => fetchAdminPackages(token).then(setPackages);
   const loadBookings = (sid) => fetchAdminBookings(token, sid).then(setBookings);
@@ -62,7 +69,7 @@ export default function AdminDashboard() {
   const loadDeletedSessions = () => fetchDeletedSessions(token).then(setDeletedSessions);
   const loadAuditLogs = () => fetchAuditLog(token, { limit: 50 }).then(setAuditLogs);
   const loadBookingSales = () => fetchBookingSales(token).then(setBookingSales);
-  const loadDailySales = (date) => fetchDailySales(token, date).then(setDailySales);
+  const loadDailySales = (date, search) => fetchDailySales(token, date, search).then(setDailySales);
 
   useEffect(() => {
     if (tab === 'sessions') loadSessions();
@@ -72,6 +79,88 @@ export default function AdminDashboard() {
     if (tab === 'announcements') loadAnnouncements();
     if (tab === 'archive') { loadDeletedSessions(); loadAuditLogs(); }
   }, [tab]);
+
+  // Auto-print: keep ref in sync with state
+  useEffect(() => { autoPrintRef.current = autoPrint; }, [autoPrint]);
+
+  // Auto-print receipt function
+  const printBookingReceipt = useCallback((booking) => {
+    const w = window.open('', '_blank', 'width=350,height=600');
+    if (!w) return;
+    const lines = [
+      '<div class="header">SMEC BINGO</div>',
+      '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
+      '<div class="line"></div>',
+      '<div class="center bold">BOOKING RECEIPT</div>',
+      `<div class="center">${booking.sessionDate} at ${booking.sessionTime}</div>`,
+      '<div class="line"></div>',
+      `<div class="row"><span>Ref:</span><span class="bold">${booking.referenceNumber}</span></div>`,
+      '<div class="line"></div>',
+      '<div class="bold">Attendees:</div>',
+    ];
+    for (const item of booking.items) {
+      lines.push(`<div style="padding:2px 0">${item.firstName} ${item.lastName}</div>`);
+      lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${item.tableNumber}/C${item.chairNumber} · ${item.packageName}</span><span class="item-amt">${item.packagePriceFormatted || ''}</span></div>`);
+      if (item.addons && item.addons.length > 0) {
+        for (const addon of item.addons) {
+          lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  + ${addon.packageName} x${addon.quantity}</span><span class="item-amt">${addon.priceFormatted}</span></div>`);
+        }
+      }
+    }
+    lines.push('<div class="dbl-line"></div>');
+    lines.push(`<div class="total-row"><span>TOTAL</span><span>${booking.totalFormatted}</span></div>`);
+    lines.push('<div class="line"></div>');
+    lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${new Date(booking.createdAt).toLocaleString()}</div>`);
+
+    w.document.write(`<html><head><title>Receipt</title>
+      <style>
+        @page { size: 80mm auto; margin: 0; }
+        body { font-family: 'Courier New', monospace; font-size: 12px; width: 72mm; margin: 4mm auto; padding: 0; color: #000; line-height: 1.4; }
+        .center { text-align: center; }
+        .bold { font-weight: bold; }
+        .line { border-top: 1px dashed #000; margin: 4px 0; }
+        .dbl-line { border-top: 2px solid #000; margin: 6px 0; }
+        .row { display: flex; justify-content: space-between; }
+        .header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+        .sub-header { font-size: 10px; text-align: center; color: #333; margin-bottom: 8px; }
+        .item-row { display: flex; justify-content: space-between; padding: 1px 0; }
+        .item-desc { flex: 1; padding: 0 4px; }
+        .item-amt { width: 60px; text-align: right; }
+        .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; padding: 2px 0; }
+        @media print { body { width: 72mm; margin: 0 auto; } }
+      </style></head><body>`);
+    w.document.write(lines.join(''));
+    w.document.write('</body></html>');
+    w.document.close();
+    w.print();
+  }, []);
+
+  // Socket.IO connection for auto-print receipts
+  useEffect(() => {
+    if (!token) return;
+    const socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      socket.emit('join:admin-receipts');
+    });
+
+    socket.on('booking:new', (receiptData) => {
+      // Always add to recent receipts list
+      setRecentReceipts(prev => [receiptData, ...prev].slice(0, 20));
+      // Auto-print if enabled
+      if (autoPrintRef.current) {
+        printBookingReceipt(receiptData);
+      }
+      // Refresh dashboard if on dashboard tab
+      loadDashboard();
+    });
+
+    return () => {
+      socket.emit('leave:admin-receipts');
+      socket.disconnect();
+    };
+  }, [token]);
 
   const handleSoldClick = (session) => {
     if (session.sold === 0) return;
@@ -207,15 +296,15 @@ export default function AdminDashboard() {
       '<div class="center bold">DAILY SALES REPORT</div>',
       `<div class="center">${dailySales.date}</div>`,
       '<div class="line"></div>',
-      '<div class="item-row"><span class="item-qty bold">#</span><span class="item-desc bold">Description</span><span class="item-amt bold">Amount</span></div>',
+      '<div class="item-row"><span class="item-qty bold">#</span><span class="item-desc bold">Name / Ticket</span><span class="item-amt bold">Price</span></div>',
       '<div class="line"></div>',
     ];
     for (const item of dailySales.items) {
-      lines.push(`<div class="item-row"><span class="item-qty">${item.rowNum}</span><span class="item-desc">${item.description}</span><span class="item-amt">${item.totalFormatted}</span></div>`);
-      lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">${item.referenceNumber} · ${item.personCount} person(s)</div>`);
+      lines.push(`<div class="item-row"><span class="item-qty">${item.rowNum}</span><span class="item-desc">${item.firstName} ${item.lastName}</span><span class="item-amt">${item.itemPriceFormatted}</span></div>`);
+      lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">${item.referenceNumber} · T${item.tableNumber}/C${item.chairNumber} · ${item.packageName || ''}</div>`);
     }
     lines.push('<div class="dbl-line"></div>');
-    lines.push(`<div class="total-row"><span>TOTAL (${dailySales.totalBookings} bookings)</span><span>${dailySales.grandTotalFormatted}</span></div>`);
+    lines.push(`<div class="total-row"><span>TOTAL (${dailySales.totalTickets} tickets, ${dailySales.totalBookings} bookings)</span><span>${dailySales.grandTotalFormatted}</span></div>`);
     lines.push('<div class="line"></div>');
     lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${new Date().toLocaleString()}</div>`);
     printReceipt('Daily Sales', lines);
@@ -415,10 +504,16 @@ export default function AdminDashboard() {
     { id: 'archive', label: 'Archive & Audit', icon: '\u{1F5C3}' },
   ];
 
-  const handleDashboardDateChange = (e) => {
+  const handleDashboardDateFromChange = (e) => {
     const newDate = e.target.value;
-    setDashboardDate(newDate);
-    loadDashboard(newDate);
+    setDashboardDateFrom(newDate);
+    if (newDate > dashboardDateTo) setDashboardDateTo(newDate);
+    loadDashboard(newDate, newDate > dashboardDateTo ? newDate : dashboardDateTo);
+  };
+  const handleDashboardDateToChange = (e) => {
+    const newDate = e.target.value;
+    setDashboardDateTo(newDate);
+    loadDashboard(dashboardDateFrom, newDate);
   };
 
   return (
@@ -471,24 +566,45 @@ export default function AdminDashboard() {
         {/* Top Bar */}
         <header className="bg-white border-b px-6 py-3 flex items-center justify-between">
           <h2 className="text-lg font-bold text-brand-blue">{tabs.find(t => t.id === tab)?.label || 'Dashboard'}</h2>
-          <p className="text-xs text-gray-400">Saint Mary's Entertainment Centre</p>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setAutoPrint(!autoPrint)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${autoPrint ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}
+            >
+              <span>{autoPrint ? '\uD83D\uDFE2' : '\u26AA'}</span>
+              Auto-Print {autoPrint ? 'ON' : 'OFF'}
+            </button>
+            <p className="text-xs text-gray-400">Saint Mary's Entertainment Centre</p>
+          </div>
         </header>
 
         <div className="flex-1 px-6 py-6">
         {/* DASHBOARD TAB */}
         {tab === 'dashboard' && dashboard && (
           <div>
-            {/* Date Filter */}
-            <div className="flex items-center gap-3 mb-6">
-              <label className="text-sm font-medium text-gray-600">Date:</label>
-              <input
-                type="date"
-                value={dashboardDate}
-                onChange={handleDashboardDateChange}
-                className="border rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-blue"
-              />
+            {/* Date Range Filter */}
+            <div className="flex flex-wrap items-center gap-3 mb-6">
+              <div className="flex items-center gap-1.5">
+                <label className="text-sm font-medium text-gray-600">From:</label>
+                <input
+                  type="date"
+                  value={dashboardDateFrom}
+                  onChange={handleDashboardDateFromChange}
+                  className="border rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-sm font-medium text-gray-600">To:</label>
+                <input
+                  type="date"
+                  value={dashboardDateTo}
+                  onChange={handleDashboardDateToChange}
+                  min={dashboardDateFrom}
+                  className="border rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                />
+              </div>
               <button
-                onClick={() => { setDashboardDate(new Date().toISOString().split('T')[0]); loadDashboard(new Date().toISOString().split('T')[0]); }}
+                onClick={() => { const t = new Date().toISOString().split('T')[0]; setDashboardDateFrom(t); setDashboardDateTo(t); loadDashboard(t, t); }}
                 className="text-xs text-brand-blue hover:underline"
               >
                 Today
@@ -564,6 +680,39 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+
+            {/* Recent Orders (Live Feed) */}
+            {recentReceipts.length > 0 && (
+              <div className="bg-white rounded-xl p-5 shadow-sm mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-brand-blue flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    Recent Orders (Live)
+                  </h3>
+                  <button onClick={() => setRecentReceipts([])} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {recentReceipts.map((r, i) => (
+                    <div key={r.referenceNumber + '-' + i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <span className="font-mono font-semibold text-sm text-brand-blue">{r.referenceNumber}</span>
+                        <span className="text-xs text-gray-500 ml-2">{r.sessionDate} at {r.sessionTime}</span>
+                        <span className="text-xs text-gray-400 ml-2">{r.items.length} person(s)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-green-700">{r.totalFormatted}</span>
+                        <button
+                          onClick={() => printBookingReceipt(r)}
+                          className="text-xs bg-brand-blue text-white px-2 py-1 rounded hover:bg-blue-800"
+                        >
+                          Print
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Upcoming Sessions Table */}
             <div className="bg-white rounded-xl p-5 shadow-sm">
@@ -1200,23 +1349,30 @@ export default function AdminDashboard() {
 
             {/* Daily Sales Report */}
             <div className="bg-white rounded-xl p-5 shadow-sm mt-4">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h3 className="font-semibold text-brand-blue">Daily Sales</h3>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <input
+                    type="text"
+                    placeholder="Search by name..."
+                    value={dailySalesSearch}
+                    onChange={e => { setDailySalesSearch(e.target.value); loadDailySales(dailySalesDate, e.target.value); }}
+                    className="px-3 py-1.5 border rounded-lg text-sm w-48"
+                  />
                   <input
                     type="date"
                     value={dailySalesDate}
-                    onChange={e => { setDailySalesDate(e.target.value); loadDailySales(e.target.value); }}
+                    onChange={e => { setDailySalesDate(e.target.value); loadDailySales(e.target.value, dailySalesSearch); }}
                     className="px-3 py-1.5 border rounded-lg text-sm"
                   />
                   {dailySales && dailySales.items.length > 0 && (
                     <button
                       onClick={() => {
-                        const rows = [['#', 'Reference', 'Description', 'Persons', 'Amount', 'Time']];
+                        const rows = [['#', 'Reference', 'Name', 'Table', 'Chair', 'Package', 'Session', 'Price', 'Time']];
                         for (const item of dailySales.items) {
-                          rows.push([item.rowNum, item.referenceNumber, item.description, item.personCount, item.totalFormatted, new Date(item.createdAt).toLocaleTimeString()]);
+                          rows.push([item.rowNum, item.referenceNumber, `${item.firstName} ${item.lastName}`, item.tableNumber, item.chairNumber, item.packageName || '', item.description, item.itemPriceFormatted, new Date(item.createdAt).toLocaleTimeString()]);
                         }
-                        rows.push(['', '', 'GRAND TOTAL', dailySales.totalBookings, dailySales.grandTotalFormatted, '']);
+                        rows.push(['', '', '', '', '', '', 'GRAND TOTAL', dailySales.grandTotalFormatted, `${dailySales.totalTickets} tickets / ${dailySales.totalBookings} bookings`]);
                         const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
                         const blob = new Blob([csv], { type: 'text/csv' });
                         const url = URL.createObjectURL(blob);
@@ -1234,7 +1390,7 @@ export default function AdminDashboard() {
                   {dailySales && dailySales.items.length > 0 && (
                     <button
                       onClick={() => {
-                        const w = window.open('', '_blank', 'width=800,height=600');
+                        const w = window.open('', '_blank', 'width=900,height=600');
                         w.document.write(`<html><head><title>Daily Sales - ${dailySales.date}</title>
                           <style>body{font-family:Arial,sans-serif;padding:20px;color:#333}
                           h2{margin:0 0 4px}p.sub{color:#666;font-size:14px;margin:0 0 16px}
@@ -1244,12 +1400,12 @@ export default function AdminDashboard() {
                           .right{text-align:right}.center{text-align:center}
                           tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:10px}
                           @media print{body{padding:0}}</style></head><body>`);
-                        w.document.write(`<h2>Daily Sales Report</h2><p class="sub">${dailySales.date} — ${dailySales.totalBookings} booking(s) — ${dailySales.grandTotalFormatted}</p>`);
-                        w.document.write('<table><thead><tr><th>#</th><th>Reference</th><th>Description</th><th class="center">Persons</th><th class="right">Amount</th><th>Time</th></tr></thead><tbody>');
+                        w.document.write(`<h2>Daily Sales Report</h2><p class="sub">${dailySales.date} — ${dailySales.totalTickets} ticket(s) / ${dailySales.totalBookings} booking(s) — ${dailySales.grandTotalFormatted}</p>`);
+                        w.document.write('<table><thead><tr><th>#</th><th>Reference</th><th>Name</th><th>Table</th><th>Chair</th><th>Package</th><th>Session</th><th class="right">Price</th><th>Time</th></tr></thead><tbody>');
                         for (const item of dailySales.items) {
-                          w.document.write(`<tr><td>${item.rowNum}</td><td style="font-family:monospace">${item.referenceNumber}</td><td>${item.description}</td><td class="center">${item.personCount}</td><td class="right">${item.totalFormatted}</td><td>${new Date(item.createdAt).toLocaleTimeString()}</td></tr>`);
+                          w.document.write(`<tr><td>${item.rowNum}</td><td style="font-family:monospace">${item.referenceNumber}</td><td>${item.firstName} ${item.lastName}</td><td class="center">${item.tableNumber}</td><td class="center">${item.chairNumber}</td><td>${item.packageName || ''}</td><td>${item.description}</td><td class="right">${item.itemPriceFormatted}</td><td>${new Date(item.createdAt).toLocaleTimeString()}</td></tr>`);
                         }
-                        w.document.write(`</tbody><tfoot><tr><td colspan="3">GRAND TOTAL</td><td class="center">${dailySales.totalBookings}</td><td class="right">${dailySales.grandTotalFormatted}</td><td></td></tr></tfoot></table>`);
+                        w.document.write(`</tbody><tfoot><tr><td colspan="7">GRAND TOTAL</td><td class="right">${dailySales.grandTotalFormatted}</td><td>${dailySales.totalTickets} tickets</td></tr></tfoot></table>`);
                         w.document.write('</body></html>');
                         w.document.close();
                         w.print();
@@ -1274,7 +1430,7 @@ export default function AdminDashboard() {
               {!dailySales ? (
                 <p className="text-gray-400 text-center py-8">Loading...</p>
               ) : dailySales.items.length === 0 ? (
-                <p className="text-gray-400 text-center py-8">No sales for {dailySales.date}</p>
+                <p className="text-gray-400 text-center py-8">No sales for {dailySales.date}{dailySalesSearch ? ` matching "${dailySalesSearch}"` : ''}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -1282,9 +1438,12 @@ export default function AdminDashboard() {
                       <tr className="text-left text-gray-400 border-b">
                         <th className="pb-2 pl-2">#</th>
                         <th className="pb-2">Reference</th>
-                        <th className="pb-2">Description</th>
-                        <th className="pb-2 text-center">Persons</th>
-                        <th className="pb-2 text-right">Amount</th>
+                        <th className="pb-2">Name</th>
+                        <th className="pb-2 text-center">Table</th>
+                        <th className="pb-2 text-center">Chair</th>
+                        <th className="pb-2">Package</th>
+                        <th className="pb-2">Session</th>
+                        <th className="pb-2 text-right">Price</th>
                         <th className="pb-2 text-right pr-2">Time</th>
                       </tr>
                     </thead>
@@ -1293,19 +1452,23 @@ export default function AdminDashboard() {
                         <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                           <td className="py-2.5 pl-2 text-gray-400 text-xs">{item.rowNum}</td>
                           <td className="py-2.5 font-mono text-sm font-medium text-brand-blue">{item.referenceNumber}</td>
-                          <td className="py-2.5 text-gray-800">{item.description}</td>
-                          <td className="py-2.5 text-center">{item.personCount}</td>
-                          <td className="py-2.5 text-right font-medium text-gray-800">{item.totalFormatted}</td>
+                          <td className="py-2.5 text-gray-800 font-medium">{item.firstName} {item.lastName}</td>
+                          <td className="py-2.5 text-center">{item.tableNumber}</td>
+                          <td className="py-2.5 text-center">{item.chairNumber}</td>
+                          <td className="py-2.5 text-gray-600 text-xs">{item.packageName || ''}</td>
+                          <td className="py-2.5 text-gray-600 text-xs">{item.description}</td>
+                          <td className="py-2.5 text-right font-medium text-gray-800">{item.itemPriceFormatted}</td>
                           <td className="py-2.5 text-right pr-2 text-gray-500 text-xs">{new Date(item.createdAt).toLocaleTimeString()}</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-gray-200">
-                        <td className="py-3 pl-2" colSpan={3}>
+                        <td className="py-3 pl-2" colSpan={5}>
                           <span className="font-semibold text-brand-blue">Grand Total</span>
+                          <span className="text-xs text-gray-500 ml-2">({dailySales.totalTickets} tickets / {dailySales.totalBookings} bookings)</span>
                         </td>
-                        <td className="py-3 text-center font-bold text-brand-blue">{dailySales.totalBookings}</td>
+                        <td colSpan={2}></td>
                         <td className="py-3 text-right font-bold text-brand-gold">{dailySales.grandTotalFormatted}</td>
                         <td></td>
                       </tr>

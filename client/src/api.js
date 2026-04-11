@@ -70,9 +70,12 @@ export async function adminLogin(username, password) {
   return res.json();
 }
 
-export async function fetchAdminDashboard(token, date) {
-  const params = date ? `?date=${date}` : '';
-  const res = await fetch(`${API}/admin/dashboard${params}`, { headers: adminHeaders(token) });
+export async function fetchAdminDashboard(token, dateFrom, dateTo) {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set('dateFrom', dateFrom);
+  if (dateTo) params.set('dateTo', dateTo);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API}/admin/dashboard${qs}`, { headers: adminHeaders(token) });
   return res.json();
 }
 
@@ -121,9 +124,12 @@ export async function updateAdminPackage(token, id, data) {
   return res.json();
 }
 
-export async function fetchDailySales(token, date) {
-  const params = date ? `?date=${date}` : '';
-  const res = await fetch(`${API}/admin/daily-sales${params}`, { headers: adminHeaders(token) });
+export async function fetchDailySales(token, date, search) {
+  const params = new URLSearchParams();
+  if (date) params.set('date', date);
+  if (search) params.set('search', search);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API}/admin/daily-sales${qs}`, { headers: adminHeaders(token) });
   return res.json();
 }
 

@@ -257,6 +257,46 @@ app.post('/api/bookings', (req, res) => {
       io.to(`session:${sessionId}`).emit('seat:sold', { seatId: att.seatId, sessionId });
     }
 
+    // Emit receipt data for auto-print on admin dashboard
+    const receiptItems = all(`
+      SELECT bi.id, bi.first_name, bi.last_name, bi.price,
+             seats.table_number, seats.chair_number,
+             p.name as package_name, p.price as package_price
+      FROM booking_items bi
+      JOIN seats ON seats.id = bi.seat_id
+      JOIN packages p ON p.id = bi.package_id
+      WHERE bi.booking_id = ?
+      ORDER BY bi.id
+    `, [bookingId]);
+    const receiptAddons = all(`
+      SELECT ba.booking_item_id, ba.quantity, ba.price, p.name as package_name
+      FROM booking_addons ba
+      JOIN packages p ON p.id = ba.package_id
+      JOIN booking_items bi ON bi.id = ba.booking_item_id
+      WHERE bi.booking_id = ?
+    `, [bookingId]);
+    const receiptData = {
+      referenceNumber: refNumber,
+      sessionDate: session.date,
+      sessionTime: session.time,
+      totalAmount,
+      totalFormatted: '$' + formatPrice(totalAmount),
+      createdAt: new Date().toISOString(),
+      items: receiptItems.map(item => ({
+        firstName: item.first_name,
+        lastName: item.last_name,
+        tableNumber: item.table_number,
+        chairNumber: item.chair_number,
+        packageName: item.package_name,
+        packagePrice: item.package_price,
+        packagePriceFormatted: '$' + formatPrice(item.package_price),
+        addons: receiptAddons
+          .filter(a => a.booking_item_id === item.id)
+          .map(a => ({ packageName: a.package_name, quantity: a.quantity, price: a.price, priceFormatted: '$' + formatPrice(a.price) }))
+      }))
+    };
+    io.to('admin:receipts').emit('booking:new', receiptData);
+
     logAudit('booking_created', 'booking', bookingId, {
       referenceNumber: refNumber,
       sessionId,
@@ -302,12 +342,13 @@ app.post('/api/admin/login', (req, res) => {
 
 app.get('/api/admin/dashboard', adminAuth, (req, res) => {
   const today = new Date().toISOString().split('T')[0];
-  const filterDate = req.query.date || today;
+  const dateFrom = req.query.dateFrom || req.query.date || today;
+  const dateTo = req.query.dateTo || dateFrom;
   const todayBookings = get(
-    `SELECT COUNT(*) as count FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date = ? AND b.payment_status = 'paid'`, [filterDate]
+    `SELECT COUNT(*) as count FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'`, [dateFrom, dateTo]
   );
   const todayRevenue = get(
-    `SELECT COALESCE(SUM(b.total_amount), 0) as total FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date = ? AND b.payment_status = 'paid'`, [filterDate]
+    `SELECT COALESCE(SUM(b.total_amount), 0) as total FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'`, [dateFrom, dateTo]
   );
   const upcomingSessions = all(
     `SELECT s.*,
@@ -318,7 +359,7 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
     FROM sessions s WHERE s.date >= ? AND s.deleted_at IS NULL ORDER BY s.date ASC LIMIT 7`, [today]
   );
 
-  // Table/chair metrics for the filter date sessions
+  // Table/chair metrics for the filter date range sessions
   const seatMetrics = get(
     `SELECT
       COUNT(DISTINCT CASE WHEN st.is_disabled = 0 THEN st.table_number END) as totalTables,
@@ -328,7 +369,7 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
       COUNT(CASE WHEN st.status = 'held' THEN 1 END) as heldChairs
     FROM seats st
     JOIN sessions s ON st.session_id = s.id
-    WHERE s.date = ? AND s.deleted_at IS NULL`, [filterDate]
+    WHERE s.date >= ? AND s.date <= ? AND s.deleted_at IS NULL`, [dateFrom, dateTo]
   );
 
   // Tables breakdown: available (all chairs vacant), partially occupied, fully occupied
@@ -340,8 +381,8 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
       COUNT(CASE WHEN st.is_disabled = 0 THEN 1 END) as total
     FROM seats st
     JOIN sessions s ON st.session_id = s.id
-    WHERE s.date = ? AND s.deleted_at IS NULL AND st.is_disabled = 0
-    GROUP BY st.session_id, st.table_number`, [filterDate]
+    WHERE s.date >= ? AND s.date <= ? AND s.deleted_at IS NULL AND st.is_disabled = 0
+    GROUP BY st.session_id, st.table_number`, [dateFrom, dateTo]
   );
 
   let availableTables = 0, partialTables = 0, fullTables = 0;
@@ -351,16 +392,17 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
     else partialTables++;
   }
 
-  // Number of persons (booking items) for filter date
+  // Number of persons (booking items) for filter date range
   const personsCount = get(
     `SELECT COUNT(*) as count FROM booking_items bi
      JOIN bookings b ON bi.booking_id = b.id
      JOIN sessions s ON b.session_id = s.id
-     WHERE s.date = ? AND b.payment_status = 'paid'`, [filterDate]
+     WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'`, [dateFrom, dateTo]
   );
 
   res.json({
-    filterDate,
+    dateFrom,
+    dateTo,
     todayBookings: todayBookings?.count || 0,
     todayRevenue: todayRevenue?.total || 0,
     todayRevenueFormatted: '$' + formatPrice(todayRevenue?.total || 0),
@@ -379,32 +421,87 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
 
 app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
   const date = req.query.date || new Date().toISOString().split('T')[0];
+  const search = (req.query.search || '').trim().toLowerCase();
   const rows = all(`
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
            s.date as session_date, s.time as session_time,
            s.is_special_event, s.event_title,
-           (SELECT COUNT(*) FROM booking_items WHERE booking_id = b.id) as person_count
+           bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
+           seats.table_number, seats.chair_number,
+           p.name as package_name
     FROM bookings b
     JOIN sessions s ON b.session_id = s.id
+    JOIN booking_items bi ON bi.booking_id = b.id
+    JOIN seats ON seats.id = bi.seat_id
+    LEFT JOIN packages p ON p.id = bi.package_id
     WHERE s.date = ? AND b.payment_status = 'paid'
-    ORDER BY b.created_at ASC
+    ORDER BY b.created_at ASC, b.id, bi.id
   `, [date]);
-  const grandTotal = rows.reduce((sum, r) => sum + r.total_amount, 0);
+
+  // Load addons for all items in one query
+  const allAddons = all(`
+    SELECT ba.booking_item_id, ba.quantity, ba.price, p.name as package_name
+    FROM booking_addons ba
+    LEFT JOIN packages p ON p.id = ba.package_id
+    JOIN booking_items bi ON bi.id = ba.booking_item_id
+    JOIN bookings b ON b.id = bi.booking_id
+    JOIN sessions s ON s.id = b.session_id
+    WHERE s.date = ? AND b.payment_status = 'paid'
+  `, [date]);
+  const addonsByItem = {};
+  for (const a of allAddons) {
+    if (!addonsByItem[a.booking_item_id]) addonsByItem[a.booking_item_id] = [];
+    addonsByItem[a.booking_item_id].push({
+      packageName: a.package_name,
+      quantity: a.quantity,
+      price: a.price,
+      priceFormatted: '$' + formatPrice(a.price)
+    });
+  }
+
+  // Filter by name search if provided
+  let filtered = rows;
+  if (search) {
+    filtered = rows.filter(r => {
+      const fullName = `${r.first_name} ${r.last_name}`.toLowerCase();
+      return fullName.includes(search) || r.reference_number.toLowerCase().includes(search);
+    });
+  }
+
+  // Build individual ticket items
+  const items = filtered.map((r, i) => ({
+    rowNum: i + 1,
+    id: r.item_id,
+    bookingId: r.id,
+    referenceNumber: r.reference_number,
+    firstName: r.first_name,
+    lastName: r.last_name,
+    tableNumber: r.table_number,
+    chairNumber: r.chair_number,
+    packageName: r.package_name,
+    description: r.is_special_event && r.event_title ? r.event_title : `Bingo Session ${r.session_time}`,
+    sessionDate: r.session_date,
+    sessionTime: r.session_time,
+    itemPrice: r.item_price,
+    itemPriceFormatted: '$' + formatPrice(r.item_price),
+    totalAmount: r.total_amount,
+    totalFormatted: '$' + formatPrice(r.total_amount),
+    addons: addonsByItem[r.item_id] || [],
+    createdAt: r.created_at
+  }));
+
+  // Calculate unique bookings and grand total from filtered results
+  const uniqueBookings = new Set(filtered.map(r => r.id));
+  const grandTotal = [...uniqueBookings].reduce((sum, bid) => {
+    const booking = filtered.find(r => r.id === bid);
+    return sum + (booking ? booking.total_amount : 0);
+  }, 0);
+
   res.json({
     date,
-    items: rows.map((r, i) => ({
-      rowNum: i + 1,
-      id: r.id,
-      referenceNumber: r.reference_number,
-      description: r.is_special_event && r.event_title ? r.event_title : `Bingo Session ${r.session_time}`,
-      sessionDate: r.session_date,
-      sessionTime: r.session_time,
-      personCount: r.person_count,
-      totalAmount: r.total_amount,
-      totalFormatted: '$' + formatPrice(r.total_amount),
-      createdAt: r.created_at
-    })),
-    totalBookings: rows.length,
+    items,
+    totalTickets: items.length,
+    totalBookings: uniqueBookings.size,
     grandTotal,
     grandTotalFormatted: '$' + formatPrice(grandTotal)
   });
@@ -905,6 +1002,14 @@ io.on('connection', (socket) => {
 
   socket.on('leave:session', (sessionId) => {
     socket.leave(`session:${sessionId}`);
+  });
+
+  socket.on('join:admin-receipts', () => {
+    socket.join('admin:receipts');
+  });
+
+  socket.on('leave:admin-receipts', () => {
+    socket.leave('admin:receipts');
   });
 
   socket.on('disconnect', () => {
