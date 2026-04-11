@@ -419,7 +419,7 @@ app.get('/api/admin/booking-sales', adminAuth, (req, res) => {
     LEFT JOIN bookings b ON b.session_id = s.id AND b.payment_status = 'paid'
     WHERE s.deleted_at IS NULL
     GROUP BY s.id
-    ORDER BY s.date DESC, s.time DESC
+    ORDER BY s.date ASC, s.time ASC
   `);
   res.json(rows.map(r => ({
     id: r.id,
