@@ -3,8 +3,10 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import multer from 'multer';
 import { getDb, all, get, run, exec, saveDb } from './database.js';
 import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
@@ -22,8 +24,34 @@ const PORT = process.env.PORT || 3001;
 const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '10');
 const startTime = Date.now();
 
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+// Configure multer for image uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${uuid()}${ext}`);
+  }
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error('Only image files (jpg, png, gif, webp) are allowed'));
+  }
+});
+
 app.use(cors());
 app.use(express.json());
+
+// Serve uploaded files
+app.use('/uploads', express.static(uploadsDir));
 
 // Serve static build in production
 const clientBuild = path.join(__dirname, '../../client/dist');
@@ -108,6 +136,14 @@ app.get('/api/sessions/:sessionId/packages', (req, res) => {
   }
   // Fall back to global packages
   res.json(all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC'));
+});
+
+// --- Theme settings (public) ---
+app.get('/api/theme', (req, res) => {
+  const row = get("SELECT value FROM settings WHERE key = 'theme_config'");
+  if (!row) return res.json({ value: null });
+  try { res.json({ value: JSON.parse(row.value) }); }
+  catch { res.json({ value: null }); }
 });
 
 // --- Announcements (public) ---
@@ -883,18 +919,25 @@ app.get('/api/admin/announcements', adminAuth, (req, res) => {
 });
 
 app.post('/api/admin/announcements', adminAuth, (req, res) => {
-  const { title, message, type, is_active, start_date, end_date, sort_order } = req.body;
+  const { title, message, type, is_active, start_date, end_date, sort_order, image_url } = req.body;
   if (!message) return res.status(400).json({ error: 'Message is required' });
   const id = uuid();
   const now = new Date().toISOString();
-  run('INSERT INTO announcements (id, title, message, type, is_active, start_date, end_date, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, title || null, message, type || 'info', is_active !== false ? 1 : 0, start_date || null, end_date || null, sort_order || 0, now, now]);
+  run('INSERT INTO announcements (id, title, message, type, is_active, start_date, end_date, sort_order, image_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, title || null, message, type || 'info', is_active !== false ? 1 : 0, start_date || null, end_date || null, sort_order || 0, image_url || null, now, now]);
   io.emit('announcements:refresh');
-  res.json({ id, title, message, type: type || 'info' });
+  res.json({ id, title, message, type: type || 'info', image_url: image_url || null });
+});
+
+// Image upload for announcements
+app.post('/api/admin/upload', adminAuth, upload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image file provided' });
+  const url = `/uploads/${req.file.filename}`;
+  res.json({ url, filename: req.file.filename });
 });
 
 app.patch('/api/admin/announcements/:id', adminAuth, (req, res) => {
-  const { title, message, type, is_active, start_date, end_date, sort_order } = req.body;
+  const { title, message, type, is_active, start_date, end_date, sort_order, image_url } = req.body;
   const updates = [];
   const values = [];
   if (title !== undefined) { updates.push('title = ?'); values.push(title); }
@@ -904,6 +947,7 @@ app.patch('/api/admin/announcements/:id', adminAuth, (req, res) => {
   if (start_date !== undefined) { updates.push('start_date = ?'); values.push(start_date || null); }
   if (end_date !== undefined) { updates.push('end_date = ?'); values.push(end_date || null); }
   if (sort_order !== undefined) { updates.push('sort_order = ?'); values.push(sort_order); }
+  if (image_url !== undefined) { updates.push('image_url = ?'); values.push(image_url || null); }
   if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
   updates.push("updated_at = ?"); values.push(new Date().toISOString());
   values.push(req.params.id);

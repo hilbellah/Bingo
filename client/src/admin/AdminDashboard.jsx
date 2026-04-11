@@ -10,7 +10,8 @@ import {
   fetchAdminBulkTickets,
   fetchDeletedSessions, restoreSession, fetchSessionBookings, fetchAuditLog,
   fetchBookingSales, fetchDailySales,
-  fetchSettings, saveSettings
+  fetchSettings, saveSettings,
+  uploadImage
 } from '../api';
 
 function formatPrice(cents) {
@@ -29,7 +30,7 @@ export default function AdminDashboard() {
   const [reportSession, setReportSession] = useState('');
   const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: false, event_title: '', event_description: '', packages: [] });
   const [announcements, setAnnouncements] = useState([]);
-  const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '' });
+  const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
   const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0 });
   const [editingSessionPkgs, setEditingSessionPkgs] = useState(null); // session id being edited
   const [sessionPkgList, setSessionPkgList] = useState([]);
@@ -68,6 +69,28 @@ export default function AdminDashboard() {
     paperWidth: '80mm'
   });
   const [receiptSaved, setReceiptSaved] = useState(false);
+  const [generalConfig, setGeneralConfig] = useState({
+    businessName: 'SMEC BINGO',
+    businessSubtitle: "Saint Mary's Entertainment Centre",
+    locationText: '',
+    contactPhone: '',
+    contactEmail: ''
+  });
+  const [themeConfig, setThemeConfig] = useState({
+    primaryColor: '#1a3a5c',
+    accentColor: '#c5a55a',
+    headerBg: '#0a1628',
+    buttonColor: '#c5a55a',
+    seatVacant: '#43a047',
+    seatHeld: '#f9a825',
+    seatSold: '#757575',
+    seatSelected: '#1565c0'
+  });
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [settingsSection, setSettingsSection] = useState('general');
+  const [announcementImageFile, setAnnouncementImageFile] = useState(null);
+  const [announcementImagePreview, setAnnouncementImagePreview] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const socketRef = useRef(null);
   const autoPrintRef = useRef(false);
   const receiptConfigRef = useRef(receiptConfig);
@@ -85,6 +108,14 @@ export default function AdminDashboard() {
           autoPrintRef.current = true;
         }
       }
+    });
+    // Load general config
+    fetchSettings(token, 'general_config').then(config => {
+      if (config) setGeneralConfig(config);
+    });
+    // Load theme config
+    fetchSettings(token, 'theme_config').then(config => {
+      if (config) setThemeConfig(config);
     });
   }, []);
 
@@ -402,8 +433,23 @@ export default function AdminDashboard() {
 
   const handleCreateAnnouncement = async () => {
     if (!newAnnouncement.message) return;
-    await createAdminAnnouncement(token, newAnnouncement);
-    setNewAnnouncement({ title: '', message: '', type: 'info', start_date: '', end_date: '' });
+    let imageUrl = newAnnouncement.image_url || '';
+    // Upload image file if selected
+    if (announcementImageFile) {
+      setUploadingImage(true);
+      try {
+        const result = await uploadImage(token, announcementImageFile);
+        imageUrl = result.url;
+      } catch (err) {
+        setUploadingImage(false);
+        return;
+      }
+      setUploadingImage(false);
+    }
+    await createAdminAnnouncement(token, { ...newAnnouncement, image_url: imageUrl || null });
+    setNewAnnouncement({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
+    setAnnouncementImageFile(null);
+    setAnnouncementImagePreview(null);
     loadAnnouncements();
   };
 
@@ -541,7 +587,7 @@ export default function AdminDashboard() {
     { id: 'bookings', label: 'Bookings & Reports', icon: '\u{1F4B0}' },
     { id: 'bulkprint', label: 'Bulk Print', icon: '\u{1F5A8}' },
     { id: 'archive', label: 'Archive & Audit', icon: '\u{1F5C3}' },
-    { id: 'receipt-settings', label: 'Receipt Settings', icon: '\u{1F9FE}' },
+    { id: 'settings', label: 'Settings', icon: '\u{2699}\u{FE0F}' },
   ];
 
   const handleDashboardDateFromChange = (e) => {
@@ -1275,9 +1321,43 @@ export default function AdminDashboard() {
                       className="w-full px-3 py-2 border rounded-lg text-sm" />
                   </div>
                 </div>
-                <button onClick={handleCreateAnnouncement} disabled={!newAnnouncement.message}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Image (optional)</label>
+                  <div className="flex items-center gap-3">
+                    <label className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm border transition-colors">
+                      {announcementImageFile ? 'Change Image' : 'Upload Image'}
+                      <input type="file" accept="image/*" className="hidden" onChange={e => {
+                        const file = e.target.files[0];
+                        if (file) {
+                          setAnnouncementImageFile(file);
+                          setAnnouncementImagePreview(URL.createObjectURL(file));
+                          setNewAnnouncement({...newAnnouncement, image_url: ''});
+                        }
+                      }} />
+                    </label>
+                    <span className="text-gray-300">or</span>
+                    <input value={newAnnouncement.image_url} onChange={e => {
+                      setNewAnnouncement({...newAnnouncement, image_url: e.target.value});
+                      setAnnouncementImageFile(null);
+                      setAnnouncementImagePreview(null);
+                    }}
+                      className="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Paste image URL..." />
+                  </div>
+                  {(announcementImagePreview || newAnnouncement.image_url) && (
+                    <div className="mt-2 relative inline-block">
+                      <img src={announcementImagePreview || newAnnouncement.image_url} alt="Preview"
+                        className="h-20 rounded-lg object-cover border" />
+                      <button onClick={() => {
+                        setAnnouncementImageFile(null);
+                        setAnnouncementImagePreview(null);
+                        setNewAnnouncement({...newAnnouncement, image_url: ''});
+                      }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600">&times;</button>
+                    </div>
+                  )}
+                </div>
+                <button onClick={handleCreateAnnouncement} disabled={!newAnnouncement.message || uploadingImage}
                   className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90 disabled:opacity-40">
-                  Create Announcement
+                  {uploadingImage ? 'Uploading...' : 'Create Announcement'}
                 </button>
               </div>
             </div>
@@ -1304,6 +1384,9 @@ export default function AdminDashboard() {
                             </span>
                           </div>
                           <p className="text-sm text-gray-600">{a.message}</p>
+                          {a.image_url && (
+                            <img src={a.image_url} alt="Announcement" className="mt-2 h-16 rounded object-cover border" />
+                          )}
                           {(a.start_date || a.end_date) && (
                             <p className="text-xs text-gray-400 mt-1">
                               {a.start_date && `From: ${a.start_date}`} {a.end_date && `Until: ${a.end_date}`}
@@ -1971,147 +2054,309 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* RECEIPT SETTINGS TAB */}
-        {tab === 'receipt-settings' && (
-          <div className="max-w-2xl">
-            <h3 className="text-lg font-bold text-brand-blue mb-4">Receipt Configuration</h3>
+        {/* SETTINGS TAB */}
+        {tab === 'settings' && (
+          <div className="max-w-3xl">
+            {/* Settings Sub-navigation */}
+            <div className="flex gap-1 mb-6 bg-white rounded-xl p-1.5 shadow-sm">
+              {[
+                { id: 'general', label: 'General' },
+                { id: 'appearance', label: 'Appearance' },
+                { id: 'printing', label: 'Printing & Receipts' },
+              ].map(s => (
+                <button key={s.id} onClick={() => setSettingsSection(s.id)}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    settingsSection === s.id
+                      ? 'bg-brand-blue text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  }`}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
 
-            {receiptSaved && (
+            {settingsSaved && (
               <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2 mb-4 text-sm">
                 Settings saved successfully!
               </div>
             )}
 
-            {/* Business Info */}
-            <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-              <h4 className="font-semibold text-gray-700 mb-3">Business Information</h4>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Business Name</label>
-                  <input
-                    type="text"
-                    value={receiptConfig.businessName}
-                    onChange={e => setReceiptConfig({ ...receiptConfig, businessName: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                  />
+            {/* GENERAL SETTINGS */}
+            {settingsSection === 'general' && (
+              <div>
+                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">Business Information</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Business Name</label>
+                      <input type="text" value={generalConfig.businessName}
+                        onChange={e => setGeneralConfig({ ...generalConfig, businessName: e.target.value })}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Subtitle / Tagline</label>
+                      <input type="text" value={generalConfig.businessSubtitle}
+                        onChange={e => setGeneralConfig({ ...generalConfig, businessSubtitle: e.target.value })}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Location</label>
+                      <input type="text" value={generalConfig.locationText}
+                        onChange={e => setGeneralConfig({ ...generalConfig, locationText: e.target.value })}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                        placeholder="e.g. 123 Main St, Fredericton, NB" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Contact Phone</label>
+                        <input type="text" value={generalConfig.contactPhone}
+                          onChange={e => setGeneralConfig({ ...generalConfig, contactPhone: e.target.value })}
+                          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                          placeholder="(506) 555-0100" />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Contact Email</label>
+                        <input type="email" value={generalConfig.contactEmail}
+                          onChange={e => setGeneralConfig({ ...generalConfig, contactEmail: e.target.value })}
+                          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                          placeholder="info@example.com" />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Subtitle / Tagline</label>
-                  <input
-                    type="text"
-                    value={receiptConfig.businessSubtitle}
-                    onChange={e => setReceiptConfig({ ...receiptConfig, businessSubtitle: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Receipt Title</label>
-                  <input
-                    type="text"
-                    value={receiptConfig.receiptTitle}
-                    onChange={e => setReceiptConfig({ ...receiptConfig, receiptTitle: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Footer Message</label>
-                  <input
-                    type="text"
-                    value={receiptConfig.footerText}
-                    onChange={e => setReceiptConfig({ ...receiptConfig, footerText: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                  />
-                </div>
-              </div>
-            </div>
 
-            {/* Display Options */}
-            <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-              <h4 className="font-semibold text-gray-700 mb-3">Display Options</h4>
-              <div className="space-y-3">
-                {[
-                  { key: 'showRefNumber', label: 'Show Reference Number' },
-                  { key: 'showTableChair', label: 'Show Table & Chair Numbers' },
-                  { key: 'showPackagePrice', label: 'Show Package Prices' },
-                  { key: 'showAddons', label: 'Show Add-ons' },
-                  { key: 'showTimestamp', label: 'Show Timestamp' },
-                ].map(opt => (
-                  <label key={opt.key} className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={receiptConfig[opt.key]}
-                      onChange={e => setReceiptConfig({ ...receiptConfig, [opt.key]: e.target.checked })}
-                      className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
-                    />
-                    <span className="text-sm text-gray-700">{opt.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Printer Settings */}
-            <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-              <h4 className="font-semibold text-gray-700 mb-3">Printer Settings</h4>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Paper Width</label>
-                  <select
-                    value={receiptConfig.paperWidth}
-                    onChange={e => setReceiptConfig({ ...receiptConfig, paperWidth: e.target.value })}
-                    className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                  >
-                    <option value="58mm">58mm (Small Thermal)</option>
-                    <option value="80mm">80mm (Standard Thermal)</option>
-                  </select>
-                </div>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={receiptConfig.autoPrintEnabled}
-                    onChange={e => {
-                      const val = e.target.checked;
-                      setReceiptConfig({ ...receiptConfig, autoPrintEnabled: val });
-                      setAutoPrint(val);
-                    }}
-                    className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
-                  />
-                  <span className="text-sm text-gray-700">Auto-Print on New Orders</span>
-                </label>
-                <p className="text-xs text-gray-400 ml-7">When enabled, a receipt will automatically print every time a new booking is placed. Set your thermal printer as the default browser printer for silent printing.</p>
-              </div>
-            </div>
-
-            {/* Save & Preview */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  saveSettings(token, 'receipt_config', receiptConfig).then(() => {
-                    setReceiptSaved(true);
-                    setTimeout(() => setReceiptSaved(false), 3000);
+                <button onClick={() => {
+                  saveSettings(token, 'general_config', generalConfig).then(() => {
+                    setSettingsSaved(true);
+                    setTimeout(() => setSettingsSaved(false), 3000);
                   });
-                }}
-                className="bg-brand-blue text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors"
-              >
-                Save Settings
-              </button>
-              <button
-                onClick={() => {
-                  printBookingReceipt({
-                    referenceNumber: 'SAMPLE-001',
-                    sessionDate: new Date().toISOString().split('T')[0],
-                    sessionTime: '18:30',
-                    totalFormatted: '$25.00',
-                    createdAt: new Date().toISOString(),
-                    items: [
-                      { firstName: 'John', lastName: 'Doe', tableNumber: 1, chairNumber: 3, packageName: 'Regular Bingo', packagePriceFormatted: '$20.00', addons: [{ packageName: 'Extra Card', quantity: 1, priceFormatted: '$5.00' }] }
-                    ]
-                  });
-                }}
-                className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors border"
-              >
-                Print Preview
-              </button>
-            </div>
+                }} className="bg-brand-blue text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors">
+                  Save General Settings
+                </button>
+              </div>
+            )}
+
+            {/* APPEARANCE SETTINGS */}
+            {settingsSection === 'appearance' && (
+              <div>
+                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">App Colors</h4>
+                  <p className="text-xs text-gray-400 mb-4">Customize the colors used throughout the app. Changes apply to the public booking page after saving.</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {[
+                      { key: 'primaryColor', label: 'Primary Color', desc: 'Main brand color (headers, sidebar)' },
+                      { key: 'accentColor', label: 'Accent Color', desc: 'Buttons, highlights, badges' },
+                      { key: 'headerBg', label: 'Header Background', desc: 'Dark header/navbar background' },
+                      { key: 'buttonColor', label: 'Button Color', desc: 'Primary action buttons' },
+                    ].map(c => (
+                      <div key={c.key} className="border rounded-lg p-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-0.5">{c.label}</label>
+                        <p className="text-xs text-gray-400 mb-2">{c.desc}</p>
+                        <div className="flex items-center gap-2">
+                          <input type="color" value={themeConfig[c.key]}
+                            onChange={e => setThemeConfig({ ...themeConfig, [c.key]: e.target.value })}
+                            className="w-10 h-10 rounded border cursor-pointer" />
+                          <input type="text" value={themeConfig[c.key]}
+                            onChange={e => setThemeConfig({ ...themeConfig, [c.key]: e.target.value })}
+                            className="flex-1 border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">Seat Map Colors</h4>
+                  <p className="text-xs text-gray-400 mb-4">Customize how seats appear on the booking page.</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {[
+                      { key: 'seatVacant', label: 'Vacant Seat', desc: 'Available seats' },
+                      { key: 'seatHeld', label: 'Held Seat', desc: 'Temporarily reserved' },
+                      { key: 'seatSold', label: 'Sold Seat', desc: 'Booked/confirmed' },
+                      { key: 'seatSelected', label: 'Selected Seat', desc: 'Currently selected by user' },
+                    ].map(c => (
+                      <div key={c.key} className="border rounded-lg p-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-0.5">{c.label}</label>
+                        <p className="text-xs text-gray-400 mb-2">{c.desc}</p>
+                        <div className="flex items-center gap-2">
+                          <input type="color" value={themeConfig[c.key]}
+                            onChange={e => setThemeConfig({ ...themeConfig, [c.key]: e.target.value })}
+                            className="w-10 h-10 rounded border cursor-pointer" />
+                          <input type="text" value={themeConfig[c.key]}
+                            onChange={e => setThemeConfig({ ...themeConfig, [c.key]: e.target.value })}
+                            className="flex-1 border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Color Preview */}
+                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">Preview</h4>
+                  <div className="border rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 text-white text-sm font-bold" style={{ backgroundColor: themeConfig.headerBg }}>
+                      Header Preview
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div className="flex gap-2">
+                        <button className="px-4 py-2 rounded-lg text-white text-sm font-medium" style={{ backgroundColor: themeConfig.buttonColor }}>
+                          Primary Button
+                        </button>
+                        <button className="px-4 py-2 rounded-lg text-white text-sm font-medium" style={{ backgroundColor: themeConfig.primaryColor }}>
+                          Secondary Button
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        {[
+                          { color: themeConfig.seatVacant, label: 'Vacant' },
+                          { color: themeConfig.seatHeld, label: 'Held' },
+                          { color: themeConfig.seatSold, label: 'Sold' },
+                          { color: themeConfig.seatSelected, label: 'Selected' },
+                        ].map(s => (
+                          <div key={s.label} className="flex items-center gap-1.5">
+                            <div className="w-8 h-8 rounded-lg border-2 border-white shadow-sm" style={{ backgroundColor: s.color }} />
+                            <span className="text-xs text-gray-500">{s.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button onClick={() => {
+                    saveSettings(token, 'theme_config', themeConfig).then(() => {
+                      setSettingsSaved(true);
+                      setTimeout(() => setSettingsSaved(false), 3000);
+                    });
+                  }} className="bg-brand-blue text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors">
+                    Save Appearance
+                  </button>
+                  <button onClick={() => {
+                    setThemeConfig({
+                      primaryColor: '#1a3a5c', accentColor: '#c5a55a', headerBg: '#0a1628',
+                      buttonColor: '#c5a55a', seatVacant: '#43a047', seatHeld: '#f9a825',
+                      seatSold: '#757575', seatSelected: '#1565c0'
+                    });
+                  }} className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors border">
+                    Reset to Defaults
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* PRINTING & RECEIPTS SETTINGS */}
+            {settingsSection === 'printing' && (
+              <div>
+                {receiptSaved && (
+                  <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2 mb-4 text-sm">
+                    Receipt settings saved!
+                  </div>
+                )}
+
+                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">Receipt Information</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Business Name on Receipt</label>
+                      <input type="text" value={receiptConfig.businessName}
+                        onChange={e => setReceiptConfig({ ...receiptConfig, businessName: e.target.value })}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Subtitle / Tagline</label>
+                      <input type="text" value={receiptConfig.businessSubtitle}
+                        onChange={e => setReceiptConfig({ ...receiptConfig, businessSubtitle: e.target.value })}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Receipt Title</label>
+                      <input type="text" value={receiptConfig.receiptTitle}
+                        onChange={e => setReceiptConfig({ ...receiptConfig, receiptTitle: e.target.value })}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Footer Message</label>
+                      <input type="text" value={receiptConfig.footerText}
+                        onChange={e => setReceiptConfig({ ...receiptConfig, footerText: e.target.value })}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">Display Options</h4>
+                  <div className="space-y-3">
+                    {[
+                      { key: 'showRefNumber', label: 'Show Reference Number' },
+                      { key: 'showTableChair', label: 'Show Table & Chair Numbers' },
+                      { key: 'showPackagePrice', label: 'Show Package Prices' },
+                      { key: 'showAddons', label: 'Show Add-ons' },
+                      { key: 'showTimestamp', label: 'Show Timestamp' },
+                    ].map(opt => (
+                      <label key={opt.key} className="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" checked={receiptConfig[opt.key]}
+                          onChange={e => setReceiptConfig({ ...receiptConfig, [opt.key]: e.target.checked })}
+                          className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue" />
+                        <span className="text-sm text-gray-700">{opt.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+                  <h4 className="font-semibold text-gray-700 mb-3">Printer Settings</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Paper Width</label>
+                      <select value={receiptConfig.paperWidth}
+                        onChange={e => setReceiptConfig({ ...receiptConfig, paperWidth: e.target.value })}
+                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue">
+                        <option value="58mm">58mm (Small Thermal)</option>
+                        <option value="80mm">80mm (Standard Thermal)</option>
+                      </select>
+                    </div>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" checked={receiptConfig.autoPrintEnabled}
+                        onChange={e => {
+                          const val = e.target.checked;
+                          setReceiptConfig({ ...receiptConfig, autoPrintEnabled: val });
+                          setAutoPrint(val);
+                        }}
+                        className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue" />
+                      <span className="text-sm text-gray-700">Auto-Print on New Orders</span>
+                    </label>
+                    <p className="text-xs text-gray-400 ml-7">When enabled, a receipt will automatically print every time a new booking is placed. Set your thermal printer as the default browser printer for silent printing.</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button onClick={() => {
+                    saveSettings(token, 'receipt_config', receiptConfig).then(() => {
+                      setReceiptSaved(true);
+                      setTimeout(() => setReceiptSaved(false), 3000);
+                    });
+                  }} className="bg-brand-blue text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors">
+                    Save Receipt Settings
+                  </button>
+                  <button onClick={() => {
+                    printBookingReceipt({
+                      referenceNumber: 'SAMPLE-001',
+                      sessionDate: new Date().toISOString().split('T')[0],
+                      sessionTime: '18:30',
+                      totalFormatted: '$25.00',
+                      createdAt: new Date().toISOString(),
+                      items: [
+                        { firstName: 'John', lastName: 'Doe', tableNumber: 1, chairNumber: 3, packageName: 'Regular Bingo', packagePriceFormatted: '$20.00', addons: [{ packageName: 'Extra Card', quantity: 1, priceFormatted: '$5.00' }] }
+                      ]
+                    });
+                  }} className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors border">
+                    Print Preview
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

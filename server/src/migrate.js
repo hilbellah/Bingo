@@ -148,6 +148,32 @@ async function migrate() {
     )
   `);
 
+  // Add image_url column to announcements
+  try { exec('ALTER TABLE announcements ADD COLUMN image_url TEXT'); } catch(e) {}
+
+  // Default theme settings
+  const defaultTheme = JSON.stringify({
+    primaryColor: '#1a3a5c',
+    accentColor: '#c5a55a',
+    headerBg: '#0a1628',
+    buttonColor: '#c5a55a',
+    seatVacant: '#43a047',
+    seatHeld: '#f9a825',
+    seatSold: '#757575',
+    seatSelected: '#1565c0'
+  });
+  try { run("INSERT INTO settings (key, value) VALUES ('theme_config', ?)", [defaultTheme]); } catch(e) {}
+
+  // Default general settings
+  const defaultGeneral = JSON.stringify({
+    businessName: 'SMEC BINGO',
+    businessSubtitle: "Saint Mary's Entertainment Centre",
+    locationText: '',
+    contactPhone: '',
+    contactEmail: ''
+  });
+  try { run("INSERT INTO settings (key, value) VALUES ('general_config', ?)", [defaultGeneral]); } catch(e) {}
+
   // Default receipt settings
   const defaultReceipt = JSON.stringify({
     businessName: 'SMEC BINGO',

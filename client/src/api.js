@@ -25,6 +25,23 @@ export async function fetchAnnouncements() {
   return res.json();
 }
 
+export async function fetchTheme() {
+  const res = await fetch(`${API}/theme`);
+  const data = await res.json();
+  return data.value;
+}
+
+export async function uploadImage(token, file) {
+  const formData = new FormData();
+  formData.append('image', file);
+  const res = await fetch(`${API}/admin/upload`, {
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${token}` },
+    body: formData
+  });
+  return res.json();
+}
+
 export async function lockSeat(seatId, holderId) {
   const res = await fetch(`${API}/seats/${seatId}/lock`, {
     method: 'POST',

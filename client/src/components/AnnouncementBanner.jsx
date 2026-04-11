@@ -57,6 +57,10 @@ export default function AnnouncementBanner({ socket }) {
           <div className="flex-1 min-w-0">
             {a.title && <p className="font-bold text-sm">{a.title}</p>}
             <p className="text-sm">{a.message}</p>
+            {a.image_url && (
+              <img src={a.image_url} alt={a.title || 'Announcement'}
+                className="mt-2 max-h-48 rounded-lg object-cover" />
+            )}
           </div>
           <button
             onClick={() => setDismissed(prev => new Set([...prev, a.id]))}

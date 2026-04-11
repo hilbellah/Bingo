@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchSessions, fetchSeats, fetchPackages, fetchSessionPackages, lockSeat, unlockSeat, createBooking } from './api';
+import { fetchSessions, fetchSeats, fetchPackages, fetchSessionPackages, lockSeat, unlockSeat, createBooking, fetchTheme } from './api';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import { useSocket } from './useSocket';
 import BookingPanel from './components/BookingPanel';
@@ -74,6 +74,22 @@ export default function App() {
   const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, 1 = next week, etc.
   const [namesFilledBeforeChairs, setNamesFilledBeforeChairs] = useState(false); // track if user filled names and went to pick chairs
   const [bookingStep, setBookingStep] = useState(0); // 0 = party/names, 1 = packages, 2 = review/pay
+
+  // Load theme colors
+  useEffect(() => {
+    fetchTheme().then(theme => {
+      if (!theme) return;
+      const root = document.documentElement;
+      if (theme.primaryColor) root.style.setProperty('--color-primary', theme.primaryColor);
+      if (theme.accentColor) root.style.setProperty('--color-accent', theme.accentColor);
+      if (theme.headerBg) root.style.setProperty('--color-header-bg', theme.headerBg);
+      if (theme.buttonColor) root.style.setProperty('--color-button', theme.buttonColor);
+      if (theme.seatVacant) root.style.setProperty('--color-seat-vacant', theme.seatVacant);
+      if (theme.seatHeld) root.style.setProperty('--color-seat-held', theme.seatHeld);
+      if (theme.seatSold) root.style.setProperty('--color-seat-sold', theme.seatSold);
+      if (theme.seatSelected) root.style.setProperty('--color-seat-selected', theme.seatSelected);
+    }).catch(() => {});
+  }, []);
 
   // Load initial data
   useEffect(() => {
