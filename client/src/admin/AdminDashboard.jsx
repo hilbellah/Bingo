@@ -9,7 +9,8 @@ import {
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
   fetchDeletedSessions, restoreSession, fetchSessionBookings, fetchAuditLog,
-  fetchBookingSales, fetchDailySales
+  fetchBookingSales, fetchDailySales,
+  fetchSettings, saveSettings
 } from '../api';
 
 function formatPrice(cents) {
@@ -53,12 +54,38 @@ export default function AdminDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [autoPrint, setAutoPrint] = useState(false);
   const [recentReceipts, setRecentReceipts] = useState([]);
+  const [receiptConfig, setReceiptConfig] = useState({
+    businessName: 'SMEC BINGO',
+    businessSubtitle: "Saint Mary's Entertainment Centre",
+    receiptTitle: 'BOOKING RECEIPT',
+    footerText: 'Thank you for your purchase!',
+    showRefNumber: true,
+    showTableChair: true,
+    showPackagePrice: true,
+    showAddons: true,
+    showTimestamp: true,
+    autoPrintEnabled: false,
+    paperWidth: '80mm'
+  });
+  const [receiptSaved, setReceiptSaved] = useState(false);
   const socketRef = useRef(null);
   const autoPrintRef = useRef(false);
+  const receiptConfigRef = useRef(receiptConfig);
 
   useEffect(() => {
     if (!token) { navigate('/admin'); return; }
     loadDashboard();
+    // Load receipt config from server
+    fetchSettings(token, 'receipt_config').then(config => {
+      if (config) {
+        setReceiptConfig(config);
+        receiptConfigRef.current = config;
+        if (config.autoPrintEnabled) {
+          setAutoPrint(true);
+          autoPrintRef.current = true;
+        }
+      }
+    });
   }, []);
 
   const loadDashboard = (from, to) => fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard);
@@ -80,28 +107,34 @@ export default function AdminDashboard() {
     if (tab === 'archive') { loadDeletedSessions(); loadAuditLogs(); }
   }, [tab]);
 
-  // Auto-print: keep ref in sync with state
+  // Auto-print: keep refs in sync with state
   useEffect(() => { autoPrintRef.current = autoPrint; }, [autoPrint]);
+  useEffect(() => { receiptConfigRef.current = receiptConfig; }, [receiptConfig]);
 
-  // Auto-print receipt function
+  // Auto-print receipt function (uses receipt config)
   const printBookingReceipt = useCallback((booking) => {
+    const cfg = receiptConfigRef.current;
     const w = window.open('', '_blank', 'width=350,height=600');
     if (!w) return;
     const lines = [
-      '<div class="header">SMEC BINGO</div>',
-      '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
+      `<div class="header">${cfg.businessName}</div>`,
+      `<div class="sub-header">${cfg.businessSubtitle}</div>`,
       '<div class="line"></div>',
-      '<div class="center bold">BOOKING RECEIPT</div>',
+      `<div class="center bold">${cfg.receiptTitle}</div>`,
       `<div class="center">${booking.sessionDate} at ${booking.sessionTime}</div>`,
       '<div class="line"></div>',
-      `<div class="row"><span>Ref:</span><span class="bold">${booking.referenceNumber}</span></div>`,
-      '<div class="line"></div>',
-      '<div class="bold">Attendees:</div>',
     ];
+    if (cfg.showRefNumber) {
+      lines.push(`<div class="row"><span>Ref:</span><span class="bold">${booking.referenceNumber}</span></div>`);
+      lines.push('<div class="line"></div>');
+    }
+    lines.push('<div class="bold">Attendees:</div>');
     for (const item of booking.items) {
       lines.push(`<div style="padding:2px 0">${item.firstName} ${item.lastName}</div>`);
-      lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${item.tableNumber}/C${item.chairNumber} · ${item.packageName}</span><span class="item-amt">${item.packagePriceFormatted || ''}</span></div>`);
-      if (item.addons && item.addons.length > 0) {
+      if (cfg.showTableChair) {
+        lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${item.tableNumber}/C${item.chairNumber} · ${item.packageName}</span>${cfg.showPackagePrice ? `<span class="item-amt">${item.packagePriceFormatted || ''}</span>` : ''}</div>`);
+      }
+      if (cfg.showAddons && item.addons && item.addons.length > 0) {
         for (const addon of item.addons) {
           lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  + ${addon.packageName} x${addon.quantity}</span><span class="item-amt">${addon.priceFormatted}</span></div>`);
         }
@@ -109,13 +142,19 @@ export default function AdminDashboard() {
     }
     lines.push('<div class="dbl-line"></div>');
     lines.push(`<div class="total-row"><span>TOTAL</span><span>${booking.totalFormatted}</span></div>`);
-    lines.push('<div class="line"></div>');
-    lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${new Date(booking.createdAt).toLocaleString()}</div>`);
+    if (cfg.footerText) {
+      lines.push('<div class="line"></div>');
+      lines.push(`<div class="center" style="font-size:10px;margin-top:4px">${cfg.footerText}</div>`);
+    }
+    if (cfg.showTimestamp) {
+      lines.push(`<div class="center" style="font-size:10px;margin-top:4px">${new Date(booking.createdAt).toLocaleString()}</div>`);
+    }
 
+    const bodyWidth = cfg.paperWidth === '58mm' ? '50mm' : '72mm';
     w.document.write(`<html><head><title>Receipt</title>
       <style>
-        @page { size: 80mm auto; margin: 0; }
-        body { font-family: 'Courier New', monospace; font-size: 12px; width: 72mm; margin: 4mm auto; padding: 0; color: #000; line-height: 1.4; }
+        @page { size: ${cfg.paperWidth} auto; margin: 0; }
+        body { font-family: 'Courier New', monospace; font-size: 12px; width: ${bodyWidth}; margin: 4mm auto; padding: 0; color: #000; line-height: 1.4; }
         .center { text-align: center; }
         .bold { font-weight: bold; }
         .line { border-top: 1px dashed #000; margin: 4px 0; }
@@ -127,7 +166,7 @@ export default function AdminDashboard() {
         .item-desc { flex: 1; padding: 0 4px; }
         .item-amt { width: 60px; text-align: right; }
         .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; padding: 2px 0; }
-        @media print { body { width: 72mm; margin: 0 auto; } }
+        @media print { body { width: ${bodyWidth}; margin: 0 auto; } }
       </style></head><body>`);
     w.document.write(lines.join(''));
     w.document.write('</body></html>');
@@ -502,6 +541,7 @@ export default function AdminDashboard() {
     { id: 'bookings', label: 'Bookings & Reports', icon: '\u{1F4B0}' },
     { id: 'bulkprint', label: 'Bulk Print', icon: '\u{1F5A8}' },
     { id: 'archive', label: 'Archive & Audit', icon: '\u{1F5C3}' },
+    { id: 'receipt-settings', label: 'Receipt Settings', icon: '\u{1F9FE}' },
   ];
 
   const handleDashboardDateFromChange = (e) => {
@@ -568,7 +608,13 @@ export default function AdminDashboard() {
           <h2 className="text-lg font-bold text-brand-blue">{tabs.find(t => t.id === tab)?.label || 'Dashboard'}</h2>
           <div className="flex items-center gap-4">
             <button
-              onClick={() => setAutoPrint(!autoPrint)}
+              onClick={() => {
+                const next = !autoPrint;
+                setAutoPrint(next);
+                const updated = { ...receiptConfig, autoPrintEnabled: next };
+                setReceiptConfig(updated);
+                saveSettings(token, 'receipt_config', updated);
+              }}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${autoPrint ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}
             >
               <span>{autoPrint ? '\uD83D\uDFE2' : '\u26AA'}</span>
@@ -1924,6 +1970,151 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+
+        {/* RECEIPT SETTINGS TAB */}
+        {tab === 'receipt-settings' && (
+          <div className="max-w-2xl">
+            <h3 className="text-lg font-bold text-brand-blue mb-4">Receipt Configuration</h3>
+
+            {receiptSaved && (
+              <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2 mb-4 text-sm">
+                Settings saved successfully!
+              </div>
+            )}
+
+            {/* Business Info */}
+            <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+              <h4 className="font-semibold text-gray-700 mb-3">Business Information</h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Business Name</label>
+                  <input
+                    type="text"
+                    value={receiptConfig.businessName}
+                    onChange={e => setReceiptConfig({ ...receiptConfig, businessName: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Subtitle / Tagline</label>
+                  <input
+                    type="text"
+                    value={receiptConfig.businessSubtitle}
+                    onChange={e => setReceiptConfig({ ...receiptConfig, businessSubtitle: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Receipt Title</label>
+                  <input
+                    type="text"
+                    value={receiptConfig.receiptTitle}
+                    onChange={e => setReceiptConfig({ ...receiptConfig, receiptTitle: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Footer Message</label>
+                  <input
+                    type="text"
+                    value={receiptConfig.footerText}
+                    onChange={e => setReceiptConfig({ ...receiptConfig, footerText: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Display Options */}
+            <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+              <h4 className="font-semibold text-gray-700 mb-3">Display Options</h4>
+              <div className="space-y-3">
+                {[
+                  { key: 'showRefNumber', label: 'Show Reference Number' },
+                  { key: 'showTableChair', label: 'Show Table & Chair Numbers' },
+                  { key: 'showPackagePrice', label: 'Show Package Prices' },
+                  { key: 'showAddons', label: 'Show Add-ons' },
+                  { key: 'showTimestamp', label: 'Show Timestamp' },
+                ].map(opt => (
+                  <label key={opt.key} className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={receiptConfig[opt.key]}
+                      onChange={e => setReceiptConfig({ ...receiptConfig, [opt.key]: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
+                    />
+                    <span className="text-sm text-gray-700">{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Printer Settings */}
+            <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+              <h4 className="font-semibold text-gray-700 mb-3">Printer Settings</h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Paper Width</label>
+                  <select
+                    value={receiptConfig.paperWidth}
+                    onChange={e => setReceiptConfig({ ...receiptConfig, paperWidth: e.target.value })}
+                    className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                  >
+                    <option value="58mm">58mm (Small Thermal)</option>
+                    <option value="80mm">80mm (Standard Thermal)</option>
+                  </select>
+                </div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={receiptConfig.autoPrintEnabled}
+                    onChange={e => {
+                      const val = e.target.checked;
+                      setReceiptConfig({ ...receiptConfig, autoPrintEnabled: val });
+                      setAutoPrint(val);
+                    }}
+                    className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
+                  />
+                  <span className="text-sm text-gray-700">Auto-Print on New Orders</span>
+                </label>
+                <p className="text-xs text-gray-400 ml-7">When enabled, a receipt will automatically print every time a new booking is placed. Set your thermal printer as the default browser printer for silent printing.</p>
+              </div>
+            </div>
+
+            {/* Save & Preview */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  saveSettings(token, 'receipt_config', receiptConfig).then(() => {
+                    setReceiptSaved(true);
+                    setTimeout(() => setReceiptSaved(false), 3000);
+                  });
+                }}
+                className="bg-brand-blue text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors"
+              >
+                Save Settings
+              </button>
+              <button
+                onClick={() => {
+                  printBookingReceipt({
+                    referenceNumber: 'SAMPLE-001',
+                    sessionDate: new Date().toISOString().split('T')[0],
+                    sessionTime: '18:30',
+                    totalFormatted: '$25.00',
+                    createdAt: new Date().toISOString(),
+                    items: [
+                      { firstName: 'John', lastName: 'Doe', tableNumber: 1, chairNumber: 3, packageName: 'Regular Bingo', packagePriceFormatted: '$20.00', addons: [{ packageName: 'Extra Card', quantity: 1, priceFormatted: '$5.00' }] }
+                    ]
+                  });
+                }}
+                className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors border"
+              >
+                Print Preview
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
       </div>
 

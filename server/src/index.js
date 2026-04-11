@@ -340,6 +340,30 @@ app.post('/api/admin/login', (req, res) => {
   res.status(401).json({ error: 'Invalid credentials' });
 });
 
+// ============ SETTINGS ============
+
+app.get('/api/admin/settings/:key', adminAuth, (req, res) => {
+  const row = get('SELECT value FROM settings WHERE key = ?', [req.params.key]);
+  if (!row) return res.json({ value: null });
+  try {
+    res.json({ value: JSON.parse(row.value) });
+  } catch {
+    res.json({ value: row.value });
+  }
+});
+
+app.put('/api/admin/settings/:key', adminAuth, (req, res) => {
+  const { value } = req.body;
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  const existing = get('SELECT key FROM settings WHERE key = ?', [req.params.key]);
+  if (existing) {
+    run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = ?", [serialized, req.params.key]);
+  } else {
+    run("INSERT INTO settings (key, value) VALUES (?, ?)", [serialized, req.params.key]);
+  }
+  res.json({ ok: true });
+});
+
 app.get('/api/admin/dashboard', adminAuth, (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const dateFrom = req.query.dateFrom || req.query.date || today;

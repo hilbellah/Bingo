@@ -138,6 +138,21 @@ export async function fetchBookingSales(token) {
   return res.json();
 }
 
+export async function fetchSettings(token, key) {
+  const res = await fetch(`${API}/admin/settings/${key}`, { headers: adminHeaders(token) });
+  const data = await res.json();
+  return data.value;
+}
+
+export async function saveSettings(token, key, value) {
+  const res = await fetch(`${API}/admin/settings/${key}`, {
+    method: 'PUT',
+    headers: { ...adminHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value })
+  });
+  return res.json();
+}
+
 export async function fetchAdminBookings(token, sessionId) {
   const url = sessionId
     ? `${API}/admin/bookings?sessionId=${sessionId}`

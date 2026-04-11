@@ -139,6 +139,31 @@ async function migrate() {
   try { exec('CREATE INDEX idx_audit_log_action ON audit_log(action)'); } catch(e) {}
   try { exec('CREATE INDEX idx_audit_log_created ON audit_log(created_at)'); } catch(e) {}
 
+  // Settings table (key-value store)
+  exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Default receipt settings
+  const defaultReceipt = JSON.stringify({
+    businessName: 'SMEC BINGO',
+    businessSubtitle: "Saint Mary's Entertainment Centre",
+    receiptTitle: 'BOOKING RECEIPT',
+    footerText: 'Thank you for your purchase!',
+    showRefNumber: true,
+    showTableChair: true,
+    showPackagePrice: true,
+    showAddons: true,
+    showTimestamp: true,
+    autoPrintEnabled: false,
+    paperWidth: '80mm'
+  });
+  try { run("INSERT INTO settings (key, value) VALUES ('receipt_config', ?)", [defaultReceipt]); } catch(e) {}
+
   console.log('Migrations complete.');
 }
 
