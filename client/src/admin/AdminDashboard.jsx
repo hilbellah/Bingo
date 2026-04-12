@@ -69,25 +69,6 @@ export default function AdminDashboard() {
     paperWidth: '80mm'
   });
   const [receiptSaved, setReceiptSaved] = useState(false);
-  const [generalConfig, setGeneralConfig] = useState({
-    businessName: 'SMEC BINGO',
-    businessSubtitle: "Saint Mary's Entertainment Centre",
-    locationText: '',
-    contactPhone: '',
-    contactEmail: ''
-  });
-  const [themeConfig, setThemeConfig] = useState({
-    primaryColor: '#1a3a5c',
-    accentColor: '#c5a55a',
-    headerBg: '#0a1628',
-    buttonColor: '#c5a55a',
-    seatVacant: '#43a047',
-    seatHeld: '#f9a825',
-    seatSold: '#757575',
-    seatSelected: '#1565c0'
-  });
-  const [settingsSaved, setSettingsSaved] = useState(false);
-  const [settingsSection, setSettingsSection] = useState('general');
   const [announcementImageFile, setAnnouncementImageFile] = useState(null);
   const [announcementImagePreview, setAnnouncementImagePreview] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -108,14 +89,6 @@ export default function AdminDashboard() {
           autoPrintRef.current = true;
         }
       }
-    });
-    // Load general config
-    fetchSettings(token, 'general_config').then(config => {
-      if (config) setGeneralConfig(config);
-    });
-    // Load theme config
-    fetchSettings(token, 'theme_config').then(config => {
-      if (config) setThemeConfig(config);
     });
   }, []);
 
@@ -2057,197 +2030,7 @@ export default function AdminDashboard() {
         {/* SETTINGS TAB */}
         {tab === 'settings' && (
           <div className="max-w-3xl">
-            {/* Settings Sub-navigation */}
-            <div className="flex gap-1 mb-6 bg-white rounded-xl p-1.5 shadow-sm">
-              {[
-                { id: 'general', label: 'General' },
-                { id: 'appearance', label: 'Appearance' },
-                { id: 'printing', label: 'Printing & Receipts' },
-              ].map(s => (
-                <button key={s.id} onClick={() => setSettingsSection(s.id)}
-                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    settingsSection === s.id
-                      ? 'bg-brand-blue text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                  }`}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-
-            {settingsSaved && (
-              <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2 mb-4 text-sm">
-                Settings saved successfully!
-              </div>
-            )}
-
-            {/* GENERAL SETTINGS */}
-            {settingsSection === 'general' && (
-              <div>
-                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-                  <h4 className="font-semibold text-gray-700 mb-3">Business Information</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Business Name</label>
-                      <input type="text" value={generalConfig.businessName}
-                        onChange={e => setGeneralConfig({ ...generalConfig, businessName: e.target.value })}
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Subtitle / Tagline</label>
-                      <input type="text" value={generalConfig.businessSubtitle}
-                        onChange={e => setGeneralConfig({ ...generalConfig, businessSubtitle: e.target.value })}
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Location</label>
-                      <input type="text" value={generalConfig.locationText}
-                        onChange={e => setGeneralConfig({ ...generalConfig, locationText: e.target.value })}
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                        placeholder="e.g. 123 Main St, Fredericton, NB" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Contact Phone</label>
-                        <input type="text" value={generalConfig.contactPhone}
-                          onChange={e => setGeneralConfig({ ...generalConfig, contactPhone: e.target.value })}
-                          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                          placeholder="(506) 555-0100" />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Contact Email</label>
-                        <input type="email" value={generalConfig.contactEmail}
-                          onChange={e => setGeneralConfig({ ...generalConfig, contactEmail: e.target.value })}
-                          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                          placeholder="info@example.com" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <button onClick={() => {
-                  saveSettings(token, 'general_config', generalConfig).then(() => {
-                    setSettingsSaved(true);
-                    setTimeout(() => setSettingsSaved(false), 3000);
-                  });
-                }} className="bg-brand-blue text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors">
-                  Save General Settings
-                </button>
-              </div>
-            )}
-
-            {/* APPEARANCE SETTINGS */}
-            {settingsSection === 'appearance' && (
-              <div>
-                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-                  <h4 className="font-semibold text-gray-700 mb-3">App Colors</h4>
-                  <p className="text-xs text-gray-400 mb-4">Customize the colors used throughout the app. Changes apply to the public booking page after saving.</p>
-                  <div className="grid grid-cols-2 gap-4">
-                    {[
-                      { key: 'primaryColor', label: 'Primary Color', desc: 'Main brand color (headers, sidebar)' },
-                      { key: 'accentColor', label: 'Accent Color', desc: 'Buttons, highlights, badges' },
-                      { key: 'headerBg', label: 'Header Background', desc: 'Dark header/navbar background' },
-                      { key: 'buttonColor', label: 'Button Color', desc: 'Primary action buttons' },
-                    ].map(c => (
-                      <div key={c.key} className="border rounded-lg p-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-0.5">{c.label}</label>
-                        <p className="text-xs text-gray-400 mb-2">{c.desc}</p>
-                        <div className="flex items-center gap-2">
-                          <input type="color" value={themeConfig[c.key]}
-                            onChange={e => setThemeConfig({ ...themeConfig, [c.key]: e.target.value })}
-                            className="w-10 h-10 rounded border cursor-pointer" />
-                          <input type="text" value={themeConfig[c.key]}
-                            onChange={e => setThemeConfig({ ...themeConfig, [c.key]: e.target.value })}
-                            className="flex-1 border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-blue" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-                  <h4 className="font-semibold text-gray-700 mb-3">Seat Map Colors</h4>
-                  <p className="text-xs text-gray-400 mb-4">Customize how seats appear on the booking page.</p>
-                  <div className="grid grid-cols-2 gap-4">
-                    {[
-                      { key: 'seatVacant', label: 'Vacant Seat', desc: 'Available seats' },
-                      { key: 'seatHeld', label: 'Held Seat', desc: 'Temporarily reserved' },
-                      { key: 'seatSold', label: 'Sold Seat', desc: 'Booked/confirmed' },
-                      { key: 'seatSelected', label: 'Selected Seat', desc: 'Currently selected by user' },
-                    ].map(c => (
-                      <div key={c.key} className="border rounded-lg p-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-0.5">{c.label}</label>
-                        <p className="text-xs text-gray-400 mb-2">{c.desc}</p>
-                        <div className="flex items-center gap-2">
-                          <input type="color" value={themeConfig[c.key]}
-                            onChange={e => setThemeConfig({ ...themeConfig, [c.key]: e.target.value })}
-                            className="w-10 h-10 rounded border cursor-pointer" />
-                          <input type="text" value={themeConfig[c.key]}
-                            onChange={e => setThemeConfig({ ...themeConfig, [c.key]: e.target.value })}
-                            className="flex-1 border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-blue" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Color Preview */}
-                <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-                  <h4 className="font-semibold text-gray-700 mb-3">Preview</h4>
-                  <div className="border rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 text-white text-sm font-bold" style={{ backgroundColor: themeConfig.headerBg }}>
-                      Header Preview
-                    </div>
-                    <div className="p-4 space-y-3">
-                      <div className="flex gap-2">
-                        <button className="px-4 py-2 rounded-lg text-white text-sm font-medium" style={{ backgroundColor: themeConfig.buttonColor }}>
-                          Primary Button
-                        </button>
-                        <button className="px-4 py-2 rounded-lg text-white text-sm font-medium" style={{ backgroundColor: themeConfig.primaryColor }}>
-                          Secondary Button
-                        </button>
-                      </div>
-                      <div className="flex gap-2">
-                        {[
-                          { color: themeConfig.seatVacant, label: 'Vacant' },
-                          { color: themeConfig.seatHeld, label: 'Held' },
-                          { color: themeConfig.seatSold, label: 'Sold' },
-                          { color: themeConfig.seatSelected, label: 'Selected' },
-                        ].map(s => (
-                          <div key={s.label} className="flex items-center gap-1.5">
-                            <div className="w-8 h-8 rounded-lg border-2 border-white shadow-sm" style={{ backgroundColor: s.color }} />
-                            <span className="text-xs text-gray-500">{s.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <button onClick={() => {
-                    saveSettings(token, 'theme_config', themeConfig).then(() => {
-                      setSettingsSaved(true);
-                      setTimeout(() => setSettingsSaved(false), 3000);
-                    });
-                  }} className="bg-brand-blue text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors">
-                    Save Appearance
-                  </button>
-                  <button onClick={() => {
-                    setThemeConfig({
-                      primaryColor: '#1a3a5c', accentColor: '#c5a55a', headerBg: '#0a1628',
-                      buttonColor: '#c5a55a', seatVacant: '#43a047', seatHeld: '#f9a825',
-                      seatSold: '#757575', seatSelected: '#1565c0'
-                    });
-                  }} className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors border">
-                    Reset to Defaults
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* PRINTING & RECEIPTS SETTINGS */}
-            {settingsSection === 'printing' && (
               <div>
                 {receiptSaved && (
                   <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2 mb-4 text-sm">
@@ -2356,7 +2139,6 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               </div>
-            )}
           </div>
         )}
 
