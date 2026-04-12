@@ -97,10 +97,6 @@ export default function App() {
       setSessions(data);
       if (data.length > 0) {
         setSelectedSession(data[0]);
-        if (data[0].is_special_event) {
-          setPartySize(1);
-          setAttendees([{ firstName: '', lastName: '', addons: [] }]);
-        }
       }
     });
   }, []);
@@ -166,12 +162,10 @@ export default function App() {
       return;
     }
 
-    // Max chairs per booking (1 for special events, 6 otherwise)
-    const maxChairs = selectedSession?.is_special_event ? 1 : 6;
+    // Max chairs per booking
+    const maxChairs = 6;
     if (selectedSeats.length >= maxChairs) {
-      setError(selectedSession?.is_special_event
-        ? 'Special events are limited to 1 player. Tap a selected chair to deselect.'
-        : 'Maximum 6 chairs per booking. Tap a selected chair to deselect.');
+      setError('Maximum 6 chairs per booking. Tap a selected chair to deselect.');
       setTimeout(() => setError(''), 4000);
       return;
     }
@@ -208,7 +202,6 @@ export default function App() {
   };
 
   const handlePartySize = (size) => {
-    if (selectedSession?.is_special_event && size > 1) return;
     setPartySize(size);
     setAttendees(Array.from({ length: size }, (_, i) => ({
       firstName: attendees[i]?.firstName || '',

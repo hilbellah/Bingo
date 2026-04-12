@@ -162,11 +162,6 @@ export default function BookingPanel({
                   )}
                 </div>
 
-                {session?.is_special_event ? (
-                  <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-center">
-                    <p className="text-sm font-semibold text-amber-700">Special Event — 1 Player Only</p>
-                  </div>
-                ) : (
                 <div className="grid grid-cols-6 gap-2">
                   {[1, 2, 3, 4, 5, 6].map(n => (
                     <button
@@ -189,17 +184,16 @@ export default function BookingPanel({
                     </button>
                   ))}
                 </div>
-                )}
               </div>
 
               {/* Name Forms — shown immediately based on party size */}
               {partySize > 0 && (
                 <div>
                   <h3 className="font-bold text-brand-blue text-lg mb-3">
-                    {session?.is_special_event ? 'Player Name' : 'Player Names'}
+                    {partySize === 1 ? 'Player Name' : 'Player Names'}
                   </h3>
                   <p className="text-sm text-gray-500 mb-4">
-                    {session?.is_special_event
+                    {partySize === 1
                       ? 'Enter Name below and pick your chair on the floor plan.'
                       : "Enter everyone's name, then you'll pick chairs on the floor plan."}
                   </p>
