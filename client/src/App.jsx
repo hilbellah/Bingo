@@ -458,6 +458,35 @@ export default function App() {
           )}
         </div>
 
+        {/* Selected Session Info — Date & Event Name */}
+        {selectedSession && (
+          <div className={`mb-4 rounded-xl border px-5 py-3 flex items-center gap-4 ${
+            selectedSession.is_special_event
+              ? 'bg-amber-500/15 border-amber-500/30'
+              : 'bg-white/5 border-white/10'
+          }`}>
+            <div className="flex items-center gap-2 text-lg font-bold text-white">
+              <svg className="w-5 h-5 text-brand-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+              </svg>
+              {formatDateShort(selectedSession.date)} — {formatTime(selectedSession.time)}
+            </div>
+            {selectedSession.is_special_event && selectedSession.event_title && (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 bg-amber-500 text-white text-sm font-bold px-3 py-1 rounded-full">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                  {selectedSession.event_title}
+                </span>
+              </div>
+            )}
+            {!selectedSession.is_special_event && (
+              <span className="text-white/50 text-sm font-medium">Regular Bingo Night</span>
+            )}
+          </div>
+        )}
+
         {/* Error Toast */}
         {error && (
           <div className="mb-4 bg-red-500/20 border border-red-400/30 text-red-200 px-4 py-3 rounded-xl text-center text-sm font-medium">
