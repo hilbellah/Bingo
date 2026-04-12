@@ -560,7 +560,7 @@ export default function AdminDashboard() {
     { id: 'bookings', label: 'Bookings & Reports', icon: '\u{1F4B0}' },
     { id: 'bulkprint', label: 'Bulk Print', icon: '\u{1F5A8}' },
     { id: 'archive', label: 'Archive & Audit', icon: '\u{1F5C3}' },
-    { id: 'settings', label: 'Settings', icon: '\u{2699}\u{FE0F}' },
+    { id: 'settings', label: 'Printing Settings', icon: '\u{1F5A8}' },
   ];
 
   const handleDashboardDateFromChange = (e) => {
