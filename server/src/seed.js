@@ -50,7 +50,8 @@ async function seed() {
     CREATE TABLE packages (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, price INTEGER NOT NULL,
       type TEXT NOT NULL, max_quantity INTEGER NOT NULL DEFAULT 1,
-      is_active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0
+      is_active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 0,
+      is_phd INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE bookings (
       id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
@@ -82,6 +83,7 @@ async function seed() {
       type TEXT NOT NULL,
       max_quantity INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,
+      is_phd INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE announcements (

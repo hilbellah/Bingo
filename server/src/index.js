@@ -138,6 +138,35 @@ app.get('/api/sessions/:sessionId/packages', (req, res) => {
   res.json(all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC'));
 });
 
+// --- PHD Inventory status (public) ---
+app.get('/api/phd-inventory', (req, res) => {
+  const settingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
+  const config = settingsRow ? JSON.parse(settingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
+
+  // Count all PHD units sold across all active (paid) bookings
+  const usedRow = get(`
+    SELECT COALESCE(SUM(ba.quantity), 0) as total_used
+    FROM booking_addons ba
+    JOIN booking_items bi ON bi.id = ba.booking_item_id
+    JOIN bookings b ON b.id = bi.booking_id
+    WHERE b.payment_status = 'paid'
+      AND (
+        ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+        OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+      )
+  `);
+
+  const totalUsed = usedRow?.total_used || 0;
+  const remaining = Math.max(0, config.totalStock - totalUsed);
+
+  res.json({
+    totalStock: config.totalStock,
+    totalUsed,
+    remaining,
+    perPlayerLimit: config.perPlayerLimit
+  });
+});
+
 // --- Theme settings (public) ---
 app.get('/api/theme', (req, res) => {
   const row = get("SELECT value FROM settings WHERE key = 'theme_config'");
@@ -254,6 +283,63 @@ app.post('/api/bookings', (req, res) => {
     const seat = get('SELECT * FROM seats WHERE id = ?', [att.seatId]);
     if (!seat || seat.status !== 'held' || seat.held_by !== holderId) {
       return res.status(409).json({ error: `Seat not held by you` });
+    }
+  }
+
+  // --- PHD inventory validation ---
+  const phdSettingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
+  const phdConfig = phdSettingsRow ? JSON.parse(phdSettingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
+
+  // Identify which packages are PHD in this booking context
+  const phdPkgIds = new Set();
+  if (useSessionPkgs) {
+    sessionPkgs.filter(p => p.is_phd).forEach(p => phdPkgIds.add(p.id));
+  } else {
+    all('SELECT id FROM packages WHERE is_phd = 1 AND is_active = 1').forEach(p => phdPkgIds.add(p.id));
+  }
+
+  if (phdPkgIds.size > 0) {
+    // Check per-player PHD limit
+    for (const att of attendees) {
+      if (!att.addons) continue;
+      let playerPhdQty = 0;
+      for (const addon of att.addons) {
+        if (phdPkgIds.has(addon.packageId)) playerPhdQty += addon.quantity;
+      }
+      if (playerPhdQty > phdConfig.perPlayerLimit) {
+        return res.status(400).json({ error: `Each player can only add up to ${phdConfig.perPlayerLimit} handheld devices.` });
+      }
+    }
+
+    // Check total PHD inventory
+    let totalPhdInBooking = 0;
+    for (const att of attendees) {
+      if (!att.addons) continue;
+      for (const addon of att.addons) {
+        if (phdPkgIds.has(addon.packageId)) totalPhdInBooking += addon.quantity;
+      }
+    }
+
+    if (totalPhdInBooking > 0) {
+      const usedRow = get(`
+        SELECT COALESCE(SUM(ba.quantity), 0) as total_used
+        FROM booking_addons ba
+        JOIN booking_items bi ON bi.id = ba.booking_item_id
+        JOIN bookings b ON b.id = bi.booking_id
+        WHERE b.payment_status = 'paid'
+          AND (
+            ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+            OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+          )
+      `);
+      const totalUsed = usedRow?.total_used || 0;
+      const remaining = phdConfig.totalStock - totalUsed;
+
+      if (totalPhdInBooking > remaining) {
+        return res.status(400).json({
+          error: `Only ${remaining} handheld device${remaining !== 1 ? 's' : ''} remaining in stock. You requested ${totalPhdInBooking}.`
+        });
+      }
     }
   }
 
@@ -400,6 +486,70 @@ app.put('/api/admin/settings/:key', adminAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ============ PHD INVENTORY (Admin) ============
+
+app.get('/api/admin/phd-inventory', adminAuth, (req, res) => {
+  const settingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
+  const config = settingsRow ? JSON.parse(settingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
+
+  const usedRow = get(`
+    SELECT COALESCE(SUM(ba.quantity), 0) as total_used
+    FROM booking_addons ba
+    JOIN booking_items bi ON bi.id = ba.booking_item_id
+    JOIN bookings b ON b.id = bi.booking_id
+    WHERE b.payment_status = 'paid'
+      AND (
+        ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+        OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+      )
+  `);
+
+  const totalUsed = usedRow?.total_used || 0;
+  const remaining = Math.max(0, config.totalStock - totalUsed);
+
+  // Per-session breakdown
+  const perSession = all(`
+    SELECT s.id, s.date, s.time, s.event_title, s.is_special_event,
+      COALESCE(SUM(ba.quantity), 0) as phd_count
+    FROM sessions s
+    JOIN bookings b ON b.session_id = s.id AND b.payment_status = 'paid'
+    JOIN booking_items bi ON bi.booking_id = b.id
+    JOIN booking_addons ba ON ba.booking_item_id = bi.id
+    WHERE (
+      ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+      OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+    ) AND s.deleted_at IS NULL
+    GROUP BY s.id
+    ORDER BY s.date DESC
+  `);
+
+  res.json({
+    totalStock: config.totalStock,
+    totalUsed,
+    remaining,
+    perPlayerLimit: config.perPlayerLimit,
+    perSession
+  });
+});
+
+app.put('/api/admin/phd-inventory', adminAuth, (req, res) => {
+  const { totalStock, perPlayerLimit } = req.body;
+  const config = {
+    totalStock: totalStock != null ? Number(totalStock) : 200,
+    perPlayerLimit: perPlayerLimit != null ? Number(perPlayerLimit) : 2
+  };
+
+  const existing = get("SELECT key FROM settings WHERE key = 'phd_inventory'");
+  if (existing) {
+    run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'phd_inventory'", [JSON.stringify(config)]);
+  } else {
+    run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [JSON.stringify(config)]);
+  }
+
+  logAudit('phd_inventory_updated', 'settings', 'phd_inventory', config);
+  res.json({ ok: true, ...config });
+});
+
 app.get('/api/admin/dashboard', adminAuth, (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const dateFrom = req.query.dateFrom || req.query.date || today;
@@ -475,7 +625,22 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
     availableTables,
     partialTables,
     fullTables,
-    totalPersons: personsCount?.count || 0
+    totalPersons: personsCount?.count || 0,
+    phdInventory: (() => {
+      const phdRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
+      const phdCfg = phdRow ? JSON.parse(phdRow.value) : { totalStock: 200, perPlayerLimit: 2 };
+      const phdUsed = get(`
+        SELECT COALESCE(SUM(ba.quantity), 0) as total_used
+        FROM booking_addons ba
+        JOIN booking_items bi ON bi.id = ba.booking_item_id
+        JOIN bookings b ON b.id = bi.booking_id
+        WHERE b.payment_status = 'paid'
+          AND (ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+               OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1))
+      `);
+      const used = phdUsed?.total_used || 0;
+      return { totalStock: phdCfg.totalStock, totalUsed: used, remaining: Math.max(0, phdCfg.totalStock - used), perPlayerLimit: phdCfg.perPlayerLimit };
+    })()
   });
 });
 
@@ -686,11 +851,11 @@ app.get('/api/admin/packages', adminAuth, (req, res) => {
 });
 
 app.post('/api/admin/packages', adminAuth, (req, res) => {
-  const { name, price, type, max_quantity, sort_order } = req.body;
+  const { name, price, type, max_quantity, sort_order, is_phd } = req.body;
   const id = uuid();
-  run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order) VALUES (?, ?, ?, ?, ?, 1, ?)',
-    [id, name, price, type, max_quantity || 1, sort_order || 0]);
-  res.json({ id, name, price, type });
+  run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+    [id, name, price, type, max_quantity || 1, sort_order || 0, is_phd ? 1 : 0]);
+  res.json({ id, name, price, type, is_phd: is_phd ? 1 : 0 });
 });
 
 app.patch('/api/admin/packages/:id', adminAuth, (req, res) => {
@@ -703,6 +868,7 @@ app.patch('/api/admin/packages/:id', adminAuth, (req, res) => {
   if (max_quantity !== undefined) { updates.push('max_quantity = ?'); values.push(max_quantity); }
   if (is_active !== undefined) { updates.push('is_active = ?'); values.push(is_active ? 1 : 0); }
   if (sort_order !== undefined) { updates.push('sort_order = ?'); values.push(sort_order); }
+  if (req.body.is_phd !== undefined) { updates.push('is_phd = ?'); values.push(req.body.is_phd ? 1 : 0); }
   if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
   values.push(req.params.id);
   run(`UPDATE packages SET ${updates.join(', ')} WHERE id = ?`, values);
@@ -975,8 +1141,8 @@ app.post('/api/admin/sessions/:id/packages', adminAuth, (req, res) => {
   run('DELETE FROM session_packages WHERE session_id = ?', [req.params.id]);
   for (const pkg of pkgs) {
     const id = uuid();
-    run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, req.params.id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0]);
+    run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, req.params.id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0]);
   }
   res.json({ success: true, count: pkgs.length });
 });

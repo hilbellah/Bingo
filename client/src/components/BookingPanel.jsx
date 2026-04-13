@@ -23,7 +23,7 @@ export default function BookingPanel({
   attendees, onAttendees, selectedSeats, seats,
   requiredPkg, optionalPkgs, total,
   allNamesValid, allSeatsSelected, loading, onSubmit, holdExpiry,
-  step, onStepChange
+  step, onStepChange, phdInventory
 }) {
   // Steps: 0 = party size & names, 1 = packages & add-ons, 2 = review & pay
   const setStep = onStepChange;
@@ -67,7 +67,34 @@ export default function BookingPanel({
     onAttendees(updated);
   };
 
+  // Calculate total PHD units currently selected across all attendees
+  const getTotalPhdSelected = () => {
+    if (!phdInventory) return 0;
+    return attendees.reduce((sum, att) => {
+      return sum + (att.addons || []).reduce((aSum, addon) => {
+        const pkg = optionalPkgs.find(p => p.id === addon.packageId);
+        return aSum + (pkg?.is_phd ? addon.quantity : 0);
+      }, 0);
+    }, 0);
+  };
+
   const updateAddon = (attendeeIdx, packageId, quantity) => {
+    const pkg = optionalPkgs.find(p => p.id === packageId);
+
+    // Enforce PHD per-player limit
+    if (pkg?.is_phd && phdInventory && quantity > phdInventory.perPlayerLimit) {
+      return;
+    }
+
+    // Enforce PHD total stock limit
+    if (pkg?.is_phd && phdInventory && quantity > getAddonQty(attendeeIdx, packageId)) {
+      const increase = quantity - getAddonQty(attendeeIdx, packageId);
+      const totalPhdUsed = getTotalPhdSelected();
+      if (totalPhdUsed + increase > phdInventory.remaining) {
+        return;
+      }
+    }
+
     const updated = [...attendees];
     const att = { ...updated[attendeeIdx] };
     const addons = [...(att.addons || [])];
@@ -311,6 +338,23 @@ export default function BookingPanel({
                 </ul>
               </div>
 
+              {/* PHD Inventory Notice */}
+              {phdInventory && optionalPkgs.some(p => p.is_phd) && (
+                <div className={`rounded-xl px-4 py-3 mb-4 border ${
+                  phdInventory.remaining <= 10 ? 'bg-red-50 border-red-200' :
+                  phdInventory.remaining <= 30 ? 'bg-amber-50 border-amber-200' :
+                  'bg-purple-50 border-purple-200'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-gray-700">Handheld Devices (PHD)</span>
+                    <span className={`text-sm font-bold ${phdInventory.remaining <= 10 ? 'text-red-600' : 'text-purple-700'}`}>
+                      {phdInventory.remaining} available
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Max {phdInventory.perPlayerLimit} per player</p>
+                </div>
+              )}
+
               <h3 className="font-bold text-brand-blue text-lg mb-4">Packages & Add-ons</h3>
 
               <div className="space-y-4">
@@ -346,7 +390,8 @@ export default function BookingPanel({
                                 const pkgId = e.target.value;
                                 const currentQty = getAddonQty(i, pkgId);
                                 const pkg = optionalPkgs.find(p => p.id === pkgId);
-                                if (pkg && currentQty < pkg.max_quantity) {
+                                const maxQty = pkg?.is_phd && phdInventory ? phdInventory.perPlayerLimit : pkg?.max_quantity;
+                                if (pkg && currentQty < maxQty) {
                                   updateAddon(i, pkgId, currentQty + 1);
                                 }
                               }
@@ -354,28 +399,34 @@ export default function BookingPanel({
                             className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none cursor-pointer"
                           >
                             <option value="">+ Add optional items...</option>
-                            {optionalPkgs.map(pkg => (
-                              <option key={pkg.id} value={pkg.id}>
-                                {pkg.name} — {formatPrice(pkg.price)}
-                              </option>
-                            ))}
+                            {optionalPkgs.map(pkg => {
+                              const soldOut = pkg.is_phd && phdInventory && phdInventory.remaining <= 0 && getAddonQty(i, pkg.id) === 0;
+                              return (
+                                <option key={pkg.id} value={pkg.id} disabled={soldOut}>
+                                  {pkg.name} — {formatPrice(pkg.price)}{pkg.is_phd ? ' (PHD)' : ''}{soldOut ? ' — SOLD OUT' : ''}
+                                </option>
+                              );
+                            })}
                           </select>
 
                           {/* Selected add-ons */}
                           {optionalPkgs.filter(pkg => getAddonQty(i, pkg.id) > 0).map(pkg => {
                             const qty = getAddonQty(i, pkg.id);
+                            const maxQty = pkg.is_phd && phdInventory ? phdInventory.perPlayerLimit : pkg.max_quantity;
+                            const atStockLimit = pkg.is_phd && phdInventory && (phdInventory.remaining - getTotalPhdSelected() + qty) <= qty;
                             return (
-                              <div key={pkg.id} className="flex items-center justify-between rounded-lg px-3 py-2 mt-1 text-sm bg-brand-gold/10">
+                              <div key={pkg.id} className={`flex items-center justify-between rounded-lg px-3 py-2 mt-1 text-sm ${pkg.is_phd ? 'bg-purple-50' : 'bg-brand-gold/10'}`}>
                                 <div className="flex-1 min-w-0">
                                   <span className="font-medium">{pkg.name}</span>
+                                  {pkg.is_phd && <span className="text-[10px] ml-1 text-purple-600 font-bold">PHD</span>}
                                   <span className="text-brand-gold font-semibold ml-1">{formatPrice(pkg.price * qty)}</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                   <button onClick={() => updateAddon(i, pkg.id, qty - 1)}
                                     className="w-7 h-7 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold flex items-center justify-center text-sm">-</button>
                                   <span className="w-5 text-center font-bold">{qty}</span>
-                                  <button onClick={() => updateAddon(i, pkg.id, Math.min(pkg.max_quantity, qty + 1))}
-                                    disabled={qty >= pkg.max_quantity}
+                                  <button onClick={() => updateAddon(i, pkg.id, Math.min(maxQty, qty + 1))}
+                                    disabled={qty >= maxQty || atStockLimit}
                                     className="w-7 h-7 rounded-full bg-brand-gold hover:bg-brand-gold-light text-white font-bold flex items-center justify-center text-sm disabled:opacity-40">+</button>
                                 </div>
                               </div>

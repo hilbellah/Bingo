@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchSessions, fetchSeats, fetchPackages, fetchSessionPackages, lockSeat, unlockSeat, createBooking, fetchTheme } from './api';
+import { fetchSessions, fetchSeats, fetchPackages, fetchSessionPackages, lockSeat, unlockSeat, createBooking, fetchTheme, fetchPhdInventory } from './api';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import { useSocket } from './useSocket';
 import BookingPanel from './components/BookingPanel';
@@ -60,6 +60,7 @@ export default function App() {
 
   const [sessions, setSessions] = useState([]);
   const [packages, setPackages] = useState([]);
+  const [phdInventory, setPhdInventory] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
   const [partySize, setPartySize] = useState(0);
   const [attendees, setAttendees] = useState([]);
@@ -106,6 +107,7 @@ export default function App() {
     if (!selectedSession) return;
     fetchSeats(selectedSession.id).then(setSeats);
     fetchSessionPackages(selectedSession.id).then(setPackages);
+    fetchPhdInventory().then(setPhdInventory);
     setOpenTable(null);
 
     const socket = socketRef.current;
@@ -620,6 +622,7 @@ export default function App() {
         holdExpiry={holdExpiry}
         step={bookingStep}
         onStepChange={setBookingStep}
+        phdInventory={phdInventory}
       />
 
       {/* Footer */}

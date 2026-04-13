@@ -11,7 +11,8 @@ import {
   fetchDeletedSessions, restoreSession, fetchSessionBookings, fetchAuditLog,
   fetchBookingSales, fetchDailySales,
   fetchSettings, saveSettings,
-  uploadImage
+  uploadImage,
+  fetchAdminPhdInventory, updateAdminPhdInventory
 } from '../api';
 
 function formatPrice(cents) {
@@ -31,7 +32,7 @@ export default function AdminDashboard() {
   const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: false, event_title: '', event_description: '', packages: [] });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
-  const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0 });
+  const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false });
   const [editingSessionPkgs, setEditingSessionPkgs] = useState(null); // session id being edited
   const [sessionPkgList, setSessionPkgList] = useState([]);
   const [editingSession, setEditingSession] = useState(null); // session object being edited
@@ -72,6 +73,9 @@ export default function AdminDashboard() {
   const [announcementImageFile, setAnnouncementImageFile] = useState(null);
   const [announcementImagePreview, setAnnouncementImagePreview] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [phdInventory, setPhdInventory] = useState(null);
+  const [phdEditForm, setPhdEditForm] = useState({ totalStock: 200, perPlayerLimit: 2 });
+  const [phdSaving, setPhdSaving] = useState(false);
   const socketRef = useRef(null);
   const autoPrintRef = useRef(false);
   const receiptConfigRef = useRef(receiptConfig);
@@ -109,6 +113,7 @@ export default function AdminDashboard() {
     if (tab === 'dashboard') loadDashboard();
     if (tab === 'announcements') loadAnnouncements();
     if (tab === 'archive') { loadDeletedSessions(); loadAuditLogs(); }
+    if (tab === 'inventory') { fetchAdminPhdInventory(token).then(data => { setPhdInventory(data); setPhdEditForm({ totalStock: data.totalStock, perPlayerLimit: data.perPlayerLimit }); }); }
   }, [tab]);
 
   // Auto-print: keep refs in sync with state
@@ -515,9 +520,10 @@ export default function AdminDashboard() {
       price: Math.round(parseFloat(newPackage.price) * 100),
       type: newPackage.type,
       max_quantity: parseInt(newPackage.max_quantity) || 1,
-      sort_order: parseInt(newPackage.sort_order) || 0
+      sort_order: parseInt(newPackage.sort_order) || 0,
+      is_phd: newPackage.is_phd
     });
-    setNewPackage({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0 });
+    setNewPackage({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false });
     loadPackages();
   };
 
@@ -560,6 +566,7 @@ export default function AdminDashboard() {
     { id: 'bookings', label: 'Bookings & Reports', icon: '\u{1F4B0}' },
     { id: 'bulkprint', label: 'Bulk Print', icon: '\u{1F5A8}' },
     { id: 'archive', label: 'Archive & Audit', icon: '\u{1F5C3}' },
+    { id: 'inventory', label: 'PHD Inventory', icon: '\u{1F4F1}' },
     { id: 'settings', label: 'Printing Settings', icon: '\u{1F5A8}' },
   ];
 
@@ -745,6 +752,55 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+
+            {/* PHD Inventory Monitor */}
+            {dashboard.phdInventory && (
+              <div className="bg-white rounded-xl p-5 shadow-sm mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-brand-blue">PHD Inventory (Handheld Devices)</h3>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                    dashboard.phdInventory.remaining <= 20 ? 'bg-red-100 text-red-700' :
+                    dashboard.phdInventory.remaining <= 50 ? 'bg-amber-100 text-amber-700' :
+                    'bg-green-100 text-green-700'
+                  }`}>
+                    {dashboard.phdInventory.remaining} remaining
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-blue-50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-blue-700">{dashboard.phdInventory.totalStock}</p>
+                    <p className="text-xs text-blue-500">Total Stock</p>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-red-600">{dashboard.phdInventory.totalUsed}</p>
+                    <p className="text-xs text-red-500">In Use</p>
+                  </div>
+                  <div className={`rounded-lg p-3 text-center ${dashboard.phdInventory.remaining <= 20 ? 'bg-red-50' : 'bg-green-50'}`}>
+                    <p className={`text-2xl font-bold ${dashboard.phdInventory.remaining <= 20 ? 'text-red-600' : 'text-green-600'}`}>{dashboard.phdInventory.remaining}</p>
+                    <p className={`text-xs ${dashboard.phdInventory.remaining <= 20 ? 'text-red-500' : 'text-green-500'}`}>Available</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-purple-600">{dashboard.phdInventory.perPlayerLimit}</p>
+                    <p className="text-xs text-purple-500">Per Player Max</p>
+                  </div>
+                </div>
+                {/* Progress bar */}
+                <div className="mt-3">
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div
+                      className={`h-3 rounded-full transition-all ${
+                        dashboard.phdInventory.remaining <= 20 ? 'bg-red-500' :
+                        dashboard.phdInventory.remaining <= 50 ? 'bg-amber-500' : 'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min(100, (dashboard.phdInventory.totalUsed / dashboard.phdInventory.totalStock) * 100)}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1 text-right">
+                    {Math.round((dashboard.phdInventory.totalUsed / dashboard.phdInventory.totalStock) * 100)}% allocated
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Recent Orders (Live Feed) */}
             {recentReceipts.length > 0 && (
@@ -1143,11 +1199,19 @@ export default function AdminDashboard() {
                         list[i] = {...list[i], max_quantity: parseInt(e.target.value) || 1};
                         setSessionPkgList(list);
                       }} className="w-16 px-2 py-1.5 border rounded text-sm" min="1" />
+                      <label className="flex items-center gap-1 text-xs text-purple-600" title="PHD (Handheld Device)">
+                        <input type="checkbox" checked={!!pkg.is_phd} onChange={e => {
+                          const list = [...sessionPkgList];
+                          list[i] = {...list[i], is_phd: e.target.checked};
+                          setSessionPkgList(list);
+                        }} className="rounded" />
+                        PHD
+                      </label>
                       <button onClick={() => setSessionPkgList(sessionPkgList.filter((_, j) => j !== i))}
                         className="text-red-400 hover:text-red-600 text-sm">X</button>
                     </div>
                   ))}
-                  <button onClick={() => setSessionPkgList([...sessionPkgList, { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: sessionPkgList.length }])}
+                  <button onClick={() => setSessionPkgList([...sessionPkgList, { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: sessionPkgList.length, is_phd: false }])}
                     className="text-xs text-brand-blue hover:underline mb-4 block">
                     + Add Package
                   </button>
@@ -1205,6 +1269,11 @@ export default function AdminDashboard() {
                       className="w-full px-3 py-2 border rounded-lg text-sm" />
                   </div>
                 </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={newPackage.is_phd} onChange={e => setNewPackage({...newPackage, is_phd: e.target.checked})}
+                    className="rounded" />
+                  <span className="text-gray-600">This is a PHD (Personal Handheld Device)</span>
+                </label>
                 <button onClick={handleCreatePackage}
                   disabled={!newPackage.name || !newPackage.price}
                   className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90 disabled:opacity-40">
@@ -1228,7 +1297,10 @@ export default function AdminDashboard() {
               <tbody>
                 {packages.map(p => (
                   <tr key={p.id} className="border-b border-gray-50">
-                    <td className="py-2 font-medium">{p.name}</td>
+                    <td className="py-2 font-medium">
+                      {p.name}
+                      {p.is_phd ? <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">PHD</span> : null}
+                    </td>
                     <td className="py-2">{formatPrice(p.price)}</td>
                     <td className="py-2">
                       <span className={`px-2 py-0.5 rounded-full text-xs ${p.type === 'required' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
@@ -2024,6 +2096,124 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* PHD INVENTORY TAB */}
+        {tab === 'inventory' && phdInventory && (
+          <div className="max-w-4xl">
+            <h3 className="text-xl font-bold text-brand-blue mb-6">PHD (Personal Handheld Device) Inventory</h3>
+
+            {/* Inventory Overview */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#2563eb' }}>
+                <p className="text-sm opacity-80">Total Stock</p>
+                <p className="text-4xl font-bold mt-1">{phdInventory.totalStock}</p>
+                <p className="text-xs opacity-60 mt-1">devices owned</p>
+              </div>
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#dc2626' }}>
+                <p className="text-sm opacity-80">In Use</p>
+                <p className="text-4xl font-bold mt-1">{phdInventory.totalUsed}</p>
+                <p className="text-xs opacity-60 mt-1">currently booked</p>
+              </div>
+              <div className={`rounded-xl p-5 shadow-sm text-white`} style={{ background: phdInventory.remaining <= 20 ? '#dc2626' : phdInventory.remaining <= 50 ? '#d97706' : '#16a34a' }}>
+                <p className="text-sm opacity-80">Available</p>
+                <p className="text-4xl font-bold mt-1">{phdInventory.remaining}</p>
+                <p className="text-xs opacity-60 mt-1">ready to assign</p>
+              </div>
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#7c3aed' }}>
+                <p className="text-sm opacity-80">Per Player Limit</p>
+                <p className="text-4xl font-bold mt-1">{phdInventory.perPlayerLimit}</p>
+                <p className="text-xs opacity-60 mt-1">max per person</p>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="bg-white rounded-xl p-5 shadow-sm mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-gray-600">Stock Utilization</span>
+                <span className="text-sm font-bold text-gray-800">{Math.round((phdInventory.totalUsed / phdInventory.totalStock) * 100)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-4">
+                <div
+                  className={`h-4 rounded-full transition-all ${
+                    phdInventory.remaining <= 20 ? 'bg-red-500' :
+                    phdInventory.remaining <= 50 ? 'bg-amber-500' : 'bg-green-500'
+                  }`}
+                  style={{ width: `${Math.min(100, (phdInventory.totalUsed / phdInventory.totalStock) * 100)}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Settings Form */}
+            <div className="bg-white rounded-xl p-5 shadow-sm mb-6">
+              <h4 className="font-semibold text-brand-blue mb-4">Inventory Settings</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Total Stock</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={phdEditForm.totalStock}
+                    onChange={e => setPhdEditForm(f => ({ ...f, totalStock: parseInt(e.target.value) || 0 }))}
+                    className="w-full border-2 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Max Per Player</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={phdEditForm.perPlayerLimit}
+                    onChange={e => setPhdEditForm(f => ({ ...f, perPlayerLimit: parseInt(e.target.value) || 1 }))}
+                    className="w-full border-2 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  setPhdSaving(true);
+                  await updateAdminPhdInventory(token, phdEditForm);
+                  const data = await fetchAdminPhdInventory(token);
+                  setPhdInventory(data);
+                  setPhdSaving(false);
+                }}
+                disabled={phdSaving}
+                className="mt-4 bg-brand-blue text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-blue-700 transition disabled:opacity-50"
+              >
+                {phdSaving ? 'Saving...' : 'Update Settings'}
+              </button>
+            </div>
+
+            {/* Per-Session Breakdown */}
+            {phdInventory.perSession && phdInventory.perSession.length > 0 && (
+              <div className="bg-white rounded-xl p-5 shadow-sm">
+                <h4 className="font-semibold text-brand-blue mb-4">PHD Usage by Session</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-gray-100">
+                        <th className="text-left py-2 px-3 text-gray-500">Date</th>
+                        <th className="text-left py-2 px-3 text-gray-500">Time</th>
+                        <th className="text-left py-2 px-3 text-gray-500">Event</th>
+                        <th className="text-right py-2 px-3 text-gray-500">PHDs Used</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {phdInventory.perSession.map(s => (
+                        <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="py-2 px-3 font-medium">{s.date}</td>
+                          <td className="py-2 px-3">{s.time}</td>
+                          <td className="py-2 px-3">{s.is_special_event && s.event_title ? s.event_title : '-'}</td>
+                          <td className="py-2 px-3 text-right font-bold text-brand-blue">{s.phd_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

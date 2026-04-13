@@ -190,6 +190,20 @@ async function migrate() {
   });
   try { run("INSERT INTO settings (key, value) VALUES ('receipt_config', ?)", [defaultReceipt]); } catch(e) {}
 
+  // --- PHD Inventory migration ---
+  console.log('Running PHD inventory migration...');
+
+  // Add is_phd flag to packages and session_packages to identify handheld devices
+  try { exec('ALTER TABLE packages ADD COLUMN is_phd INTEGER DEFAULT 0'); } catch(e) {}
+  try { exec('ALTER TABLE session_packages ADD COLUMN is_phd INTEGER DEFAULT 0'); } catch(e) {}
+
+  // Default PHD inventory settings (total_stock=200, per_player_limit=2)
+  const defaultPhdInventory = JSON.stringify({
+    totalStock: 200,
+    perPlayerLimit: 2
+  });
+  try { run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [defaultPhdInventory]); } catch(e) {}
+
   console.log('Migrations complete.');
 }
 

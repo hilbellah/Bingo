@@ -261,3 +261,21 @@ export async function fetchAuditLog(token, params = {}) {
   const res = await fetch(`${API}/admin/audit-log${qs ? '?' + qs : ''}`, { headers: adminHeaders(token) });
   return res.json();
 }
+
+// PHD Inventory
+export async function fetchPhdInventory() {
+  const res = await fetch(`${API}/phd-inventory`);
+  return res.json();
+}
+
+export async function fetchAdminPhdInventory(token) {
+  const res = await fetch(`${API}/admin/phd-inventory`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
+export async function updateAdminPhdInventory(token, data) {
+  const res = await fetch(`${API}/admin/phd-inventory`, {
+    method: 'PUT', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  return res.json();
+}
