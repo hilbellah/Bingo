@@ -80,6 +80,38 @@ body {
   opacity: 0.6;
 }
 
+/* Special event table buttons — animated glow */
+.table-btn-special {
+  animation: specialPulse 2s ease-in-out infinite;
+  position: relative;
+}
+
+.table-btn-special::after {
+  content: '★';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 10px;
+  color: #fbbf24;
+  text-shadow: 0 0 4px rgba(251, 191, 36, 0.8);
+  animation: starTwinkle 1.5s ease-in-out infinite;
+}
+
+.table-btn-special:hover:not(:disabled) {
+  transform: scale(1.15);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.5), 0 4px 12px rgba(0,0,0,0.3);
+}
+
+@keyframes specialPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.3); }
+  50% { box-shadow: 0 0 16px rgba(245, 158, 11, 0.6), 0 0 24px rgba(245, 158, 11, 0.2); }
+}
+
+@keyframes starTwinkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.8); }
+}
+
 /* Seat/Chair buttons */
 .seat-btn {
   width: 48px;
