@@ -296,13 +296,13 @@ export default function AdminDashboard() {
 
   const handleSaveSalesDrilldownCsv = () => {
     if (!salesDrilldown) return;
-    const rows = [['Reference', 'First Name', 'Last Name', 'Table', 'Chair', 'Package', 'Add-ons', 'Booking Total', 'Status']];
+    const rows = [['Ticket', 'Batch', 'First Name', 'Last Name', 'Table', 'Chair', 'Package', 'Add-ons', 'Booking Total', 'Status']];
     for (const b of salesDrilldown.bookings) {
       for (const item of b.items) {
         const addons = item.addons.length > 0
           ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join('; ')
           : '';
-        rows.push([item.referenceNumber || b.referenceNumber, item.firstName, item.lastName, item.tableNumber, item.chairNumber, item.packageName, addons, b.totalFormatted, b.paymentStatus]);
+        rows.push([item.referenceNumber || '—', b.referenceNumber, item.firstName, item.lastName, item.tableNumber, item.chairNumber, item.packageName, addons, b.totalFormatted, b.paymentStatus]);
       }
     }
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -2379,7 +2379,7 @@ export default function AdminDashboard() {
               <div>
                 <h3 className="font-bold text-brand-blue text-lg">Booking Details</h3>
                 <p className="text-sm text-gray-500">
-                  {salesDrilldown.session.description} &mdash; {salesDrilldown.bookings.reduce((sum, b) => sum + b.items.length, 0)} ticket(s) &mdash; {salesDrilldown.session.totalFormatted}
+                  {salesDrilldown.session.description} &mdash; {salesDrilldown.bookings.reduce((sum, b) => sum + b.items.length, 0)} ticket(s) in {salesDrilldown.session.quantity} batch(es) &mdash; {salesDrilldown.session.totalFormatted}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -2392,61 +2392,59 @@ export default function AdminDashboard() {
               {salesDrilldown.bookings.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No bookings found.</p>
               ) : (
-                salesDrilldown.bookings.flatMap(b =>
-                  b.items.map((item, i) => {
-                    const addonTotal = item.addons.reduce((sum, a) => sum + (a.price || 0), 0);
-                    const itemTotal = (item.packagePrice || 0) + addonTotal;
-                    const itemTotalFormatted = '$' + (itemTotal / 100).toFixed(2);
-                    return (
-                      <div key={`${b.id}-${i}`} className="mb-4 border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <span className="font-mono text-sm font-semibold text-brand-blue">{item.referenceNumber || b.referenceNumber}</span>
-                            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
-                              b.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
-                              b.paymentStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
-                              'bg-gray-100 text-gray-600'
-                            }`}>{b.paymentStatus}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">{itemTotalFormatted}</span>
-                            <button
-                              onClick={() => handlePrintBookingReceipt({...b, sessionDate: salesDrilldown.session.date, sessionTime: salesDrilldown.session.time})}
-                              className="px-2 py-0.5 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
-                              title="Print thermal receipt"
-                            >
-                              Receipt
-                            </button>
-                          </div>
-                        </div>
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-left text-gray-400 border-b">
-                              <th className="pb-1">Name</th>
-                              <th className="pb-1">Table</th>
-                              <th className="pb-1">Chair</th>
-                              <th className="pb-1">Package</th>
-                              <th className="pb-1">Add-ons</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr className="border-b border-gray-50">
-                              <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
-                              <td className="py-1">{item.tableNumber}</td>
-                              <td className="py-1">{item.chairNumber}</td>
-                              <td className="py-1">{item.packageName}</td>
-                              <td className="py-1 text-xs text-gray-500">
-                                {item.addons.length > 0
-                                  ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
-                                  : '—'}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
+                salesDrilldown.bookings.map(b => (
+                  <div key={b.id} className="mb-4 border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="text-xs text-gray-400">Batch:</span>
+                        <span className="font-mono text-sm font-semibold text-brand-blue ml-1">{b.referenceNumber}</span>
+                        <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                          b.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                          b.paymentStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>{b.paymentStatus}</span>
                       </div>
-                    );
-                  })
-                )
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{b.totalFormatted}</span>
+                        <button
+                          onClick={() => handlePrintBookingReceipt({...b, sessionDate: salesDrilldown.session.date, sessionTime: salesDrilldown.session.time})}
+                          className="px-2 py-0.5 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
+                          title="Print thermal receipt"
+                        >
+                          Receipt
+                        </button>
+                      </div>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-gray-400 border-b">
+                          <th className="pb-1">Ticket</th>
+                          <th className="pb-1">Name</th>
+                          <th className="pb-1">Table</th>
+                          <th className="pb-1">Chair</th>
+                          <th className="pb-1">Package</th>
+                          <th className="pb-1">Add-ons</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.items.map((item, i) => (
+                          <tr key={i} className="border-b border-gray-50">
+                            <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || '—'}</td>
+                            <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
+                            <td className="py-1">{item.tableNumber}</td>
+                            <td className="py-1">{item.chairNumber}</td>
+                            <td className="py-1">{item.packageName}</td>
+                            <td className="py-1 text-xs text-gray-500">
+                              {item.addons.length > 0
+                                ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -2472,45 +2470,45 @@ export default function AdminDashboard() {
               {soldModal.bookings.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No bookings found.</p>
               ) : (
-                soldModal.bookings.flatMap(b =>
-                  b.items.map((item, i) => {
-                    const addonTotal = item.addons.reduce((sum, a) => sum + (a.price || 0), 0);
-                    const itemTotal = (item.packagePrice || 0) + addonTotal;
-                    const itemTotalFormatted = '$' + (itemTotal / 100).toFixed(2);
-                    return (
-                      <div key={`${b.id}-${i}`} className="mb-4 border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-mono text-sm font-semibold text-brand-blue">{item.referenceNumber || b.referenceNumber}</span>
-                          <span className="text-sm font-medium">{itemTotalFormatted}</span>
-                        </div>
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-left text-gray-400 border-b">
-                              <th className="pb-1">Name</th>
-                              <th className="pb-1">Table</th>
-                              <th className="pb-1">Chair</th>
-                              <th className="pb-1">Package</th>
-                              <th className="pb-1">Add-ons</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr className="border-b border-gray-50">
-                              <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
-                              <td className="py-1">{item.tableNumber}</td>
-                              <td className="py-1">{item.chairNumber}</td>
-                              <td className="py-1">{item.packageName}</td>
-                              <td className="py-1 text-xs text-gray-500">
-                                {item.addons.length > 0
-                                  ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
-                                  : '—'}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
+                soldModal.bookings.map(b => (
+                  <div key={b.id} className="mb-4 border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="text-xs text-gray-400">Batch:</span>
+                        <span className="font-mono text-sm font-semibold text-brand-blue ml-1">{b.referenceNumber}</span>
                       </div>
-                    );
-                  })
-                )
+                      <span className="text-sm font-medium">{b.totalFormatted}</span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-gray-400 border-b">
+                          <th className="pb-1">Ticket</th>
+                          <th className="pb-1">Name</th>
+                          <th className="pb-1">Table</th>
+                          <th className="pb-1">Chair</th>
+                          <th className="pb-1">Package</th>
+                          <th className="pb-1">Add-ons</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.items.map((item, i) => (
+                          <tr key={i} className="border-b border-gray-50">
+                            <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || '—'}</td>
+                            <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
+                            <td className="py-1">{item.tableNumber}</td>
+                            <td className="py-1">{item.chairNumber}</td>
+                            <td className="py-1">{item.packageName}</td>
+                            <td className="py-1 text-xs text-gray-500">
+                              {item.addons.length > 0
+                                ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))
               )}
             </div>
           </div>
