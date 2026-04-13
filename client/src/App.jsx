@@ -376,7 +376,7 @@ export default function App() {
                   return (
                     <div key={session.id} className="flex-shrink-0 flex flex-col items-center">
                       {isSpecial && (
-                        <div className="bg-amber-800 text-amber-200 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-t-lg w-full text-center">
+                        <div className="bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-t-lg w-full text-center">
                           &#9733; Special Event
                         </div>
                       )}
@@ -577,7 +577,7 @@ export default function App() {
                   {formatDateShort(selectedSession.date)} — {formatTime(selectedSession.time)}
                 </span>
                 {selectedSession.is_special_event && selectedSession.event_title ? (
-                  <span className="inline-flex items-center gap-1 bg-amber-800 text-amber-200 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                  <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">
                     &#9733; {selectedSession.event_title}
                   </span>
                 ) : (
