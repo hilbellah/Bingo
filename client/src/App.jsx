@@ -641,7 +641,7 @@ function TableSection({ section, getTableStatus, openTable, onTableClick, tableM
   return (
     <div className={`rounded-2xl p-3 md:p-4 border shrink-0 ${
       isSpecial
-        ? 'bg-amber-950/20 border-amber-700/30 shadow-md shadow-amber-900/10'
+        ? 'bg-amber-950/20 border-amber-500/40 shadow-md shadow-amber-500/10'
         : 'bg-white/5 border-white/10'
     }`}>
       <div className="flex flex-col gap-1.5">
@@ -702,11 +702,11 @@ function TableBtn({ tableNum, status, isOpen, onClick, chairs, selectedSeats, ho
   } else if (allSold) {
     bgClass = 'bg-gray-600/60'; borderClass = 'border-gray-500/50'; textClass = 'text-gray-400';
   } else if (isSpecial && allVacant) {
-    bgClass = 'bg-green-600/70'; borderClass = 'border-amber-700'; textClass = 'text-white';
-    extraClass = 'table-btn-special shadow-md shadow-amber-900/20';
+    bgClass = 'bg-green-600/70'; borderClass = 'border-amber-400'; textClass = 'text-white';
+    extraClass = 'table-btn-special shadow-md shadow-amber-500/20';
   } else if (isSpecial) {
-    bgClass = 'bg-amber-700/50'; borderClass = 'border-amber-700/60'; textClass = 'text-white';
-    extraClass = 'table-btn-special shadow-sm shadow-amber-900/20';
+    bgClass = 'bg-amber-700/50'; borderClass = 'border-amber-400/70'; textClass = 'text-white';
+    extraClass = 'table-btn-special shadow-sm shadow-amber-500/20';
   } else if (allVacant) {
     bgClass = 'bg-green-600/70'; borderClass = 'border-green-500/50'; textClass = 'text-white';
   } else {

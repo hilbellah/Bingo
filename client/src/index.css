@@ -92,19 +92,19 @@ body {
   top: -4px;
   right: -4px;
   font-size: 10px;
-  color: #b45309;
-  text-shadow: 0 0 3px rgba(180, 83, 9, 0.5);
+  color: #f59e0b;
+  text-shadow: 0 0 4px rgba(245, 158, 11, 0.6);
   animation: starTwinkle 1.5s ease-in-out infinite;
 }
 
 .table-btn-special:hover:not(:disabled) {
   transform: scale(1.15);
-  box-shadow: 0 0 12px rgba(120, 53, 15, 0.4), 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.4), 0 4px 12px rgba(0,0,0,0.3);
 }
 
 @keyframes specialPulse {
-  0%, 100% { box-shadow: 0 0 6px rgba(120, 53, 15, 0.2); }
-  50% { box-shadow: 0 0 10px rgba(120, 53, 15, 0.35), 0 0 16px rgba(120, 53, 15, 0.1); }
+  0%, 100% { box-shadow: 0 0 6px rgba(245, 158, 11, 0.2); }
+  50% { box-shadow: 0 0 12px rgba(245, 158, 11, 0.4), 0 0 20px rgba(245, 158, 11, 0.15); }
 }
 
 @keyframes starTwinkle {
