@@ -376,7 +376,7 @@ export default function App() {
                   return (
                     <div key={session.id} className="flex-shrink-0 flex flex-col items-center">
                       {isSpecial && (
-                        <div className="bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-t-lg w-full text-center">
+                        <div className="bg-amber-800 text-amber-200 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-t-lg w-full text-center">
                           &#9733; Special Event
                         </div>
                       )}
@@ -399,8 +399,8 @@ export default function App() {
                           isSpecial ? 'rounded-b-lg' : 'rounded-lg'
                         } ${
                           isSelected
-                            ? isSpecial ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/40 ring-2 ring-amber-400' : 'bg-brand-gold text-white shadow-md'
-                            : isSpecial ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 ring-1 ring-amber-500/50' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+                            ? isSpecial ? 'bg-amber-900 text-amber-100 shadow-md ring-2 ring-amber-700' : 'bg-brand-gold text-white shadow-md'
+                            : isSpecial ? 'bg-amber-900/30 text-amber-300 hover:bg-amber-900/40 ring-1 ring-amber-700/50' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
                         }`}
                       >
                         {formatDateShort(session.date)} — {formatTime(session.time)}
@@ -433,11 +433,11 @@ export default function App() {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-1.5">
-              <span className={`w-4 h-4 rounded ${selectedSession?.is_special_event ? 'bg-gradient-to-br from-amber-500 to-amber-600' : 'bg-green-500/80'}`}></span>
+              <span className={`w-4 h-4 rounded ${selectedSession?.is_special_event ? 'bg-green-600/70 ring-1 ring-amber-700' : 'bg-green-500/80'}`}></span>
               <span className="text-white/70">Available</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className={`w-4 h-4 rounded ${selectedSession?.is_special_event ? 'bg-gradient-to-br from-amber-600 to-orange-600' : 'bg-amber-500/80'}`}></span>
+              <span className={`w-4 h-4 rounded ${selectedSession?.is_special_event ? 'bg-amber-700/60 ring-1 ring-amber-700' : 'bg-amber-500/80'}`}></span>
               <span className="text-white/70">Partial</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -567,7 +567,7 @@ export default function App() {
             {selectedSession && (
               <div className={`mt-4 rounded-lg px-4 py-2.5 flex items-center justify-center gap-3 ${
                 selectedSession.is_special_event
-                  ? 'bg-amber-500/15 border border-amber-500/30'
+                  ? 'bg-amber-900/20 border border-amber-700/40'
                   : 'bg-white/5 border border-white/10'
               }`}>
                 <svg className="w-4 h-4 text-brand-gold/70 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
@@ -577,7 +577,7 @@ export default function App() {
                   {formatDateShort(selectedSession.date)} — {formatTime(selectedSession.time)}
                 </span>
                 {selectedSession.is_special_event && selectedSession.event_title ? (
-                  <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">
+                  <span className="inline-flex items-center gap-1 bg-amber-800 text-amber-200 text-xs font-bold px-2.5 py-0.5 rounded-full">
                     &#9733; {selectedSession.event_title}
                   </span>
                 ) : (
@@ -641,7 +641,7 @@ function TableSection({ section, getTableStatus, openTable, onTableClick, tableM
   return (
     <div className={`rounded-2xl p-3 md:p-4 border shrink-0 ${
       isSpecial
-        ? 'bg-amber-900/20 border-amber-500/30 shadow-lg shadow-amber-500/10'
+        ? 'bg-amber-950/20 border-amber-700/30 shadow-md shadow-amber-900/10'
         : 'bg-white/5 border-white/10'
     }`}>
       <div className="flex flex-col gap-1.5">
@@ -702,15 +702,15 @@ function TableBtn({ tableNum, status, isOpen, onClick, chairs, selectedSeats, ho
   } else if (allSold) {
     bgClass = 'bg-gray-600/60'; borderClass = 'border-gray-500/50'; textClass = 'text-gray-400';
   } else if (isSpecial && allVacant) {
-    bgClass = 'bg-gradient-to-br from-amber-500 to-amber-600'; borderClass = 'border-amber-400'; textClass = 'text-white';
-    extraClass = 'table-btn-special shadow-lg shadow-amber-500/40';
+    bgClass = 'bg-green-600/70'; borderClass = 'border-amber-700'; textClass = 'text-white';
+    extraClass = 'table-btn-special shadow-md shadow-amber-900/20';
   } else if (isSpecial) {
-    bgClass = 'bg-gradient-to-br from-amber-600 to-orange-600'; borderClass = 'border-amber-400/70'; textClass = 'text-white';
-    extraClass = 'table-btn-special shadow-md shadow-amber-500/30';
+    bgClass = 'bg-amber-700/50'; borderClass = 'border-amber-700/60'; textClass = 'text-white';
+    extraClass = 'table-btn-special shadow-sm shadow-amber-900/20';
   } else if (allVacant) {
     bgClass = 'bg-green-600/70'; borderClass = 'border-green-500/50'; textClass = 'text-white';
   } else {
-    bgClass = 'bg-amber-600/60'; borderClass = 'border-amber-500/50'; textClass = 'text-white';
+    bgClass = 'bg-amber-700/50'; borderClass = 'border-amber-600/50'; textClass = 'text-white';
   }
 
   // Sort chairs for layout: left [5,3,1], right [6,4,2]
