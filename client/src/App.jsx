@@ -430,11 +430,11 @@ export default function App() {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-green-500/80"></span>
+              <span className={`w-4 h-4 rounded ${selectedSession?.is_special_event ? 'bg-gradient-to-br from-amber-500 to-amber-600' : 'bg-green-500/80'}`}></span>
               <span className="text-white/70">Available</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-amber-500/80"></span>
+              <span className={`w-4 h-4 rounded ${selectedSession?.is_special_event ? 'bg-gradient-to-br from-amber-600 to-orange-600' : 'bg-amber-500/80'}`}></span>
               <span className="text-white/70">Partial</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -457,35 +457,6 @@ export default function App() {
             </div>
           )}
         </div>
-
-        {/* Selected Session Info — Date & Event Name */}
-        {selectedSession && (
-          <div className={`mb-4 rounded-xl border px-5 py-3 flex items-center gap-4 ${
-            selectedSession.is_special_event
-              ? 'bg-amber-500/15 border-amber-500/30'
-              : 'bg-white/5 border-white/10'
-          }`}>
-            <div className="flex items-center gap-2 text-lg font-bold text-white">
-              <svg className="w-5 h-5 text-brand-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-              </svg>
-              {formatDateShort(selectedSession.date)} — {formatTime(selectedSession.time)}
-            </div>
-            {selectedSession.is_special_event && selectedSession.event_title && (
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 bg-amber-500 text-white text-sm font-bold px-3 py-1 rounded-full">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                  </svg>
-                  {selectedSession.event_title}
-                </span>
-              </div>
-            )}
-            {!selectedSession.is_special_event && (
-              <span className="text-white/50 text-sm font-medium">Regular Bingo Night</span>
-            )}
-          </div>
-        )}
 
         {/* Error Toast */}
         {error && (
@@ -523,7 +494,7 @@ export default function App() {
                   {SECTIONS.filter(s => s.id === 'upper-left').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                       openTable={openTable} onTableClick={setOpenTable}
-                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
+                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                   ))}
                 </div>
                 {/* Floor Stage */}
@@ -536,7 +507,7 @@ export default function App() {
                   {SECTIONS.filter(s => s.id === 'upper-right').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                       openTable={openTable} onTableClick={setOpenTable}
-                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
+                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                   ))}
                 </div>
               </div>
@@ -546,17 +517,17 @@ export default function App() {
                 {SECTIONS.filter(s => s.id === 'lower-left').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                     openTable={openTable} onTableClick={setOpenTable}
-                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                 ))}
                 {SECTIONS.filter(s => s.id === 'lower-center-left').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                     openTable={openTable} onTableClick={setOpenTable}
-                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                 ))}
                 {SECTIONS.filter(s => s.id === 'center-left-inner').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                     openTable={openTable} onTableClick={setOpenTable}
-                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                 ))}
                 {/* Caller position marker */}
                 <div className="flex items-center justify-center self-center">
@@ -565,12 +536,12 @@ export default function App() {
                 {SECTIONS.filter(s => s.id === 'center-column').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                     openTable={openTable} onTableClick={setOpenTable}
-                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                 ))}
                 {SECTIONS.filter(s => s.id === 'lower-right').map(section => (
                   <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                     openTable={openTable} onTableClick={setOpenTable}
-                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} />
+                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                 ))}
               </div>
             </div>
@@ -588,6 +559,29 @@ export default function App() {
             <div className="text-center mt-1">
               <span className="text-[10px] font-medium uppercase tracking-[0.15em] text-white/25">Back of Room</span>
             </div>
+
+            {/* Date & Event Name — bottom of floor plan */}
+            {selectedSession && (
+              <div className={`mt-4 rounded-lg px-4 py-2.5 flex items-center justify-center gap-3 ${
+                selectedSession.is_special_event
+                  ? 'bg-amber-500/15 border border-amber-500/30'
+                  : 'bg-white/5 border border-white/10'
+              }`}>
+                <svg className="w-4 h-4 text-brand-gold/70 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                </svg>
+                <span className="text-white font-bold text-sm">
+                  {formatDateShort(selectedSession.date)} — {formatTime(selectedSession.time)}
+                </span>
+                {selectedSession.is_special_event && selectedSession.event_title ? (
+                  <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">
+                    &#9733; {selectedSession.event_title}
+                  </span>
+                ) : (
+                  <span className="text-white/40 text-xs font-medium">Regular Bingo Night</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -639,9 +633,13 @@ export default function App() {
 }
 
 // Section component — renders table buttons in venue layout grid
-function TableSection({ section, getTableStatus, openTable, onTableClick, tableMap, selectedSeats, holderId, onChairClick }) {
+function TableSection({ section, getTableStatus, openTable, onTableClick, tableMap, selectedSeats, holderId, onChairClick, isSpecial }) {
   return (
-    <div className="rounded-2xl p-3 md:p-4 bg-white/5 border border-white/10 shrink-0">
+    <div className={`rounded-2xl p-3 md:p-4 border shrink-0 ${
+      isSpecial
+        ? 'bg-amber-900/20 border-amber-500/30 shadow-lg shadow-amber-500/10'
+        : 'bg-white/5 border-white/10'
+    }`}>
       <div className="flex flex-col gap-1.5">
         {section.seats.map((row, ri) => (
           <div key={ri} className="flex gap-1.5 justify-center shrink-0">
@@ -649,7 +647,7 @@ function TableSection({ section, getTableStatus, openTable, onTableClick, tableM
               if (num === null) return <div key={ci} className="w-12 h-12 shrink-0" />;
               return <TableBtn key={num} tableNum={num} status={getTableStatus(num)}
                 isOpen={openTable === num} onClick={onTableClick}
-                chairs={tableMap[num] || []} selectedSeats={selectedSeats} holderId={holderId} onChairClick={onChairClick} />;
+                chairs={tableMap[num] || []} selectedSeats={selectedSeats} holderId={holderId} onChairClick={onChairClick} isSpecial={isSpecial} />;
             })}
           </div>
         ))}
@@ -685,20 +683,26 @@ function InlineChair({ chair, isSelected, holderId, onChairClick }) {
 }
 
 // Table button — shows table number + vacancy count, with inline chair dropdown
-function TableBtn({ tableNum, status, isOpen, onClick, chairs, selectedSeats, holderId, onChairClick }) {
+function TableBtn({ tableNum, status, isOpen, onClick, chairs, selectedSeats, holderId, onChairClick, isSpecial }) {
   if (status === 'empty' || !status) {
     return <div className="w-12 h-12 shrink-0" />;
   }
 
   const { hasMyChairs, allSold, allVacant, vacantChairs } = status;
 
-  let bgClass, borderClass, textClass;
+  let bgClass, borderClass, textClass, extraClass = '';
   if (isOpen) {
     bgClass = 'bg-brand-gold'; borderClass = 'border-brand-gold-light'; textClass = 'text-white';
   } else if (hasMyChairs) {
     bgClass = 'bg-blue-500/80'; borderClass = 'border-blue-400'; textClass = 'text-white';
   } else if (allSold) {
     bgClass = 'bg-gray-600/60'; borderClass = 'border-gray-500/50'; textClass = 'text-gray-400';
+  } else if (isSpecial && allVacant) {
+    bgClass = 'bg-gradient-to-br from-amber-500 to-amber-600'; borderClass = 'border-amber-400'; textClass = 'text-white';
+    extraClass = 'table-btn-special shadow-lg shadow-amber-500/40';
+  } else if (isSpecial) {
+    bgClass = 'bg-gradient-to-br from-amber-600 to-orange-600'; borderClass = 'border-amber-400/70'; textClass = 'text-white';
+    extraClass = 'table-btn-special shadow-md shadow-amber-500/30';
   } else if (allVacant) {
     bgClass = 'bg-green-600/70'; borderClass = 'border-green-500/50'; textClass = 'text-white';
   } else {
@@ -716,7 +720,7 @@ function TableBtn({ tableNum, status, isOpen, onClick, chairs, selectedSeats, ho
       <button
         onClick={() => onClick(allSold ? null : (isOpen ? null : tableNum))}
         disabled={allSold}
-        className={`table-btn ${bgClass} border-2 ${borderClass} ${textClass} ${isOpen ? 'ring-2 ring-brand-gold/50 scale-110 z-10' : ''}`}
+        className={`table-btn ${bgClass} border-2 ${borderClass} ${textClass} ${extraClass} ${isOpen ? 'ring-2 ring-brand-gold/50 scale-110 z-10' : ''}`}
         aria-label={`Table ${tableNum} — ${vacantChairs} chairs available`}
         title={`Table ${tableNum} — ${vacantChairs}/6 available`}
       >
