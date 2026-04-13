@@ -140,6 +140,9 @@ export default function AdminDashboard() {
     lines.push('<div class="bold">Attendees:</div>');
     for (const item of booking.items) {
       lines.push(`<div style="padding:2px 0">${item.firstName} ${item.lastName}</div>`);
+      if (item.referenceNumber) {
+        lines.push(`<div style="font-size:10px;color:#555;padding-left:8px">Ticket: ${item.referenceNumber}</div>`);
+      }
       if (cfg.showTableChair) {
         lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${item.tableNumber}/C${item.chairNumber} · ${item.packageName}</span>${cfg.showPackagePrice ? `<span class="item-amt">${item.packagePriceFormatted || ''}</span>` : ''}</div>`);
       }
@@ -204,6 +207,12 @@ export default function AdminDashboard() {
       loadDashboard();
     });
 
+    socket.on('phd:updated', (phdData) => {
+      // Update PHD inventory in real-time when a booking with PHD add-ons is created
+      setPhdInventory(prev => prev ? { ...prev, ...phdData } : phdData);
+      setDashboard(prev => prev ? { ...prev, phdInventory: phdData } : prev);
+    });
+
     return () => {
       socket.emit('leave:admin-receipts');
       socket.disconnect();
@@ -245,7 +254,7 @@ export default function AdminDashboard() {
         const addons = item.addons.length > 0
           ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join('; ')
           : '';
-        rows.push([b.referenceNumber, item.firstName, item.lastName, item.tableNumber, item.chairNumber, item.packageName, addons, b.totalFormatted]);
+        rows.push([item.referenceNumber || b.referenceNumber, item.firstName, item.lastName, item.tableNumber, item.chairNumber, item.packageName, addons, b.totalFormatted]);
       }
     }
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -293,7 +302,7 @@ export default function AdminDashboard() {
         const addons = item.addons.length > 0
           ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join('; ')
           : '';
-        rows.push([b.referenceNumber, item.firstName, item.lastName, item.tableNumber, item.chairNumber, item.packageName, addons, b.totalFormatted, b.paymentStatus]);
+        rows.push([item.referenceNumber || b.referenceNumber, item.firstName, item.lastName, item.tableNumber, item.chairNumber, item.packageName, addons, b.totalFormatted, b.paymentStatus]);
       }
     }
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -373,6 +382,9 @@ export default function AdminDashboard() {
     ];
     for (const item of booking.items) {
       lines.push(`<div style="padding:2px 0">${item.firstName} ${item.lastName}</div>`);
+      if (item.referenceNumber) {
+        lines.push(`<div style="font-size:10px;color:#555;padding-left:8px">Ticket: ${item.referenceNumber}</div>`);
+      }
       lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${item.tableNumber}/C${item.chairNumber} · ${item.packageName}</span><span class="item-amt">${item.packagePriceFormatted || ''}</span></div>`);
       if (item.addons.length > 0) {
         for (const addon of item.addons) {
@@ -1717,7 +1729,7 @@ export default function AdminDashboard() {
                   const allTickets = [];
                   session.bookings.forEach(booking => {
                     booking.tickets.forEach(ticket => {
-                      allTickets.push({ ...ticket, referenceNumber: booking.referenceNumber });
+                      allTickets.push({ ...ticket, referenceNumber: ticket.referenceNumber || booking.referenceNumber });
                     });
                   });
 
@@ -2036,6 +2048,7 @@ export default function AdminDashboard() {
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="text-gray-400 text-left">
+                            <th className="pb-1">Ticket</th>
                             <th className="pb-1">Name</th>
                             <th className="pb-1">Table</th>
                             <th className="pb-1">Chair</th>
@@ -2046,6 +2059,7 @@ export default function AdminDashboard() {
                         <tbody>
                           {b.attendees.map((a, i) => (
                             <tr key={i}>
+                              <td className="py-0.5 font-mono text-brand-blue font-semibold">{a.referenceNumber || b.referenceNumber}</td>
                               <td className="py-0.5">{a.firstName} {a.lastName}</td>
                               <td className="py-0.5">{a.tableNumber}</td>
                               <td className="py-0.5">{a.chairNumber}</td>
@@ -2387,6 +2401,7 @@ export default function AdminDashboard() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-gray-400 border-b">
+                          <th className="pb-1">Ticket</th>
                           <th className="pb-1">Name</th>
                           <th className="pb-1">Table</th>
                           <th className="pb-1">Chair</th>
@@ -2397,6 +2412,7 @@ export default function AdminDashboard() {
                       <tbody>
                         {b.items.map((item, i) => (
                           <tr key={i} className="border-b border-gray-50">
+                            <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || b.referenceNumber}</td>
                             <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
                             <td className="py-1">{item.tableNumber}</td>
                             <td className="py-1">{item.chairNumber}</td>
@@ -2446,6 +2462,7 @@ export default function AdminDashboard() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-gray-400 border-b">
+                          <th className="pb-1">Ticket</th>
                           <th className="pb-1">Name</th>
                           <th className="pb-1">Table</th>
                           <th className="pb-1">Chair</th>
@@ -2456,6 +2473,7 @@ export default function AdminDashboard() {
                       <tbody>
                         {b.items.map((item, i) => (
                           <tr key={i} className="border-b border-gray-50">
+                            <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || b.referenceNumber}</td>
                             <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
                             <td className="py-1">{item.tableNumber}</td>
                             <td className="py-1">{item.chairNumber}</td>

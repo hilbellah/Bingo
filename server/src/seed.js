@@ -63,7 +63,7 @@ async function seed() {
     CREATE TABLE booking_items (
       id TEXT PRIMARY KEY, booking_id TEXT NOT NULL, first_name TEXT NOT NULL,
       last_name TEXT NOT NULL, seat_id TEXT NOT NULL, package_id TEXT NOT NULL,
-      price INTEGER NOT NULL,
+      price INTEGER NOT NULL, reference_number TEXT UNIQUE,
       FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
       FOREIGN KEY (seat_id) REFERENCES seats(id),
       FOREIGN KEY (package_id) REFERENCES packages(id)

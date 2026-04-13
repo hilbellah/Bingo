@@ -354,13 +354,16 @@ app.post('/api/bookings', (req, res) => {
     let totalAmount = 0;
     const bookingId = uuid();
     const refNumber = generateRef();
+    const itemRefs = [];
 
     for (const att of attendees) {
       const itemId = uuid();
+      const itemRef = generateRef();
+      itemRefs.push(itemRef);
       totalAmount += requiredPkg.price;
 
-      run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [itemId, bookingId, att.firstName, att.lastName, att.seatId, requiredPkg.id, requiredPkg.price]);
+      run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [itemId, bookingId, att.firstName, att.lastName, att.seatId, requiredPkg.id, requiredPkg.price, itemRef]);
 
       run(`UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`, [att.seatId]);
 
@@ -388,7 +391,7 @@ app.post('/api/bookings', (req, res) => {
 
     // Emit receipt data for auto-print on admin dashboard
     const receiptItems = all(`
-      SELECT bi.id, bi.first_name, bi.last_name, bi.price,
+      SELECT bi.id, bi.first_name, bi.last_name, bi.price, bi.reference_number,
              seats.table_number, seats.chair_number,
              COALESCE(p.name, sp.name) as package_name,
              COALESCE(p.price, sp.price) as package_price
@@ -420,6 +423,7 @@ app.post('/api/bookings', (req, res) => {
         lastName: item.last_name,
         tableNumber: item.table_number,
         chairNumber: item.chair_number,
+        referenceNumber: item.reference_number,
         packageName: item.package_name,
         packagePrice: item.package_price,
         packagePriceFormatted: '$' + formatPrice(item.package_price),
@@ -429,6 +433,39 @@ app.post('/api/bookings', (req, res) => {
       }))
     };
     io.to('admin:receipts').emit('booking:new', receiptData);
+
+    // If this booking included PHD add-ons, emit updated inventory so admin dashboards refresh
+    if (phdPkgIds.size > 0) {
+      let totalPhdInThisBooking = 0;
+      for (const att of attendees) {
+        if (!att.addons) continue;
+        for (const addon of att.addons) {
+          if (phdPkgIds.has(addon.packageId)) totalPhdInThisBooking += addon.quantity;
+        }
+      }
+      if (totalPhdInThisBooking > 0) {
+        const phdUsedNow = get(`
+          SELECT COALESCE(SUM(ba.quantity), 0) as total_used
+          FROM booking_addons ba
+          JOIN booking_items bi ON bi.id = ba.booking_item_id
+          JOIN bookings b ON b.id = bi.booking_id
+          WHERE b.payment_status = 'paid'
+            AND (ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+                 OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1))
+        `);
+        const phdCfg = phdConfig;
+        const phdUsed = phdUsedNow?.total_used || 0;
+        io.to('admin:receipts').emit('phd:updated', {
+          totalStock: phdCfg.totalStock,
+          totalUsed: phdUsed,
+          remaining: Math.max(0, phdCfg.totalStock - phdUsed),
+          perPlayerLimit: phdCfg.perPlayerLimit
+        });
+      }
+    }
+
+    // Flush to disk immediately — booking is a critical write
+    saveDb();
 
     logAudit('booking_created', 'booking', bookingId, {
       referenceNumber: refNumber,
@@ -440,6 +477,7 @@ app.post('/api/bookings', (req, res) => {
     res.json({
       bookingId,
       referenceNumber: refNumber,
+      itemReferences: itemRefs,
       totalAmount,
       totalFormatted: '$' + formatPrice(totalAmount)
     });
@@ -663,6 +701,7 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
            s.date as session_date, s.time as session_time,
            s.is_special_event, s.event_title,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
+           bi.reference_number as item_reference_number,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name
     FROM bookings b
@@ -712,7 +751,7 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
     rowNum: i + 1,
     id: r.item_id,
     bookingId: r.id,
-    referenceNumber: r.reference_number,
+    referenceNumber: r.item_reference_number || r.reference_number,
     firstName: r.first_name,
     lastName: r.last_name,
     tableNumber: r.table_number,
@@ -936,6 +975,7 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
            s.date as session_date, s.time as session_time,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
+           bi.reference_number as item_reference_number,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM bookings b
@@ -980,6 +1020,7 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
       lastName: row.last_name,
       tableNumber: row.table_number,
       chairNumber: row.chair_number,
+      referenceNumber: row.item_reference_number,
       packageName: row.package_name,
       packagePrice: row.package_price,
       packagePriceFormatted: '$' + formatPrice(row.package_price),
@@ -996,7 +1037,7 @@ app.get('/api/admin/bookings/export', adminAuth, (req, res) => {
   if (sessionId) { whereClause = 'WHERE b.session_id = ?'; params.push(sessionId); }
 
   const rows = all(`
-    SELECT b.reference_number, b.total_amount, b.payment_status, b.created_at,
+    SELECT COALESCE(bi.reference_number, b.reference_number) as ticket_reference, b.total_amount, b.payment_status, b.created_at,
            s.date as session_date, s.time as session_time,
            bi.first_name, bi.last_name,
            seats.table_number, seats.chair_number,
@@ -1013,7 +1054,7 @@ app.get('/api/admin/bookings/export', adminAuth, (req, res) => {
 
   let csv = 'Reference,Session Date,Session Time,First Name,Last Name,Table,Chair,Package,Package Price,Total Amount,Payment Status,Booked At\n';
   for (const row of rows) {
-    csv += `${row.reference_number},${row.session_date},${row.session_time},${row.first_name},${row.last_name},${row.table_number},${row.chair_number},${row.package_name},$${formatPrice(row.package_price)},$${formatPrice(row.total_amount)},${row.payment_status},${row.created_at}\n`;
+    csv += `${row.ticket_reference},${row.session_date},${row.session_time},${row.first_name},${row.last_name},${row.table_number},${row.chair_number},${row.package_name},$${formatPrice(row.package_price)},$${formatPrice(row.total_amount)},${row.payment_status},${row.created_at}\n`;
   }
 
   res.setHeader('Content-Type', 'text/csv');
@@ -1064,6 +1105,7 @@ app.get('/api/admin/sessions/:id/bookings', adminAuth, (req, res) => {
   const rows = all(`
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
            bi.first_name, bi.last_name, bi.price as item_price,
+           bi.reference_number as item_reference_number,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name
     FROM bookings b
@@ -1093,6 +1135,7 @@ app.get('/api/admin/sessions/:id/bookings', adminAuth, (req, res) => {
       lastName: row.last_name,
       tableNumber: row.table_number,
       chairNumber: row.chair_number,
+      referenceNumber: row.item_reference_number,
       packageName: row.package_name,
       itemPrice: row.item_price,
       itemPriceFormatted: '$' + formatPrice(row.item_price)
@@ -1217,6 +1260,7 @@ app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
            s.id as session_id, s.date as session_date, s.time as session_time
            ${specialCols},
            bi.first_name, bi.last_name, bi.price as item_price,
+           bi.reference_number as item_reference_number,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM bookings b
@@ -1256,6 +1300,7 @@ app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
       lastName: row.last_name,
       tableNumber: row.table_number,
       chairNumber: row.chair_number,
+      referenceNumber: row.item_reference_number,
       packageName: row.package_name,
       packagePrice: row.package_price,
       packagePriceFormatted: '$' + formatPrice(row.package_price)
@@ -1306,7 +1351,7 @@ app.get('/api/bookings/:ref/tickets', (req, res) => {
   if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
   const items = all(`
-    SELECT bi.first_name, bi.last_name, bi.price,
+    SELECT bi.first_name, bi.last_name, bi.price, bi.reference_number,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM booking_items bi
@@ -1331,6 +1376,7 @@ app.get('/api/bookings/:ref/tickets', (req, res) => {
       lastName: item.last_name,
       tableNumber: item.table_number,
       chairNumber: item.chair_number,
+      referenceNumber: item.reference_number,
       packageName: item.package_name,
       packagePrice: item.package_price,
       packagePriceFormatted: '$' + formatPrice(item.package_price),

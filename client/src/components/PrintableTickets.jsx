@@ -226,7 +226,7 @@ export default function PrintableTickets() {
               ticket={ticket}
               sessionDate={data.sessionDate}
               sessionTime={data.sessionTime}
-              referenceNumber={data.referenceNumber}
+              referenceNumber={ticket.referenceNumber || data.referenceNumber}
               eventTitle={data.isSpecialEvent ? data.eventTitle : null}
             />
           ))}

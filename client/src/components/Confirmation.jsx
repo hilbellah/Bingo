@@ -65,10 +65,11 @@ export default function Confirmation({ booking, session, attendees, seats, selec
 
         {/* Seats */}
         <div className="mb-6">
-          <h3 className="font-bold text-brand-blue mb-3 text-lg">Your Seats</h3>
+          <h3 className="font-bold text-brand-blue mb-3 text-lg">Your Tickets</h3>
           <div className="space-y-2">
             {attendees.map((att, i) => {
               const info = getSeatInfo(selectedSeats[i]);
+              const ticketRef = booking.itemReferences?.[i];
               const addonDetails = [];
               for (const addon of (att.addons || [])) {
                 const pkg = optionalPkgs.find(p => p.id === addon.packageId);
@@ -89,6 +90,11 @@ export default function Confirmation({ booking, session, attendees, seats, selec
                       Table {info.table}, Chair {info.chair}
                     </span>
                   </div>
+                  {ticketRef && (
+                    <div className="ml-9 mt-1">
+                      <span className="font-mono text-xs text-brand-blue font-semibold bg-brand-gold/10 px-2 py-0.5 rounded">{ticketRef}</span>
+                    </div>
+                  )}
                   <div className="ml-9 mt-1 text-sm text-gray-500 space-y-0.5">
                     {requiredPkg && <p>{requiredPkg.name} — {formatPrice(requiredPkg.price)}</p>}
                     {addonDetails.map((a, j) => (

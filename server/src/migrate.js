@@ -1,4 +1,4 @@
-import { getDb, exec } from './database.js';
+import { getDb, exec, all, run } from './database.js';
 
 async function migrate() {
   await getDb();
@@ -203,6 +203,21 @@ async function migrate() {
     perPlayerLimit: 2
   });
   try { run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [defaultPhdInventory]); } catch(e) {}
+
+  // --- Per-attendee ticket reference migration ---
+  console.log('Running per-attendee ticket reference migration...');
+  try { exec('ALTER TABLE booking_items ADD COLUMN reference_number TEXT'); } catch(e) {}
+  try { exec('CREATE UNIQUE INDEX idx_booking_items_reference ON booking_items(reference_number)'); } catch(e) {}
+
+  // Backfill existing booking_items that have no reference_number
+  const itemsWithoutRef = all("SELECT bi.id, b.reference_number as booking_ref FROM booking_items bi JOIN bookings b ON b.id = bi.booking_id WHERE bi.reference_number IS NULL");
+  if (itemsWithoutRef.length > 0) {
+    console.log(`Backfilling ${itemsWithoutRef.length} booking items with unique reference numbers...`);
+    for (let i = 0; i < itemsWithoutRef.length; i++) {
+      const ref = 'BNG-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      run("UPDATE booking_items SET reference_number = ? WHERE id = ?", [ref, itemsWithoutRef[i].id]);
+    }
+  }
 
   console.log('Migrations complete.');
 }
