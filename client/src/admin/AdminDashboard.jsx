@@ -1050,12 +1050,10 @@ export default function AdminDashboard() {
                             className="text-xs text-brand-blue hover:underline">
                             {s.is_available ? 'Disable' : 'Enable'}
                           </button>
-                          {!!s.is_special_event && (
-                            <button onClick={() => handleEditSessionPkgs(s.id)}
-                              className="text-xs text-amber-600 hover:underline">
-                              Packages
-                            </button>
-                          )}
+                          <button onClick={() => handleEditSessionPkgs(s.id)}
+                            className="text-xs text-amber-600 hover:underline">
+                            Packages
+                          </button>
                           <button onClick={() => handleDeleteSession(s.id, s.date, s.time)}
                             className="text-xs text-red-500 hover:underline font-medium">
                             Delete
