@@ -1361,7 +1361,7 @@ app.get('/api/bookings/:ref/tickets', (req, res) => {
   if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
   const items = all(`
-    SELECT bi.first_name, bi.last_name, bi.price, bi.reference_number,
+    SELECT bi.id as item_id, bi.first_name, bi.last_name, bi.price, bi.reference_number,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM booking_items bi
@@ -1371,6 +1371,29 @@ app.get('/api/bookings/:ref/tickets', (req, res) => {
     WHERE bi.booking_id = ?
     ORDER BY bi.id
   `, [booking.id]);
+
+  // Fetch addons for all booking items
+  const allAddons = all(`
+    SELECT ba.booking_item_id, ba.quantity, ba.price,
+           COALESCE(p.name, sp.name) as package_name
+    FROM booking_addons ba
+    LEFT JOIN packages p ON p.id = ba.package_id
+    LEFT JOIN session_packages sp ON sp.id = ba.package_id
+    JOIN booking_items bi ON bi.id = ba.booking_item_id
+    WHERE bi.booking_id = ?
+  `, [booking.id]);
+
+  // Group addons by booking_item_id
+  const addonsByItem = {};
+  for (const a of allAddons) {
+    if (!addonsByItem[a.booking_item_id]) addonsByItem[a.booking_item_id] = [];
+    addonsByItem[a.booking_item_id].push({
+      packageName: a.package_name,
+      quantity: a.quantity,
+      price: a.price,
+      priceFormatted: '$' + formatPrice(a.price),
+    });
+  }
 
   res.json({
     referenceNumber: booking.reference_number,
@@ -1390,6 +1413,7 @@ app.get('/api/bookings/:ref/tickets', (req, res) => {
       packageName: item.package_name,
       packagePrice: item.package_price,
       packagePriceFormatted: '$' + formatPrice(item.package_price),
+      addons: addonsByItem[item.item_id] || [],
     }))
   });
 });

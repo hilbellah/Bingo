@@ -46,6 +46,13 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
           </div>
           <p className="ticket-price">{formatPrice(ticket.packagePrice)}</p>
           <p className="ticket-pkg">{ticket.packageName}</p>
+          {ticket.addons && ticket.addons.length > 0 && (
+            <div className="ticket-addons">
+              {ticket.addons.map((a, idx) => (
+                <span key={idx} className="ticket-addon-item">+ {a.packageName} x{a.quantity}</span>
+              ))}
+            </div>
+          )}
           <div className="ticket-half-row ticket-meta">
             <span className="ticket-meta-text">{formatDate(sessionDate)}</span>
             <span className="ticket-meta-text">{formatTime(sessionTime)}</span>
@@ -75,6 +82,13 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
             {ticket.firstName} {ticket.lastName}
           </div>
           <p className="ticket-price-sm">{formatPrice(ticket.packagePrice)} — {ticket.packageName}</p>
+          {ticket.addons && ticket.addons.length > 0 && (
+            <div className="ticket-addons">
+              {ticket.addons.map((a, idx) => (
+                <span key={idx} className="ticket-addon-item">+ {a.packageName} x{a.quantity}</span>
+              ))}
+            </div>
+          )}
           <div className="ticket-half-row ticket-meta">
             <span className="ticket-meta-text">{formatDate(sessionDate)}</span>
             <span className="ticket-meta-text">{formatTime(sessionTime)}</span>
@@ -262,7 +276,8 @@ export default function PrintableTickets() {
           width: 8in;
           height: 10.5in;
           page-break-after: always;
-          justify-content: space-between;
+          justify-content: flex-start;
+          gap: 0.15in;
         }
 
         .ticket-card {
@@ -446,6 +461,20 @@ export default function PrintableTickets() {
           color: #1a3a5c;
           font-family: monospace;
           letter-spacing: 0.5px;
+        }
+
+        .ticket-addons {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 1px;
+          margin-top: 1px;
+        }
+
+        .ticket-addon-item {
+          font-size: 10px;
+          color: #7c5e2a;
+          font-weight: 600;
         }
       `}</style>
     </>
