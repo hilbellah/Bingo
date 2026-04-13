@@ -185,10 +185,10 @@ async function seed() {
     // Booking 1: Party of 2 at Table 1 (chairs 1 & 2)
     const b1 = uuid(), bi1 = uuid(), bi2 = uuid();
     db.run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b1, fs, ref(), 5000, 'paid', new Date(Date.now() - 86400000).toISOString()]);
-    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)', [bi1, b1, 'John', 'Smith', s[1][1], requiredPkg, 1800]);
+    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi1, b1, 'John', 'Smith', s[1][1], requiredPkg, 1800, ref()]);
     db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi1, opt1, 1, 1400]);
     db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][1]]);
-    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)', [bi2, b1, 'Jane', 'Smith', s[1][2], requiredPkg, 1800]);
+    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi2, b1, 'Jane', 'Smith', s[1][2], requiredPkg, 1800, ref()]);
     db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][2]]);
 
     // Booking 2: Party of 3 at Table 5 (chairs 1, 2, 3)
@@ -196,15 +196,15 @@ async function seed() {
     db.run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b2, fs, ref(), 5400, 'paid', new Date(Date.now() - 43200000).toISOString()]);
     const names = [['Mike', 'Johnson'], ['Sarah', 'Johnson'], ['Tom', 'Johnson']];
     for (let i = 0; i < 3; i++) {
-      db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [uuid(), b2, names[i][0], names[i][1], s[5][i + 1], requiredPkg, 1800]);
+      db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [uuid(), b2, names[i][0], names[i][1], s[5][i + 1], requiredPkg, 1800, ref()]);
       db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[5][i + 1]]);
     }
 
     // Booking 3: Single at Table 42 (chair 1)
     const b3 = uuid(), bi6 = uuid();
     db.run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b3, fs, ref(), 3200, 'paid', new Date(Date.now() - 7200000).toISOString()]);
-    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?)', [bi6, b3, 'Alice', 'Williams', s[42][1], requiredPkg, 1800]);
+    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi6, b3, 'Alice', 'Williams', s[42][1], requiredPkg, 1800, ref()]);
     db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi6, opt1, 1, 1400]);
     db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[42][1]]);
   }
