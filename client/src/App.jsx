@@ -155,12 +155,13 @@ export default function App() {
     // Deselect
     if (selectedSeats.includes(chair.id)) {
       await unlockSeat(chair.id, holderId);
+      const removedIndex = selectedSeats.indexOf(chair.id);
       const newSelected = selectedSeats.filter(id => id !== chair.id);
       setSelectedSeats(newSelected);
-      // Auto-update party size and attendees
+      // Auto-update party size and remove the attendee at the same index
       const newSize = newSelected.length;
       setPartySize(newSize);
-      setAttendees(prev => prev.slice(0, newSize));
+      setAttendees(prev => prev.filter((_, i) => i !== removedIndex));
       return;
     }
 
@@ -257,7 +258,7 @@ export default function App() {
 
   if (booking) {
     return <Confirmation booking={booking} session={selectedSession} attendees={attendees}
-      seats={seats} selectedSeats={selectedSeats} requiredPkg={requiredPkg} />;
+      seats={seats} selectedSeats={selectedSeats} requiredPkg={requiredPkg} optionalPkgs={optionalPkgs} />;
   }
 
   // Group seats by table_number

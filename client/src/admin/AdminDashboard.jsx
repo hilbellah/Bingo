@@ -445,7 +445,7 @@ export default function AdminDashboard() {
     setEditingSessionPkgs(sessionId);
     const pkgs = await fetchAdminSessionPackages(token, sessionId);
     setSessionPkgList(pkgs.length > 0 ? pkgs : [
-      { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: 0 }
+      { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false }
     ]);
   };
 
@@ -991,13 +991,21 @@ export default function AdminDashboard() {
                             pkgs[i] = {...pkgs[i], max_quantity: parseInt(e.target.value) || 1};
                             setNewSession({...newSession, packages: pkgs});
                           }} className="w-16 px-2 py-1.5 border rounded text-sm" placeholder="Max" min="1" />
+                          <label className="flex items-center gap-1 text-xs text-purple-600" title="PHD (Handheld Device)">
+                            <input type="checkbox" checked={!!pkg.is_phd} onChange={e => {
+                              const pkgs = [...newSession.packages];
+                              pkgs[i] = {...pkgs[i], is_phd: e.target.checked};
+                              setNewSession({...newSession, packages: pkgs});
+                            }} className="rounded" />
+                            PHD
+                          </label>
                           <button onClick={() => {
                             const pkgs = newSession.packages.filter((_, j) => j !== i);
                             setNewSession({...newSession, packages: pkgs});
                           }} className="text-red-400 hover:text-red-600 text-sm">Remove</button>
                         </div>
                       ))}
-                      <button onClick={() => setNewSession({...newSession, packages: [...newSession.packages, { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: newSession.packages.length }]})}
+                      <button onClick={() => setNewSession({...newSession, packages: [...newSession.packages, { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: newSession.packages.length, is_phd: false }]})}
                         className="text-xs text-amber-600 hover:text-amber-800 font-medium">
                         + Add Package
                       </button>

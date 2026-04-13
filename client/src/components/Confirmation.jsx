@@ -19,7 +19,7 @@ function formatTime(timeStr) {
   return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
 }
 
-export default function Confirmation({ booking, session, attendees, seats, selectedSeats }) {
+export default function Confirmation({ booking, session, attendees, seats, selectedSeats, requiredPkg, optionalPkgs = [] }) {
   const navigate = useNavigate();
 
   const getSeatInfo = (seatId) => {
@@ -69,17 +69,32 @@ export default function Confirmation({ booking, session, attendees, seats, selec
           <div className="space-y-2">
             {attendees.map((att, i) => {
               const info = getSeatInfo(selectedSeats[i]);
+              const addonDetails = [];
+              for (const addon of (att.addons || [])) {
+                const pkg = optionalPkgs.find(p => p.id === addon.packageId);
+                if (pkg && addon.quantity > 0) {
+                  addonDetails.push({ name: pkg.name, qty: addon.quantity, price: pkg.price * addon.quantity });
+                }
+              }
               return (
-                <div key={i} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-brand-blue text-white flex items-center justify-center text-xs font-bold">
-                      {i + 1}
+                <div key={i} className="py-2 border-b border-gray-100 last:border-0">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-brand-blue text-white flex items-center justify-center text-xs font-bold">
+                        {i + 1}
+                      </div>
+                      <span className="font-medium text-base">{att.firstName} {att.lastName}</span>
                     </div>
-                    <span className="font-medium text-base">{att.firstName} {att.lastName}</span>
+                    <span className="text-sm font-semibold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                      Table {info.table}, Chair {info.chair}
+                    </span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                    Table {info.table}, Chair {info.chair}
-                  </span>
+                  <div className="ml-9 mt-1 text-sm text-gray-500 space-y-0.5">
+                    {requiredPkg && <p>{requiredPkg.name} — {formatPrice(requiredPkg.price)}</p>}
+                    {addonDetails.map((a, j) => (
+                      <p key={j}>{a.name} x{a.qty} — {formatPrice(a.price)}</p>
+                    ))}
+                  </div>
                 </div>
               );
             })}

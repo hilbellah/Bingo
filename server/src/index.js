@@ -130,12 +130,19 @@ app.get('/api/sessions', (req, res) => {
 
 // --- Session-specific packages (public) ---
 app.get('/api/sessions/:sessionId/packages', (req, res) => {
+  const session = get('SELECT * FROM sessions WHERE id = ?', [req.params.sessionId]);
+  const isSpecial = session && session.is_special_event;
+
   const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.sessionId]);
   if (sessionPkgs.length > 0) {
     return res.json(sessionPkgs);
   }
-  // Fall back to global packages
-  res.json(all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC'));
+  // Fall back to global packages; PHD packages are only available for special events
+  const globalPkgs = all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC');
+  if (!isSpecial) {
+    return res.json(globalPkgs.filter(p => !p.is_phd));
+  }
+  res.json(globalPkgs);
 });
 
 // --- PHD Inventory status (public) ---
@@ -383,17 +390,21 @@ app.post('/api/bookings', (req, res) => {
     const receiptItems = all(`
       SELECT bi.id, bi.first_name, bi.last_name, bi.price,
              seats.table_number, seats.chair_number,
-             p.name as package_name, p.price as package_price
+             COALESCE(p.name, sp.name) as package_name,
+             COALESCE(p.price, sp.price) as package_price
       FROM booking_items bi
       JOIN seats ON seats.id = bi.seat_id
-      JOIN packages p ON p.id = bi.package_id
+      LEFT JOIN packages p ON p.id = bi.package_id
+      LEFT JOIN session_packages sp ON sp.id = bi.package_id
       WHERE bi.booking_id = ?
       ORDER BY bi.id
     `, [bookingId]);
     const receiptAddons = all(`
-      SELECT ba.booking_item_id, ba.quantity, ba.price, p.name as package_name
+      SELECT ba.booking_item_id, ba.quantity, ba.price,
+             COALESCE(p.name, sp.name) as package_name
       FROM booking_addons ba
-      JOIN packages p ON p.id = ba.package_id
+      LEFT JOIN packages p ON p.id = ba.package_id
+      LEFT JOIN session_packages sp ON sp.id = ba.package_id
       JOIN booking_items bi ON bi.id = ba.booking_item_id
       WHERE bi.booking_id = ?
     `, [bookingId]);
@@ -653,21 +664,24 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
            s.is_special_event, s.event_title,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
            seats.table_number, seats.chair_number,
-           p.name as package_name
+           COALESCE(p.name, sp.name) as package_name
     FROM bookings b
     JOIN sessions s ON b.session_id = s.id
     JOIN booking_items bi ON bi.booking_id = b.id
     JOIN seats ON seats.id = bi.seat_id
     LEFT JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN session_packages sp ON sp.id = bi.package_id
     WHERE s.date = ? AND b.payment_status = 'paid'
     ORDER BY b.created_at ASC, b.id, bi.id
   `, [date]);
 
   // Load addons for all items in one query
   const allAddons = all(`
-    SELECT ba.booking_item_id, ba.quantity, ba.price, p.name as package_name
+    SELECT ba.booking_item_id, ba.quantity, ba.price,
+           COALESCE(p.name, sp.name) as package_name
     FROM booking_addons ba
     LEFT JOIN packages p ON p.id = ba.package_id
+    LEFT JOIN session_packages sp ON sp.id = ba.package_id
     JOIN booking_items bi ON bi.id = ba.booking_item_id
     JOIN bookings b ON b.id = bi.booking_id
     JOIN sessions s ON s.id = b.session_id
@@ -782,8 +796,8 @@ app.post('/api/admin/sessions', adminAuth, (req, res) => {
   // Create session-specific packages if provided
   if (Array.isArray(pkgs) && pkgs.length > 0) {
     for (const pkg of pkgs) {
-      run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [uuid(), id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0]);
+      run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [uuid(), id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0]);
     }
   }
 
@@ -894,12 +908,13 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
            s.date as session_date, s.time as session_time,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
            seats.table_number, seats.chair_number,
-           p.name as package_name, p.price as package_price
+           COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM bookings b
     JOIN sessions s ON b.session_id = s.id
     JOIN booking_items bi ON bi.booking_id = b.id
     JOIN seats ON seats.id = bi.seat_id
-    JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN session_packages sp ON sp.id = bi.package_id
     ${whereClause}
     ORDER BY b.created_at DESC, b.id, bi.id
   `, params);
@@ -921,8 +936,9 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
     }
 
     const addons = all(`
-      SELECT ba.*, p.name as package_name FROM booking_addons ba
-      JOIN packages p ON p.id = ba.package_id WHERE ba.booking_item_id = ?
+      SELECT ba.*, COALESCE(p.name, sp.name) as package_name FROM booking_addons ba
+      LEFT JOIN packages p ON p.id = ba.package_id
+      LEFT JOIN session_packages sp ON sp.id = ba.package_id WHERE ba.booking_item_id = ?
     `, [row.item_id]).map(a => ({
       packageName: a.package_name,
       quantity: a.quantity,
@@ -955,12 +971,13 @@ app.get('/api/admin/bookings/export', adminAuth, (req, res) => {
            s.date as session_date, s.time as session_time,
            bi.first_name, bi.last_name,
            seats.table_number, seats.chair_number,
-           p.name as package_name, p.price as package_price
+           COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM bookings b
     JOIN sessions s ON b.session_id = s.id
     JOIN booking_items bi ON bi.booking_id = b.id
     JOIN seats ON seats.id = bi.seat_id
-    JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN session_packages sp ON sp.id = bi.package_id
     ${whereClause}
     ORDER BY b.created_at DESC
   `, params);
@@ -1019,11 +1036,12 @@ app.get('/api/admin/sessions/:id/bookings', adminAuth, (req, res) => {
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
            bi.first_name, bi.last_name, bi.price as item_price,
            seats.table_number, seats.chair_number,
-           p.name as package_name
+           COALESCE(p.name, sp.name) as package_name
     FROM bookings b
     JOIN booking_items bi ON bi.booking_id = b.id
     JOIN seats ON seats.id = bi.seat_id
-    JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN session_packages sp ON sp.id = bi.package_id
     WHERE b.session_id = ?
     ORDER BY b.created_at DESC, b.id, bi.id
   `, [req.params.id]);
@@ -1171,12 +1189,13 @@ app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
            ${specialCols},
            bi.first_name, bi.last_name, bi.price as item_price,
            seats.table_number, seats.chair_number,
-           p.name as package_name, p.price as package_price
+           COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM bookings b
     JOIN sessions s ON b.session_id = s.id
     JOIN booking_items bi ON bi.booking_id = b.id
     JOIN seats ON seats.id = bi.seat_id
-    JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN session_packages sp ON sp.id = bi.package_id
     WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'
     ORDER BY s.date ASC, s.time ASC, b.reference_number, seats.table_number, seats.chair_number
   `, [dateFrom, endDate]);
@@ -1260,10 +1279,11 @@ app.get('/api/bookings/:ref/tickets', (req, res) => {
   const items = all(`
     SELECT bi.first_name, bi.last_name, bi.price,
            seats.table_number, seats.chair_number,
-           p.name as package_name, p.price as package_price
+           COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM booking_items bi
     JOIN seats ON seats.id = bi.seat_id
-    JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN session_packages sp ON sp.id = bi.package_id
     WHERE bi.booking_id = ?
     ORDER BY bi.id
   `, [booking.id]);
