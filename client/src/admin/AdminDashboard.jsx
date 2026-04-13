@@ -357,10 +357,22 @@ export default function AdminDashboard() {
       '<div class="line"></div>',
     ];
     for (const item of dailySales.items) {
-      lines.push(`<div class="item-row"><span class="item-qty">${item.rowNum}</span><span class="item-desc">${item.firstName} ${item.lastName}</span><span class="item-amt">${item.itemPriceFormatted}</span></div>`);
+      const addonTotal = item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0;
+      const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
+      lines.push(`<div class="item-row"><span class="item-qty">${item.rowNum}</span><span class="item-desc">${item.firstName} ${item.lastName}</span><span class="item-amt">${totalPrice}</span></div>`);
       lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">${item.referenceNumber} · T${item.tableNumber}/C${item.chairNumber} · ${item.packageName || ''}</div>`);
+      if (item.addons && item.addons.length > 0) {
+        for (const addon of item.addons) {
+          lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">+ ${addon.packageName} x${addon.quantity} (${addon.priceFormatted})</div>`);
+        }
+      }
     }
     lines.push('<div class="dbl-line"></div>');
+    if (dailySales.addonSubtotal > 0) {
+      lines.push(`<div class="item-row"><span class="item-desc">Packages</span><span class="item-amt">${dailySales.packageSubtotalFormatted}</span></div>`);
+      lines.push(`<div class="item-row"><span class="item-desc">Add-ons</span><span class="item-amt">${dailySales.addonSubtotalFormatted}</span></div>`);
+      lines.push('<div class="line"></div>');
+    }
     lines.push(`<div class="total-row"><span>TOTAL (${dailySales.totalTickets} tickets, ${dailySales.totalBookings} bookings)</span><span>${dailySales.grandTotalFormatted}</span></div>`);
     lines.push('<div class="line"></div>');
     lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${new Date().toLocaleString()}</div>`);
@@ -1567,6 +1579,10 @@ export default function AdminDashboard() {
                           const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
                           rows.push([item.rowNum, item.referenceNumber, `${item.firstName} ${item.lastName}`, item.tableNumber, item.chairNumber, item.packageName || '', addonText, item.description, totalPrice, new Date(item.createdAt).toLocaleTimeString()]);
                         }
+                        if (dailySales.addonSubtotal > 0) {
+                          rows.push(['', '', '', '', '', '', 'Package Subtotal', dailySales.packageSubtotalFormatted, '']);
+                          rows.push(['', '', '', '', '', '', 'Add-ons Subtotal', dailySales.addonSubtotalFormatted, '']);
+                        }
                         rows.push(['', '', '', '', '', '', 'GRAND TOTAL', dailySales.grandTotalFormatted, `${dailySales.totalTickets} tickets / ${dailySales.totalBookings} bookings`]);
                         const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
                         const blob = new Blob([csv], { type: 'text/csv' });
@@ -1603,7 +1619,13 @@ export default function AdminDashboard() {
                           const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
                           w.document.write(`<tr><td>${item.rowNum}</td><td style="font-family:monospace">${item.referenceNumber}</td><td>${item.firstName} ${item.lastName}</td><td class="center">${item.tableNumber}</td><td class="center">${item.chairNumber}</td><td>${item.packageName || ''}</td><td style="font-size:11px">${addonText}</td><td>${item.description}</td><td class="right">${totalPrice}</td><td>${new Date(item.createdAt).toLocaleTimeString()}</td></tr>`);
                         }
-                        w.document.write(`</tbody><tfoot><tr><td colspan="8">GRAND TOTAL</td><td class="right">${dailySales.grandTotalFormatted}</td><td>${dailySales.totalTickets} tickets</td></tr></tfoot></table>`);
+                        let footerHtml = '</tbody><tfoot>';
+                        if (dailySales.addonSubtotal > 0) {
+                          footerHtml += `<tr><td colspan="8" style="border-top:1px solid #ddd;font-weight:normal;color:#555">Package Subtotal</td><td class="right" style="border-top:1px solid #ddd;color:#555">${dailySales.packageSubtotalFormatted}</td><td style="border-top:1px solid #ddd"></td></tr>`;
+                          footerHtml += `<tr><td colspan="8" style="border-top:none;font-weight:normal;color:#555">Add-ons Subtotal</td><td class="right" style="border-top:none;color:#555">${dailySales.addonSubtotalFormatted}</td><td></td></tr>`;
+                        }
+                        footerHtml += `<tr><td colspan="8">GRAND TOTAL</td><td class="right">${dailySales.grandTotalFormatted}</td><td>${dailySales.totalTickets} tickets</td></tr></tfoot></table>`;
+                        w.document.write(footerHtml);
                         w.document.write('</body></html>');
                         w.document.close();
                         w.print();
@@ -1671,12 +1693,29 @@ export default function AdminDashboard() {
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-gray-200">
-                        <td className="py-3 pl-2" colSpan={6}>
+                      {dailySales.addonSubtotal > 0 && (
+                        <>
+                          <tr className="border-t border-gray-200">
+                            <td className="py-2 pl-2" colSpan={8}>
+                              <span className="text-sm text-gray-600">Package Subtotal</span>
+                            </td>
+                            <td className="py-2 text-right text-sm font-medium text-gray-700">{dailySales.packageSubtotalFormatted}</td>
+                            <td></td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 pl-2" colSpan={8}>
+                              <span className="text-sm text-gray-600">Add-ons Subtotal</span>
+                            </td>
+                            <td className="py-2 text-right text-sm font-medium text-gray-700">{dailySales.addonSubtotalFormatted}</td>
+                            <td></td>
+                          </tr>
+                        </>
+                      )}
+                      <tr className={dailySales.addonSubtotal > 0 ? "border-t border-gray-300" : "border-t-2 border-gray-200"}>
+                        <td className="py-3 pl-2" colSpan={8}>
                           <span className="font-semibold text-brand-blue">Grand Total</span>
                           <span className="text-xs text-gray-500 ml-2">({dailySales.totalTickets} tickets / {dailySales.totalBookings} bookings)</span>
                         </td>
-                        <td colSpan={2}></td>
                         <td className="py-3 text-right font-bold text-brand-gold">{dailySales.grandTotalFormatted}</td>
                         <td></td>
                       </tr>

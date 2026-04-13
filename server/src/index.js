@@ -775,13 +775,23 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
     return sum + (booking ? booking.total_amount : 0);
   }, 0);
 
+  // Calculate package subtotal (base ticket prices) and addon subtotal
+  const packageSubtotal = items.reduce((sum, item) => sum + item.itemPrice, 0);
+  const addonSubtotal = items.reduce((sum, item) => {
+    return sum + (item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0);
+  }, 0);
+
   res.json({
     date,
     items,
     totalTickets: items.length,
     totalBookings: uniqueBookings.size,
     grandTotal,
-    grandTotalFormatted: '$' + formatPrice(grandTotal)
+    grandTotalFormatted: '$' + formatPrice(grandTotal),
+    packageSubtotal,
+    packageSubtotalFormatted: '$' + formatPrice(packageSubtotal),
+    addonSubtotal,
+    addonSubtotalFormatted: '$' + formatPrice(addonSubtotal)
   });
 });
 
