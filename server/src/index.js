@@ -778,6 +778,17 @@ app.get('/api/admin/sessions', adminAuth, (req, res) => {
 
 app.post('/api/admin/sessions', adminAuth, (req, res) => {
   const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, packages: pkgs } = req.body;
+
+  // Prevent duplicate sessions on the same date within the same hour
+  const requestHour = time ? time.split(':')[0] : '18';
+  const conflict = get(
+    `SELECT id, date, time FROM sessions WHERE date = ? AND SUBSTR(time, 1, 2) = ? AND deleted_at IS NULL`,
+    [date, requestHour]
+  );
+  if (conflict) {
+    return res.status(409).json({ error: `A bingo session already exists on ${date} at ${conflict.time}. Cannot create another session in the same hour.` });
+  }
+
   const id = uuid();
   run('INSERT INTO sessions (id, date, time, cutoff_time, is_available, is_special_event, event_title, event_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [id, date, time, cutoff_time || '12:00', is_available !== false ? 1 : 0, is_special_event ? 1 : 0, event_title || null, event_description || null]);
@@ -821,6 +832,24 @@ app.patch('/api/admin/sessions/:id', adminAuth, (req, res) => {
   if (event_title !== undefined) { updates.push('event_title = ?'); values.push(event_title || null); }
   if (event_description !== undefined) { updates.push('event_description = ?'); values.push(event_description || null); }
   if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
+
+  // Prevent duplicate sessions when changing date or time
+  if (date !== undefined || time !== undefined) {
+    const current = get('SELECT date, time FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+    if (current) {
+      const checkDate = date !== undefined ? date : current.date;
+      const checkTime = time !== undefined ? time : current.time;
+      const checkHour = checkTime.split(':')[0];
+      const conflict = get(
+        `SELECT id, date, time FROM sessions WHERE date = ? AND SUBSTR(time, 1, 2) = ? AND id != ? AND deleted_at IS NULL`,
+        [checkDate, checkHour, req.params.id]
+      );
+      if (conflict) {
+        return res.status(409).json({ error: `A bingo session already exists on ${checkDate} at ${conflict.time}. Cannot have another session in the same hour.` });
+      }
+    }
+  }
+
   values.push(req.params.id);
   run(`UPDATE sessions SET ${updates.join(', ')} WHERE id = ?`, values);
   res.json({ success: true });

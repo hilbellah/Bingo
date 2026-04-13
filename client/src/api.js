@@ -105,14 +105,18 @@ export async function createAdminSession(token, data) {
   const res = await fetch(`${API}/admin/sessions`, {
     method: 'POST', headers: adminHeaders(token), body: JSON.stringify(data)
   });
-  return res.json();
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to create session');
+  return json;
 }
 
 export async function updateAdminSession(token, id, data) {
   const res = await fetch(`${API}/admin/sessions/${id}`, {
     method: 'PATCH', headers: adminHeaders(token), body: JSON.stringify(data)
   });
-  return res.json();
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to update session');
+  return json;
 }
 
 export async function deleteAdminSession(token, id) {
