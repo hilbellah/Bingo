@@ -791,17 +791,17 @@ export default function AdminDashboard() {
                   </span>
                 </div>
                 <div className="grid grid-cols-4 gap-3">
-                  <div className="bg-blue-50 rounded-lg p-3 text-center">
-                    <p className="text-2xl font-bold text-blue-700">{dashboard.phdInventory.totalStock}</p>
-                    <p className="text-xs text-blue-500">Total Stock</p>
+                  <div className={`rounded-lg p-3 text-center ${dashboard.phdInventory.remaining <= 20 ? 'bg-red-50' : 'bg-green-50'}`}>
+                    <p className={`text-2xl font-bold ${dashboard.phdInventory.remaining <= 20 ? 'text-red-600' : 'text-green-600'}`}>{dashboard.phdInventory.remaining}</p>
+                    <p className={`text-xs ${dashboard.phdInventory.remaining <= 20 ? 'text-red-500' : 'text-green-500'}`}>Available</p>
                   </div>
                   <div className="bg-red-50 rounded-lg p-3 text-center">
                     <p className="text-2xl font-bold text-red-600">{dashboard.phdInventory.totalUsed}</p>
                     <p className="text-xs text-red-500">In Use</p>
                   </div>
-                  <div className={`rounded-lg p-3 text-center ${dashboard.phdInventory.remaining <= 20 ? 'bg-red-50' : 'bg-green-50'}`}>
-                    <p className={`text-2xl font-bold ${dashboard.phdInventory.remaining <= 20 ? 'text-red-600' : 'text-green-600'}`}>{dashboard.phdInventory.remaining}</p>
-                    <p className={`text-xs ${dashboard.phdInventory.remaining <= 20 ? 'text-red-500' : 'text-green-500'}`}>Available</p>
+                  <div className="bg-blue-50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-blue-700">{dashboard.phdInventory.totalStock}</p>
+                    <p className="text-xs text-blue-500">Total Stock</p>
                   </div>
                   <div className="bg-purple-50 rounded-lg p-3 text-center">
                     <p className="text-2xl font-bold text-purple-600">{dashboard.phdInventory.perPlayerLimit}</p>
@@ -2181,20 +2181,20 @@ export default function AdminDashboard() {
 
             {/* Inventory Overview */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#2563eb' }}>
-                <p className="text-sm opacity-80">Total Stock</p>
-                <p className="text-4xl font-bold mt-1">{phdInventory.totalStock}</p>
-                <p className="text-xs opacity-60 mt-1">devices owned</p>
+              <div className={`rounded-xl p-5 shadow-sm text-white`} style={{ background: phdInventory.remaining <= 20 ? '#dc2626' : phdInventory.remaining <= 50 ? '#d97706' : '#16a34a' }}>
+                <p className="text-sm opacity-80">Available</p>
+                <p className="text-4xl font-bold mt-1">{phdInventory.remaining}</p>
+                <p className="text-xs opacity-60 mt-1">ready to assign</p>
               </div>
               <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#dc2626' }}>
                 <p className="text-sm opacity-80">In Use</p>
                 <p className="text-4xl font-bold mt-1">{phdInventory.totalUsed}</p>
                 <p className="text-xs opacity-60 mt-1">currently booked</p>
               </div>
-              <div className={`rounded-xl p-5 shadow-sm text-white`} style={{ background: phdInventory.remaining <= 20 ? '#dc2626' : phdInventory.remaining <= 50 ? '#d97706' : '#16a34a' }}>
-                <p className="text-sm opacity-80">Available</p>
-                <p className="text-4xl font-bold mt-1">{phdInventory.remaining}</p>
-                <p className="text-xs opacity-60 mt-1">ready to assign</p>
+              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#2563eb' }}>
+                <p className="text-sm opacity-80">Total Stock</p>
+                <p className="text-4xl font-bold mt-1">{phdInventory.totalStock}</p>
+                <p className="text-xs opacity-60 mt-1">devices owned</p>
               </div>
               <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#7c3aed' }}>
                 <p className="text-sm opacity-80">Per Player Limit</p>
