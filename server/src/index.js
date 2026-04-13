@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import multer from 'multer';
 import { getDb, all, get, run, exec, saveDb } from './database.js';
+import { migrate } from './migrate.js';
 import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
 
@@ -1470,6 +1471,10 @@ function ensureFutureSessions() {
 async function start() {
   await getDb();
   logger.info('Database connected');
+
+  // Run migrations to ensure schema is up to date
+  await migrate();
+  logger.info('Migrations applied');
 
   // Ensure up to 10 upcoming sessions exist
   ensureFutureSessions();

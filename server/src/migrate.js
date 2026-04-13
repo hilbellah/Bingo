@@ -113,6 +113,7 @@ async function migrate() {
       start_date TEXT,
       end_date TEXT,
       sort_order INTEGER DEFAULT 0,
+      image_url TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     )
@@ -148,8 +149,8 @@ async function migrate() {
     )
   `);
 
-  // Add image_url column to announcements
-  try { exec('ALTER TABLE announcements ADD COLUMN image_url TEXT'); } catch(e) {}
+  // Add image_url column to announcements (safe: already in CREATE TABLE for new dbs, ALTER for old ones)
+  try { exec('ALTER TABLE announcements ADD COLUMN image_url TEXT'); } catch(e) { console.log('image_url column already exists or could not be added:', e.message); }
 
   // Default theme settings
   const defaultTheme = JSON.stringify({
@@ -222,4 +223,12 @@ async function migrate() {
   console.log('Migrations complete.');
 }
 
-migrate().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
+export { migrate };
+
+// When run directly (not imported), execute and exit
+const isMainModule = process.argv[1] && (
+  process.argv[1].endsWith('migrate.js') || process.argv[1].endsWith('migrate')
+);
+if (isMainModule) {
+  migrate().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
+}
