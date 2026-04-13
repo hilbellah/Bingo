@@ -266,6 +266,14 @@ export async function fetchAuditLog(token, params = {}) {
   return res.json();
 }
 
+// Admin Seat Management
+export async function toggleAdminSeat(token, seatId, isDisabled) {
+  const res = await fetch(`${API}/admin/seats/${seatId}`, {
+    method: 'PATCH', headers: adminHeaders(token), body: JSON.stringify({ is_disabled: isDisabled })
+  });
+  return res.json();
+}
+
 // PHD Inventory
 export async function fetchPhdInventory() {
   const res = await fetch(`${API}/phd-inventory`);

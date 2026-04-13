@@ -971,7 +971,10 @@ app.patch('/api/admin/packages/:id', adminAuth, (req, res) => {
 app.patch('/api/admin/seats/:id', adminAuth, (req, res) => {
   const { is_disabled } = req.body;
   if (is_disabled !== undefined) {
+    const seat = get('SELECT * FROM seats WHERE id = ?', [req.params.id]);
+    if (!seat) return res.status(404).json({ error: 'Seat not found' });
     run('UPDATE seats SET is_disabled = ? WHERE id = ?', [is_disabled ? 1 : 0, req.params.id]);
+    io.to(`session:${seat.session_id}`).emit('seats:refresh');
   }
   res.json({ success: true });
 });
