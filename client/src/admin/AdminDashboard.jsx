@@ -1560,9 +1560,12 @@ export default function AdminDashboard() {
                   {dailySales && dailySales.items.length > 0 && (
                     <button
                       onClick={() => {
-                        const rows = [['#', 'Reference', 'Name', 'Table', 'Chair', 'Package', 'Session', 'Price', 'Time']];
+                        const rows = [['#', 'Reference', 'Name', 'Table', 'Chair', 'Package', 'Add-ons', 'Session', 'Price', 'Time']];
                         for (const item of dailySales.items) {
-                          rows.push([item.rowNum, item.referenceNumber, `${item.firstName} ${item.lastName}`, item.tableNumber, item.chairNumber, item.packageName || '', item.description, item.itemPriceFormatted, new Date(item.createdAt).toLocaleTimeString()]);
+                          const addonText = item.addons && item.addons.length > 0 ? item.addons.map(a => `${a.packageName} x${a.quantity} (${a.priceFormatted})`).join('; ') : '';
+                          const addonTotal = item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0;
+                          const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
+                          rows.push([item.rowNum, item.referenceNumber, `${item.firstName} ${item.lastName}`, item.tableNumber, item.chairNumber, item.packageName || '', addonText, item.description, totalPrice, new Date(item.createdAt).toLocaleTimeString()]);
                         }
                         rows.push(['', '', '', '', '', '', 'GRAND TOTAL', dailySales.grandTotalFormatted, `${dailySales.totalTickets} tickets / ${dailySales.totalBookings} bookings`]);
                         const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -1593,11 +1596,14 @@ export default function AdminDashboard() {
                           tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:10px}
                           @media print{body{padding:0}}</style></head><body>`);
                         w.document.write(`<h2>Daily Sales Report</h2><p class="sub">${dailySales.date} — ${dailySales.totalTickets} ticket(s) / ${dailySales.totalBookings} booking(s) — ${dailySales.grandTotalFormatted}</p>`);
-                        w.document.write('<table><thead><tr><th>#</th><th>Reference</th><th>Name</th><th>Table</th><th>Chair</th><th>Package</th><th>Session</th><th class="right">Price</th><th>Time</th></tr></thead><tbody>');
+                        w.document.write('<table><thead><tr><th>#</th><th>Reference</th><th>Name</th><th>Table</th><th>Chair</th><th>Package</th><th>Add-ons</th><th>Session</th><th class="right">Price</th><th>Time</th></tr></thead><tbody>');
                         for (const item of dailySales.items) {
-                          w.document.write(`<tr><td>${item.rowNum}</td><td style="font-family:monospace">${item.referenceNumber}</td><td>${item.firstName} ${item.lastName}</td><td class="center">${item.tableNumber}</td><td class="center">${item.chairNumber}</td><td>${item.packageName || ''}</td><td>${item.description}</td><td class="right">${item.itemPriceFormatted}</td><td>${new Date(item.createdAt).toLocaleTimeString()}</td></tr>`);
+                          const addonText = item.addons && item.addons.length > 0 ? item.addons.map(a => `${a.packageName} x${a.quantity} (${a.priceFormatted})`).join(', ') : '';
+                          const addonTotal = item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0;
+                          const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
+                          w.document.write(`<tr><td>${item.rowNum}</td><td style="font-family:monospace">${item.referenceNumber}</td><td>${item.firstName} ${item.lastName}</td><td class="center">${item.tableNumber}</td><td class="center">${item.chairNumber}</td><td>${item.packageName || ''}</td><td style="font-size:11px">${addonText}</td><td>${item.description}</td><td class="right">${totalPrice}</td><td>${new Date(item.createdAt).toLocaleTimeString()}</td></tr>`);
                         }
-                        w.document.write(`</tbody><tfoot><tr><td colspan="7">GRAND TOTAL</td><td class="right">${dailySales.grandTotalFormatted}</td><td>${dailySales.totalTickets} tickets</td></tr></tfoot></table>`);
+                        w.document.write(`</tbody><tfoot><tr><td colspan="8">GRAND TOTAL</td><td class="right">${dailySales.grandTotalFormatted}</td><td>${dailySales.totalTickets} tickets</td></tr></tfoot></table>`);
                         w.document.write('</body></html>');
                         w.document.close();
                         w.print();
@@ -1634,13 +1640,17 @@ export default function AdminDashboard() {
                         <th className="pb-2 text-center">Table</th>
                         <th className="pb-2 text-center">Chair</th>
                         <th className="pb-2">Package</th>
+                        <th className="pb-2">Add-ons</th>
                         <th className="pb-2">Session</th>
                         <th className="pb-2 text-right">Price</th>
                         <th className="pb-2 text-right pr-2">Time</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {dailySales.items.map(item => (
+                      {dailySales.items.map(item => {
+                        const addonTotal = item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0;
+                        const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
+                        return (
                         <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                           <td className="py-2.5 pl-2 text-gray-400 text-xs">{item.rowNum}</td>
                           <td className="py-2.5 font-mono text-sm font-medium text-brand-blue">{item.referenceNumber}</td>
@@ -1648,15 +1658,21 @@ export default function AdminDashboard() {
                           <td className="py-2.5 text-center">{item.tableNumber}</td>
                           <td className="py-2.5 text-center">{item.chairNumber}</td>
                           <td className="py-2.5 text-gray-600 text-xs">{item.packageName || ''}</td>
+                          <td className="py-2.5 text-gray-600 text-xs">
+                            {item.addons && item.addons.length > 0 ? item.addons.map((a, i) => (
+                              <div key={i}>{a.packageName} x{a.quantity} ({a.priceFormatted})</div>
+                            )) : ''}
+                          </td>
                           <td className="py-2.5 text-gray-600 text-xs">{item.description}</td>
-                          <td className="py-2.5 text-right font-medium text-gray-800">{item.itemPriceFormatted}</td>
+                          <td className="py-2.5 text-right font-medium text-gray-800">{totalPrice}</td>
                           <td className="py-2.5 text-right pr-2 text-gray-500 text-xs">{new Date(item.createdAt).toLocaleTimeString()}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-gray-200">
-                        <td className="py-3 pl-2" colSpan={5}>
+                        <td className="py-3 pl-2" colSpan={6}>
                           <span className="font-semibold text-brand-blue">Grand Total</span>
                           <span className="text-xs text-gray-500 ml-2">({dailySales.totalTickets} tickets / {dailySales.totalBookings} bookings)</span>
                         </td>
@@ -2363,7 +2379,7 @@ export default function AdminDashboard() {
               <div>
                 <h3 className="font-bold text-brand-blue text-lg">Booking Details</h3>
                 <p className="text-sm text-gray-500">
-                  {salesDrilldown.session.description} &mdash; {salesDrilldown.session.quantity} booking(s) &mdash; {salesDrilldown.session.totalFormatted}
+                  {salesDrilldown.session.description} &mdash; {salesDrilldown.bookings.reduce((sum, b) => sum + b.items.length, 0)} ticket(s) &mdash; {salesDrilldown.session.totalFormatted}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -2376,58 +2392,61 @@ export default function AdminDashboard() {
               {salesDrilldown.bookings.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No bookings found.</p>
               ) : (
-                salesDrilldown.bookings.map(b => (
-                  <div key={b.id} className="mb-4 border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <span className="font-mono text-sm font-semibold text-brand-blue">{b.referenceNumber}</span>
-                        <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
-                          b.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
-                          b.paymentStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
-                          'bg-gray-100 text-gray-600'
-                        }`}>{b.paymentStatus}</span>
+                salesDrilldown.bookings.flatMap(b =>
+                  b.items.map((item, i) => {
+                    const addonTotal = item.addons.reduce((sum, a) => sum + (a.price || 0), 0);
+                    const itemTotal = (item.packagePrice || 0) + addonTotal;
+                    const itemTotalFormatted = '$' + (itemTotal / 100).toFixed(2);
+                    return (
+                      <div key={`${b.id}-${i}`} className="mb-4 border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <span className="font-mono text-sm font-semibold text-brand-blue">{item.referenceNumber || b.referenceNumber}</span>
+                            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                              b.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                              b.paymentStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>{b.paymentStatus}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{itemTotalFormatted}</span>
+                            <button
+                              onClick={() => handlePrintBookingReceipt({...b, sessionDate: salesDrilldown.session.date, sessionTime: salesDrilldown.session.time})}
+                              className="px-2 py-0.5 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
+                              title="Print thermal receipt"
+                            >
+                              Receipt
+                            </button>
+                          </div>
+                        </div>
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-400 border-b">
+                              <th className="pb-1">Name</th>
+                              <th className="pb-1">Table</th>
+                              <th className="pb-1">Chair</th>
+                              <th className="pb-1">Package</th>
+                              <th className="pb-1">Add-ons</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="border-b border-gray-50">
+                              <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
+                              <td className="py-1">{item.tableNumber}</td>
+                              <td className="py-1">{item.chairNumber}</td>
+                              <td className="py-1">{item.packageName}</td>
+                              <td className="py-1 text-xs text-gray-500">
+                                {item.addons.length > 0
+                                  ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
+                                  : '—'}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{b.totalFormatted}</span>
-                        <button
-                          onClick={() => handlePrintBookingReceipt({...b, sessionDate: salesDrilldown.session.date, sessionTime: salesDrilldown.session.time})}
-                          className="px-2 py-0.5 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
-                          title="Print thermal receipt"
-                        >
-                          Receipt
-                        </button>
-                      </div>
-                    </div>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-gray-400 border-b">
-                          <th className="pb-1">Ticket</th>
-                          <th className="pb-1">Name</th>
-                          <th className="pb-1">Table</th>
-                          <th className="pb-1">Chair</th>
-                          <th className="pb-1">Package</th>
-                          <th className="pb-1">Add-ons</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {b.items.map((item, i) => (
-                          <tr key={i} className="border-b border-gray-50">
-                            <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || b.referenceNumber}</td>
-                            <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
-                            <td className="py-1">{item.tableNumber}</td>
-                            <td className="py-1">{item.chairNumber}</td>
-                            <td className="py-1">{item.packageName}</td>
-                            <td className="py-1 text-xs text-gray-500">
-                              {item.addons.length > 0
-                                ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
-                                : '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))
+                    );
+                  })
+                )
               )}
             </div>
           </div>
@@ -2453,42 +2472,45 @@ export default function AdminDashboard() {
               {soldModal.bookings.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No bookings found.</p>
               ) : (
-                soldModal.bookings.map(b => (
-                  <div key={b.id} className="mb-4 border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-sm font-semibold text-brand-blue">{b.referenceNumber}</span>
-                      <span className="text-sm font-medium">{b.totalFormatted}</span>
-                    </div>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-gray-400 border-b">
-                          <th className="pb-1">Ticket</th>
-                          <th className="pb-1">Name</th>
-                          <th className="pb-1">Table</th>
-                          <th className="pb-1">Chair</th>
-                          <th className="pb-1">Package</th>
-                          <th className="pb-1">Add-ons</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {b.items.map((item, i) => (
-                          <tr key={i} className="border-b border-gray-50">
-                            <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || b.referenceNumber}</td>
-                            <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
-                            <td className="py-1">{item.tableNumber}</td>
-                            <td className="py-1">{item.chairNumber}</td>
-                            <td className="py-1">{item.packageName}</td>
-                            <td className="py-1 text-xs text-gray-500">
-                              {item.addons.length > 0
-                                ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
-                                : '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))
+                soldModal.bookings.flatMap(b =>
+                  b.items.map((item, i) => {
+                    const addonTotal = item.addons.reduce((sum, a) => sum + (a.price || 0), 0);
+                    const itemTotal = (item.packagePrice || 0) + addonTotal;
+                    const itemTotalFormatted = '$' + (itemTotal / 100).toFixed(2);
+                    return (
+                      <div key={`${b.id}-${i}`} className="mb-4 border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-mono text-sm font-semibold text-brand-blue">{item.referenceNumber || b.referenceNumber}</span>
+                          <span className="text-sm font-medium">{itemTotalFormatted}</span>
+                        </div>
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-400 border-b">
+                              <th className="pb-1">Name</th>
+                              <th className="pb-1">Table</th>
+                              <th className="pb-1">Chair</th>
+                              <th className="pb-1">Package</th>
+                              <th className="pb-1">Add-ons</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="border-b border-gray-50">
+                              <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
+                              <td className="py-1">{item.tableNumber}</td>
+                              <td className="py-1">{item.chairNumber}</td>
+                              <td className="py-1">{item.packageName}</td>
+                              <td className="py-1 text-xs text-gray-500">
+                                {item.addons.length > 0
+                                  ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
+                                  : '—'}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })
+                )
               )}
             </div>
           </div>
