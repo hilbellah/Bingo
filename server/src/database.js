@@ -80,4 +80,20 @@ export function exec(sql) {
   saveDb(); // migrations save immediately
 }
 
-export default { getDb, saveDb, all, get, run, exec };
+// Helper to run a batch of statements without scheduling individual saves
+// Call scheduleSaveAfterBatch() when done
+export function batchRun(sql, params = []) {
+  db.run(sql, params);
+  return { changes: db.getRowsModified() };
+}
+
+// Schedule a save after batch operations
+export function scheduleSaveAfterBatch() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveDb();
+    saveTimer = null;
+  }, SAVE_DELAY_MS);
+}
+
+export default { getDb, saveDb, all, get, run, exec, batchRun, scheduleSaveAfterBatch };

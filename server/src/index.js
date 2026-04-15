@@ -7,7 +7,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import multer from 'multer';
-import { getDb, all, get, run, exec, saveDb } from './database.js';
+import { getDb, all, get, run, exec, saveDb, batchRun, scheduleSaveAfterBatch } from './database.js';
 import { migrate } from './migrate.js';
 import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
@@ -1431,6 +1431,44 @@ app.get('*', (req, res) => {
 
 const MAX_FUTURE_SESSIONS = 10; // Keep up to 10 upcoming sessions
 
+function cleanupOldData() {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  // Delete old sessions (older than 30 days) that are NOT special events and have deleted_at set or are old enough
+  const oldSessions = all(`
+    SELECT id FROM sessions
+    WHERE date < ?
+      AND is_special_event = 0
+      AND deleted_at IS NOT NULL
+  `, [thirtyDaysAgo]);
+
+  if (oldSessions.length > 0) {
+    const sessionIds = oldSessions.map(s => s.id);
+    const placeholders = sessionIds.map(() => '?').join(',');
+
+    // Delete in transaction for efficiency
+    exec('BEGIN TRANSACTION');
+
+    // Delete dependent records via CASCADE
+    run(`DELETE FROM seats WHERE session_id IN (${placeholders})`, sessionIds);
+    run(`DELETE FROM sessions WHERE id IN (${placeholders})`, sessionIds);
+
+    exec('COMMIT');
+    logger.info('Cleaned up old sessions', { count: oldSessions.length });
+  }
+
+  // Prune audit log entries older than 90 days
+  const auditDeleted = run('DELETE FROM audit_log WHERE created_at < ?', [ninetyDaysAgo]);
+  if (auditDeleted.changes > 0) {
+    logger.info('Pruned audit log', { entries_deleted: auditDeleted.changes });
+  }
+
+  // Reclaim memory with VACUUM
+  exec('VACUUM');
+  logger.info('Database vacuumed');
+}
+
 function ensureFutureSessions() {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
@@ -1457,14 +1495,18 @@ function ensureFutureSessions() {
     run('INSERT INTO sessions (id, date, time, cutoff_time, is_available) VALUES (?, ?, ?, ?, ?)',
       [id, dateStr, '18:30', '12:00', 1]);
 
-    // Create 74 tables x 6 chairs
+    // Batch create 74 tables x 6 chairs without triggering individual saves
+    // This prevents 444 individual scheduleSave() calls, dramatically reducing memory bloat
     for (let tNum = 1; tNum <= 75; tNum++) {
       if (tNum === 41) continue;
       for (let ch = 1; ch <= 6; ch++) {
-        run('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
+        batchRun('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
           [uuid(), id, tNum, ch, 'vacant']);
       }
     }
+    // Schedule a single save after all seats are created
+    scheduleSaveAfterBatch();
+
     logger.info('Auto-created session', { date: dateStr, seats: 444 });
     created++;
   }
@@ -1478,6 +1520,11 @@ async function start() {
   // Run migrations to ensure schema is up to date
   await migrate();
   logger.info('Migrations applied');
+
+  // Clean up old data and reclaim memory
+  cleanupOldData();
+  // Re-check daily (every 24 hours)
+  setInterval(cleanupOldData, 24 * 60 * 60 * 1000);
 
   // Ensure up to 10 upcoming sessions exist
   ensureFutureSessions();
