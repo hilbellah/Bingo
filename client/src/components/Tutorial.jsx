@@ -180,10 +180,27 @@ export default function Tutorial() {
             <li style={styles.li}>Use the <strong>left/right arrows</strong> to navigate between weeks (e.g., "APR 13 -- APR 19").</li>
             <li style={styles.li}>Each session shows its <strong>date, time, and available seats</strong> count.</li>
             <li style={styles.li}>The currently selected session is highlighted in <strong style={styles.gold}>gold</strong>.</li>
-            <li style={styles.li}>Special events display with an <strong>animated glow effect</strong> on their table buttons.</li>
+            <li style={styles.li}><strong style={{ color: '#f97316' }}>Special events</strong> display with an <strong>orange "SPECIAL EVENT" banner</strong> and animated glow effect on their table buttons.</li>
           </ul>
           <Note label="Color Legend">Green = Available | Amber = Partial | Blue = Your Pick | Gray = Full</Note>
           <img src="/screenshots/step2-sessions.png" alt="Session selector bar with week navigation" style={styles.img} />
+
+          <h4 style={{ color: '#f97316', marginTop: '25px', marginBottom: '10px', fontSize: '1.1em' }}>Special Bingo Events</h4>
+          <p style={{ marginBottom: '12px' }}>Special events are premium bingo sessions with custom themes, unique packages, and higher jackpots. They stand out in the session bar with an <strong style={{ color: '#f97316' }}>orange "SPECIAL EVENT" banner</strong> and the event title (e.g., "Spring Jackpot Bingo").</p>
+          <ul style={styles.ul}>
+            <li style={styles.li}>Navigate to the week containing the special event using the <strong>arrow buttons</strong>.</li>
+            <li style={styles.li}>Special events show an <strong style={{ color: '#f97316' }}>orange banner</strong> with the event title above the session button.</li>
+            <li style={styles.li}>The session button itself has an <strong>animated amber glow</strong> to draw attention.</li>
+          </ul>
+          <img src="/screenshots/step2-special-event.png" alt="Special event visible in session bar with orange SPECIAL EVENT banner" style={styles.img} />
+
+          <p style={{ marginTop: '20px', marginBottom: '12px' }}>When you <strong>click a special event session</strong>, the floor map loads with the event's custom configuration. The bottom banner shows the event title and all <strong>444 seats</strong> are available.</p>
+          <ul style={styles.ul}>
+            <li style={styles.li}>Special events use <strong>custom ticket packages</strong> instead of the standard ones (e.g., Gold Package, Silver Add-on, Mega Jackpot Entry).</li>
+            <li style={styles.li}>The booking panel will show the event-specific packages when you proceed to book.</li>
+            <li style={styles.li}>Everything else (seat selection, payment, tickets) works the same as regular sessions.</li>
+          </ul>
+          <img src="/screenshots/step2-special-selected.png" alt="Special event selected showing 444 available chairs and event banner" style={styles.img} />
         </Step>
 
         <Step number={3} title="Select Your Seats on the Floor Map">
