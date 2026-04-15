@@ -210,6 +210,20 @@ async function migrate() {
   try { exec('ALTER TABLE booking_items ADD COLUMN reference_number TEXT'); } catch(e) {}
   try { exec('CREATE UNIQUE INDEX idx_booking_items_reference ON booking_items(reference_number)'); } catch(e) {}
 
+  // --- Admin Users migration ---
+  console.log('Running admin users migration...');
+  exec(`
+    CREATE TABLE IF NOT EXISTS admin_users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      display_name TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // Backfill existing booking_items that have no reference_number
   const itemsWithoutRef = all("SELECT bi.id, b.reference_number as booking_ref FROM booking_items bi JOIN bookings b ON b.id = bi.booking_id WHERE bi.reference_number IS NULL");
   if (itemsWithoutRef.length > 0) {

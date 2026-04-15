@@ -11,6 +11,7 @@ import { getDb, all, get, run, exec, saveDb, batchRun, scheduleSaveAfterBatch } 
 import { migrate } from './migrate.js';
 import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
+import bcrypt from 'bcryptjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -497,7 +498,15 @@ function adminAuth(req, res, next) {
   }
   const decoded = Buffer.from(auth.split(' ')[1], 'base64').toString();
   const [user, pass] = decoded.split(':');
+  // Check env-var admin first
   if (user === process.env.ADMIN_USERNAME && pass === process.env.ADMIN_PASSWORD) {
+    req.adminUser = { email: user, source: 'env' };
+    return next();
+  }
+  // Check DB admin users
+  const dbUser = get('SELECT * FROM admin_users WHERE email = ? AND is_active = 1', [user]);
+  if (dbUser && bcrypt.compareSync(pass, dbUser.password_hash)) {
+    req.adminUser = { id: dbUser.id, email: dbUser.email, displayName: dbUser.display_name, source: 'db' };
     return next();
   }
   res.status(401).json({ error: 'Invalid credentials' });
@@ -505,11 +514,55 @@ function adminAuth(req, res, next) {
 
 app.post('/api/admin/login', (req, res) => {
   const { username, password } = req.body;
+  // Check env-var admin
   if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
     const token = Buffer.from(`${username}:${password}`).toString('base64');
-    return res.json({ token });
+    return res.json({ token, displayName: 'Admin' });
+  }
+  // Check DB admin users
+  const dbUser = get('SELECT * FROM admin_users WHERE email = ? AND is_active = 1', [username]);
+  if (dbUser && bcrypt.compareSync(password, dbUser.password_hash)) {
+    const token = Buffer.from(`${username}:${password}`).toString('base64');
+    return res.json({ token, displayName: dbUser.display_name || dbUser.email });
   }
   res.status(401).json({ error: 'Invalid credentials' });
+});
+
+// ============ ADMIN USERS ============
+
+app.get('/api/admin/users', adminAuth, (req, res) => {
+  const users = all('SELECT id, email, display_name, is_active, created_at FROM admin_users ORDER BY created_at');
+  res.json(users);
+});
+
+app.post('/api/admin/users', adminAuth, (req, res) => {
+  const { email, password, displayName } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+  const existing = get('SELECT id FROM admin_users WHERE email = ?', [email]);
+  if (existing) return res.status(409).json({ error: 'User with this email already exists' });
+  const id = uuid();
+  const hash = bcrypt.hashSync(password, 10);
+  run('INSERT INTO admin_users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)',
+    [id, email, hash, displayName || null]);
+  res.status(201).json({ id, email, displayName: displayName || null });
+});
+
+app.patch('/api/admin/users/:id', adminAuth, (req, res) => {
+  const { email, password, displayName, isActive } = req.body;
+  const user = get('SELECT * FROM admin_users WHERE id = ?', [req.params.id]);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (email !== undefined) run('UPDATE admin_users SET email = ?, updated_at = datetime(\'now\') WHERE id = ?', [email, req.params.id]);
+  if (password) run('UPDATE admin_users SET password_hash = ?, updated_at = datetime(\'now\') WHERE id = ?', [bcrypt.hashSync(password, 10), req.params.id]);
+  if (displayName !== undefined) run('UPDATE admin_users SET display_name = ?, updated_at = datetime(\'now\') WHERE id = ?', [displayName, req.params.id]);
+  if (isActive !== undefined) run('UPDATE admin_users SET is_active = ?, updated_at = datetime(\'now\') WHERE id = ?', [isActive ? 1 : 0, req.params.id]);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/users/:id', adminAuth, (req, res) => {
+  const user = get('SELECT * FROM admin_users WHERE id = ?', [req.params.id]);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  run('UPDATE admin_users SET is_active = 0, updated_at = datetime(\'now\') WHERE id = ?', [req.params.id]);
+  res.json({ success: true });
 });
 
 // ============ SETTINGS ============
@@ -1520,6 +1573,20 @@ async function start() {
   // Run migrations to ensure schema is up to date
   await migrate();
   logger.info('Migrations applied');
+
+  // Seed admin users (idempotent — skips if already exists)
+  const seedAdmins = [
+    { email: 'Kylepaul@stmec.com', password: 'b4KT!xrjpcNjXq', displayName: 'Kyle Paul' }
+  ];
+  for (const admin of seedAdmins) {
+    const exists = get('SELECT id FROM admin_users WHERE email = ?', [admin.email]);
+    if (!exists) {
+      const hash = bcrypt.hashSync(admin.password, 10);
+      run('INSERT INTO admin_users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)',
+        [uuid(), admin.email, hash, admin.displayName]);
+      logger.info('Seeded admin user', { email: admin.email });
+    }
+  }
 
   // Clean up old data and reclaim memory
   cleanupOldData();
