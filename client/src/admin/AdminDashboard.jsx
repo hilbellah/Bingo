@@ -24,6 +24,7 @@ function formatPrice(cents) {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const token = sessionStorage.getItem('admin_token');
+  const adminDisplayName = sessionStorage.getItem('admin_display_name') || 'Admin';
 
   const [tab, setTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
@@ -420,6 +421,7 @@ export default function AdminDashboard() {
 
   const handleLogout = () => {
     sessionStorage.removeItem('admin_token');
+    sessionStorage.removeItem('admin_display_name');
     navigate('/admin');
   };
 
@@ -623,6 +625,7 @@ export default function AdminDashboard() {
             <>
               <h1 className="text-lg font-bold leading-tight">SMEC</h1>
               <p className="text-xs text-gray-300 mt-0.5">Admin Panel</p>
+              <p className="text-xs text-brand-gold mt-1 truncate" title={adminDisplayName}>Logged in as {adminDisplayName}</p>
             </>
           )}
           <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="mt-2 text-xs text-gray-300 hover:text-white">
@@ -679,6 +682,7 @@ export default function AdminDashboard() {
               Auto-Print {autoPrint ? 'ON' : 'OFF'}
             </button>
             <p className="text-xs text-gray-400">Saint Mary's Entertainment Centre</p>
+            <span className="text-xs font-medium text-brand-blue">{adminDisplayName}</span>
           </div>
         </header>
 

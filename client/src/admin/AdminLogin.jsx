@@ -19,8 +19,9 @@ export default function AdminLogin() {
     setLoading(true);
     setError('');
     try {
-      const { token } = await adminLogin(username, password);
+      const { token, displayName } = await adminLogin(username, password);
       sessionStorage.setItem('admin_token', token);
+      sessionStorage.setItem('admin_display_name', displayName || username);
       navigate('/admin/dashboard');
     } catch {
       setError('Invalid username or password');
