@@ -499,12 +499,12 @@ function adminAuth(req, res, next) {
   const decoded = Buffer.from(auth.split(' ')[1], 'base64').toString();
   const [user, pass] = decoded.split(':');
   // Check env-var admin first
-  if (user === process.env.ADMIN_USERNAME && pass === process.env.ADMIN_PASSWORD) {
+  if (user.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() && pass === process.env.ADMIN_PASSWORD) {
     req.adminUser = { email: user, source: 'env' };
     return next();
   }
   // Check DB admin users
-  const dbUser = get('SELECT * FROM admin_users WHERE email = ? AND is_active = 1', [user]);
+  const dbUser = get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [user]);
   if (dbUser && bcrypt.compareSync(pass, dbUser.password_hash)) {
     req.adminUser = { id: dbUser.id, email: dbUser.email, displayName: dbUser.display_name, source: 'db' };
     return next();
@@ -515,12 +515,12 @@ function adminAuth(req, res, next) {
 app.post('/api/admin/login', (req, res) => {
   const { username, password } = req.body;
   // Check env-var admin
-  if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
+  if (username.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() && password === process.env.ADMIN_PASSWORD) {
     const token = Buffer.from(`${username}:${password}`).toString('base64');
     return res.json({ token, displayName: 'Admin' });
   }
   // Check DB admin users
-  const dbUser = get('SELECT * FROM admin_users WHERE email = ? AND is_active = 1', [username]);
+  const dbUser = get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [username]);
   if (dbUser && bcrypt.compareSync(password, dbUser.password_hash)) {
     const token = Buffer.from(`${username}:${password}`).toString('base64');
     return res.json({ token, displayName: dbUser.display_name || dbUser.email });
@@ -538,7 +538,7 @@ app.get('/api/admin/users', adminAuth, (req, res) => {
 app.post('/api/admin/users', adminAuth, (req, res) => {
   const { email, password, displayName } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
-  const existing = get('SELECT id FROM admin_users WHERE email = ?', [email]);
+  const existing = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [email]);
   if (existing) return res.status(409).json({ error: 'User with this email already exists' });
   const id = uuid();
   const hash = bcrypt.hashSync(password, 10);
@@ -1579,7 +1579,7 @@ async function start() {
     { email: 'Kylepaul@stmec.com', password: 'b4KT!xrjpcNjXq', displayName: 'Kyle Paul' }
   ];
   for (const admin of seedAdmins) {
-    const exists = get('SELECT id FROM admin_users WHERE email = ?', [admin.email]);
+    const exists = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [admin.email]);
     if (!exists) {
       const hash = bcrypt.hashSync(admin.password, 10);
       run('INSERT INTO admin_users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)',
