@@ -640,7 +640,7 @@ function TableSection({ section, getTableStatus, openTable, onTableClick, tableM
         {section.seats.map((row, ri) => (
           <div key={ri} className="flex gap-1.5 justify-center shrink-0">
             {row.map((num, ci) => {
-              if (num === null) return <div key={ci} className="w-10 h-14 shrink-0" />;
+              if (num === null) return <div key={ci} className="w-[56px] h-14 shrink-0" />;
               return <TableBtn key={num} tableNum={num} status={getTableStatus(num)}
                 isOpen={openTable === num} onClick={onTableClick}
                 chairs={tableMap[num] || []} selectedSeats={selectedSeats} holderId={holderId} onChairClick={onChairClick} isSpecial={isSpecial} />;
@@ -678,85 +678,102 @@ function InlineChair({ chair, isSelected, holderId, onChairClick }) {
   );
 }
 
-// Table button — shows table number + vacancy count, with inline chair dropdown
-function TableBtn({ tableNum, status, isOpen, onClick, chairs, selectedSeats, holderId, onChairClick, isSpecial }) {
+// Table button — renders the table with its 6 chairs flanked around it (matches venue blueprint)
+//   Left column: seats 5, 3, 1 (top to bottom)
+//   Right column: seats 6, 4, 2 (top to bottom)
+//   Each chair is directly clickable for selection.
+function TableBtn({ tableNum, status, chairs, selectedSeats, holderId, onChairClick, isSpecial }) {
   if (status === 'empty' || !status) {
-    return <div className="w-10 h-14 shrink-0" />;
+    // Placeholder for null cells in the grid (e.g., upper-left col 7 rows 1-2).
+    // Width = 14 (chair) + 1 (gap) + 26 (table) + 1 (gap) + 14 (chair) = 56px.
+    return <div className="w-[56px] h-14 shrink-0" />;
   }
 
-  const { hasMyChairs, allSold, allVacant, vacantChairs } = status;
+  const { hasMyChairs, allSold, vacantChairs } = status;
 
-  let bgClass, borderClass, textClass, extraClass = '';
-  if (isOpen) {
-    bgClass = 'bg-brand-gold'; borderClass = 'border-brand-gold-light'; textClass = 'text-white';
+  // Style for the central table label
+  let tableBg, tableBorder, tableText, extraClass = '';
+  if (allSold) {
+    tableBg = 'bg-gray-700/40'; tableBorder = 'border-gray-500/50'; tableText = 'text-gray-400';
   } else if (hasMyChairs) {
-    bgClass = 'bg-blue-500/80'; borderClass = 'border-blue-400'; textClass = 'text-white';
-  } else if (allSold) {
-    bgClass = 'bg-gray-600/60'; borderClass = 'border-gray-500/50'; textClass = 'text-gray-400';
-  } else if (isSpecial && allVacant) {
-    bgClass = 'bg-green-600/70'; borderClass = 'border-amber-400'; textClass = 'text-white';
-    extraClass = 'table-btn-special shadow-md shadow-amber-500/20';
+    tableBg = 'bg-blue-700/30'; tableBorder = 'border-blue-400/60'; tableText = 'text-white';
   } else if (isSpecial) {
-    bgClass = 'bg-amber-700/50'; borderClass = 'border-amber-400/70'; textClass = 'text-white';
-    extraClass = 'table-btn-special shadow-sm shadow-amber-500/20';
-  } else if (allVacant) {
-    bgClass = 'bg-green-600/70'; borderClass = 'border-green-500/50'; textClass = 'text-white';
+    tableBg = 'bg-amber-800/30'; tableBorder = 'border-amber-500/50'; tableText = 'text-amber-100';
+    extraClass = 'table-btn-special';
   } else {
-    bgClass = 'bg-amber-700/50'; borderClass = 'border-amber-600/50'; textClass = 'text-white';
+    tableBg = 'bg-white/[0.06]'; tableBorder = 'border-white/20'; tableText = 'text-white/90';
   }
 
-  // Sort chairs for layout: left [5,3,1], right [6,4,2]
   const chairMap = {};
   for (const c of chairs) chairMap[c.chair_number] = c;
   const leftNums = [5, 3, 1];
   const rightNums = [6, 4, 2];
 
   return (
-    <div className="relative shrink-0">
-      <button
-        onClick={() => onClick(allSold ? null : (isOpen ? null : tableNum))}
-        disabled={allSold}
-        className={`table-btn ${bgClass} border-2 ${borderClass} ${textClass} ${extraClass} ${isOpen ? 'ring-2 ring-brand-gold/50 scale-110 z-10' : ''}`}
-        aria-label={`Table ${tableNum} — ${vacantChairs} chairs available`}
-        title={`Table ${tableNum} — ${vacantChairs}/6 available`}
-      >
-        <span className="text-sm font-bold leading-none">{tableNum}</span>
-        {!allSold && !isOpen && (
-          <span className="text-[9px] leading-none opacity-70">{vacantChairs}/6</span>
-        )}
-      </button>
+    <div className="flex items-center gap-px shrink-0" title={`Table ${tableNum} — ${vacantChairs}/6 available`}>
+      {/* Left chairs */}
+      <div className="flex flex-col gap-px">
+        {leftNums.map(num => (
+          <ChairMini key={num} chair={chairMap[num]}
+            isSelected={chairMap[num] && selectedSeats.includes(chairMap[num].id)}
+            holderId={holderId} onChairClick={onChairClick} />
+        ))}
+      </div>
 
-      {/* Inline chair picker dropdown */}
-      {isOpen && (
-        <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-1.5 bg-slate-800/95 border border-white/20 rounded-xl p-3 shadow-2xl backdrop-blur-sm"
-          onClick={e => e.stopPropagation()} style={{ minWidth: '160px' }}>
-          <div className="text-[10px] font-bold text-white/50 uppercase tracking-wider mb-2 text-center">
-            Table {tableNum}
-          </div>
-          <div className="flex items-center justify-center gap-2">
-            {/* Left chairs */}
-            <div className="flex flex-col gap-1.5">
-              {leftNums.map(num => chairMap[num] ?
-                <InlineChair key={num} chair={chairMap[num]} isSelected={selectedSeats.includes(chairMap[num].id)}
-                  holderId={holderId} onChairClick={onChairClick} /> :
-                <div key={num} className="w-10 h-10" />
-              )}
-            </div>
-            {/* Table surface */}
-            <div className="w-8 h-[130px] rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-              <span className="text-white/15 text-[8px] font-bold [writing-mode:vertical-rl]">Table {tableNum}</span>
-            </div>
-            {/* Right chairs */}
-            <div className="flex flex-col gap-1.5">
-              {rightNums.map(num => chairMap[num] ?
-                <InlineChair key={num} chair={chairMap[num]} isSelected={selectedSeats.includes(chairMap[num].id)}
-                  holderId={holderId} onChairClick={onChairClick} /> :
-                <div key={num} className="w-10 h-10" />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Table center — purely a label (clicks are absorbed by chairs) */}
+      <div className={`table-btn ${tableBg} border ${tableBorder} ${tableText} ${extraClass}`}>
+        <span className="leading-none">{tableNum}</span>
+        {!allSold && (
+          <span className="text-[7px] opacity-60 leading-none">{vacantChairs}/6</span>
+        )}
+      </div>
+
+      {/* Right chairs */}
+      <div className="flex flex-col gap-px">
+        {rightNums.map(num => (
+          <ChairMini key={num} chair={chairMap[num]}
+            isSelected={chairMap[num] && selectedSeats.includes(chairMap[num].id)}
+            holderId={holderId} onChairClick={onChairClick} />
+        ))}
+      </div>
     </div>
+  );
+}
+
+// Small chair button drawn directly on the floor plan
+function ChairMini({ chair, isSelected, holderId, onChairClick }) {
+  if (!chair) {
+    return <div className="chair-mini border-transparent bg-transparent" />;
+  }
+
+  const isMyHold = chair.status === 'held' && chair.held_by === holderId;
+  const isOtherHold = chair.status === 'held' && chair.held_by !== holderId;
+  const isSold = chair.status === 'sold';
+  const isDisabled = chair.is_disabled;
+
+  let bgClass, borderClass, textClass;
+  if (isDisabled) {
+    bgClass = 'bg-gray-700/50'; borderClass = 'border-gray-600/60'; textClass = 'text-gray-500';
+  } else if (isSold) {
+    bgClass = 'bg-gray-500/70'; borderClass = 'border-gray-400/70'; textClass = 'text-gray-200';
+  } else if (isSelected || isMyHold) {
+    bgClass = 'bg-blue-500'; borderClass = 'border-blue-300'; textClass = 'text-white';
+  } else if (isOtherHold) {
+    bgClass = 'bg-amber-500/80'; borderClass = 'border-amber-400'; textClass = 'text-amber-50';
+  } else {
+    bgClass = 'bg-green-600/80'; borderClass = 'border-green-500'; textClass = 'text-white';
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onChairClick(chair); }}
+      disabled={isDisabled || isSold || isOtherHold}
+      className={`chair-mini ${bgClass} ${borderClass} ${textClass}`}
+      aria-label={`Seat ${chair.chair_number}`}
+      title={`Seat ${chair.chair_number}`}
+    >
+      {chair.chair_number}
+    </button>
   );
 }
