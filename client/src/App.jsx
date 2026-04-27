@@ -539,7 +539,7 @@ export default function App() {
                   lower-left only fills rows 2-4 so its bottom aligns with lower-right's bottom. */}
               <div className="floorplan-grid floorplan-grid-lower">
                 {/* Caller marker — col 8 row 2 (between table 39 at col 7 and table 43 at col 9) */}
-                <div className="floorplan-caller-marker" style={{ gridColumn: 8, gridRow: 2, justifySelf: 'start', alignSelf: 'center', marginLeft: '-22px', marginTop: '-80px' }}></div>
+                <div className="floorplan-caller-marker" style={{ gridColumn: 8, gridRow: 2, justifySelf: 'center', alignSelf: 'center', marginTop: '-80px' }}></div>
 
                 {/* Lower-left tables — cols 1-7, rows 2-4 (top row L1 stays empty for cols 1-7) */}
                 {SECTIONS.find(s => s.id === 'lower-left').seats.flatMap((row, r) =>
