@@ -491,42 +491,51 @@ export default function App() {
 
             {/* Table Map — Venue Layout matching blueprint */}
             <div className="floorplan-interior">
-              <div className="flex items-start gap-3">
-                {/* LEFT COLUMN: upper-left + caller in gap + lower-left */}
-                <div className="flex flex-col">
+              <div className="flex flex-col gap-3">
+
+                {/* ── UPPER ROW: upper-left | (Stage + Table 45) | upper-right ── */}
+                <div className="flex items-end gap-3 justify-center">
                   {SECTIONS.filter(s => s.id === 'upper-left').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                       openTable={openTable} onTableClick={setOpenTable}
                       tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                   ))}
-                  <div className="flex justify-end py-1 pr-3">
+
+                  {/* CENTER: Stage banner with Caller indicator + Table 45 below */}
+                  <div className="flex flex-col items-center gap-1.5 pb-3">
+                    <div className="w-[140px] h-[102px] border-2 border-white/20 bg-white/5 rounded-lg flex items-center justify-center">
+                      <span className="text-white/30 font-bold text-base tracking-wide">Stage</span>
+                    </div>
                     <div className="w-7 h-7 bg-amber-800/60 border-2 border-amber-600/40 rounded-sm" title="Caller"></div>
+                    {SECTIONS.filter(s => s.id === 'stage-bridge').map(section => (
+                      <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                        openTable={openTable} onTableClick={setOpenTable}
+                        tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
+                    ))}
                   </div>
-                  {SECTIONS.filter(s => s.id === 'lower-left').map(section => (
+
+                  {SECTIONS.filter(s => s.id === 'upper-right').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                       openTable={openTable} onTableClick={setOpenTable}
                       tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                   ))}
                 </div>
 
-                {/* CENTER COLUMN: Stage then center tables (45-41) without section wrapper */}
-                <div className="flex flex-col items-center gap-1.5 pt-[17px]">
-                  <div className="w-[140px] h-[102px] border-2 border-white/20 bg-white/5 rounded-lg flex items-center justify-center">
-                    <span className="text-white/30 font-bold text-base tracking-wide">Stage</span>
-                  </div>
-                  {[45, 44, 43, 42, 41].map(num => (
-                    <TableBtn key={num} tableNum={num} status={getTableStatus(num)}
-                      isOpen={openTable === num} onClick={setOpenTable}
-                      chairs={tableMap[num] || []} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
+                {/* ── LOWER ROW: lower-left | lower-right (5 cols incl. 44-41 leftmost) ── */}
+                <div className="flex items-end gap-3 justify-center">
+                  {SECTIONS.filter(s => s.id === 'lower-left').map(section => (
+                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                      openTable={openTable} onTableClick={setOpenTable}
+                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
+                  ))}
+
+                  {SECTIONS.filter(s => s.id === 'lower-right').map(section => (
+                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
+                      openTable={openTable} onTableClick={setOpenTable}
+                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                   ))}
                 </div>
 
-                {/* RIGHT COLUMN: 4 cols x 7 rows */}
-                {SECTIONS.filter(s => s.id === 'right').map(section => (
-                  <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                    openTable={openTable} onTableClick={setOpenTable}
-                    tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
-                ))}
               </div>
             </div>
 

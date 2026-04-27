@@ -189,9 +189,10 @@ export default function SeatMap({ seats, selectedSeats, holderId, partySize, onS
   const seatsRemaining = partySize - selectedSeats.length;
 
   const upperLeft = SECTIONS.find(s => s.id === 'upper-left');
+  const upperRight = SECTIONS.find(s => s.id === 'upper-right');
+  const stageBridge = SECTIONS.find(s => s.id === 'stage-bridge');
   const lowerLeft = SECTIONS.find(s => s.id === 'lower-left');
-  const centerColumn = SECTIONS.find(s => s.id === 'center-column');
-  const rightSection = SECTIONS.find(s => s.id === 'right');
+  const lowerRight = SECTIONS.find(s => s.id === 'lower-right');
 
   const sectionProps = { tables, selectedSeats, holderId, onSeatClick, expandedTable, onToggle: handleToggle };
 
@@ -246,30 +247,31 @@ export default function SeatMap({ seats, selectedSeats, holderId, partySize, onS
             <div className="mt-1.5 h-0.5 bg-gradient-to-r from-transparent via-slate-500 to-transparent"></div>
           </div>
 
-          {/* Main layout: Left side + Center/Stage + Right side */}
-          <div className="flex items-start gap-4">
-            {/* LEFT COLUMN: upper-left + gap + lower-left */}
-            <div className="flex flex-col gap-5">
+          {/* Main layout: two rows (UPPER + LOWER) */}
+          <div className="flex flex-col gap-4">
+            {/* UPPER ROW: upper-left | (Stage + Table 45) | upper-right */}
+            <div className="flex items-end gap-4 justify-center">
               <SectionGrid section={upperLeft} {...sectionProps} />
-              <SectionGrid section={lowerLeft} {...sectionProps} />
-            </div>
 
-            {/* CENTER COLUMN: Stage + Caller + Center tables */}
-            <div className="flex flex-col items-center gap-3 pt-0">
-              {/* Floor Stage */}
-              <div className="w-[160px] h-[110px] border-2 border-slate-500 bg-slate-700/50 rounded-lg flex items-center justify-center">
-                <span className="text-slate-400 font-bold text-base tracking-wide">Stage</span>
+              <div className="flex flex-col items-center gap-2 pb-3">
+                {/* Floor Stage */}
+                <div className="w-[160px] h-[110px] border-2 border-slate-500 bg-slate-700/50 rounded-lg flex items-center justify-center">
+                  <span className="text-slate-400 font-bold text-base tracking-wide">Stage</span>
+                </div>
+                {/* Caller / Announcer position */}
+                <div className="w-8 h-8 bg-amber-800 border-2 border-amber-600 rounded-sm" title="Caller Position"></div>
+                {/* Table 45 — sits below stage */}
+                <SectionGrid section={stageBridge} {...sectionProps} />
               </div>
 
-              {/* Caller / Announcer position */}
-              <div className="w-8 h-8 bg-amber-800 border-2 border-amber-600 rounded-sm" title="Caller Position"></div>
-
-              {/* Center column tables (45-41) */}
-              <SectionGrid section={centerColumn} {...sectionProps} />
+              <SectionGrid section={upperRight} {...sectionProps} />
             </div>
 
-            {/* RIGHT COLUMN: 4 cols x 7 rows */}
-            <SectionGrid section={rightSection} {...sectionProps} />
+            {/* LOWER ROW: lower-left | lower-right (5 cols, leftmost = 44-41) */}
+            <div className="flex items-end gap-4 justify-center">
+              <SectionGrid section={lowerLeft} {...sectionProps} />
+              <SectionGrid section={lowerRight} {...sectionProps} />
+            </div>
           </div>
 
           {/* BACK OF ROOM — ENTRANCE label */}
