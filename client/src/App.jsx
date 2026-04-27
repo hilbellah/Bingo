@@ -557,7 +557,7 @@ export default function App() {
                 {/* Lower-right tables — cols 8-12, all 4 rows */}
                 {SECTIONS.find(s => s.id === 'lower-right').seats.flatMap((row, r) =>
                   row.map((num, c) => (
-                    <div key={`lr-${num}`} style={{ gridColumn: c + 9, gridRow: r + 1, marginTop: '-40px' }}>
+                    <div key={`lr-${num}`} style={{ gridColumn: c + 9, gridRow: r + 1, marginTop: c === 0 ? '-40px' : '-80px' }}>
                       <TableBtn tableNum={num} status={getTableStatus(num)}
                         chairs={tableMap[num] || []} selectedSeats={selectedSeats}
                         holderId={holderId} onChairClick={handleChairClick}
