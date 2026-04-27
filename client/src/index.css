@@ -308,3 +308,43 @@ html {
   body { background: white; }
   .no-print { display: none; }
 }
+
+/* ── Unified floor-plan grid (12 columns) ── */
+.floorplan-grid {
+  display: grid;
+  grid-template-columns: repeat(13, 56px);
+  gap: 3px 5px;
+  margin: 0 auto;
+  width: max-content;
+}
+.floorplan-grid-upper {
+  grid-template-rows: repeat(3, 56px);
+}
+.floorplan-grid-lower {
+  grid-template-rows: repeat(4, 56px);
+}
+.floorplan-stage-cell {
+  border: 2px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.05);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.floorplan-gap {
+  height: 14px;
+  position: relative;
+  margin: 6px 0;
+}
+.floorplan-caller-marker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: rgba(146, 64, 14, 0.7);
+  border: 1px solid rgba(180, 83, 9, 0.6);
+  border-radius: 2px;
+  top: 50%;
+  /* Placed in horizontal gap between col 7 and col 8 (each col = 56px + 5px gap) */
+  left: calc(7 * (56px + 5px));
+  transform: translateY(-50%);
+}

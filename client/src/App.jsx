@@ -489,53 +489,80 @@ export default function App() {
               </div>
             </div>
 
-            {/* Table Map — Venue Layout matching blueprint */}
+            {/* Floor plan — single 12-col CSS Grid so columns align across upper/lower halves */}
             <div className="floorplan-interior">
-              <div className="flex flex-col gap-3">
+              {/* UPPER GRID: 3 rows x 12 cols. Stage spans cols 7-9 rows 1-2 */}
+              <div className="floorplan-grid floorplan-grid-upper">
 
-                {/* ── UPPER ROW: upper-left | (Stage + Table 45) | upper-right ── */}
-                <div className="flex items-end gap-3 justify-center">
-                  {SECTIONS.filter(s => s.id === 'upper-left').map(section => (
-                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                      openTable={openTable} onTableClick={setOpenTable}
-                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
-                  ))}
+                {/* Stage banner */}
+                <div className="floorplan-stage-cell" style={{ gridColumn: '7 / span 3', gridRow: '1 / span 2' }}>
+                  <span className="text-white/40 font-bold text-base tracking-wide">Stage</span>
+                </div>
 
-                  {/* CENTER: Stage banner with Caller indicator + Table 45 below */}
-                  <div className="flex flex-col items-center gap-1.5 pb-3">
-                    <div className="w-[140px] h-[102px] border-2 border-white/20 bg-white/5 rounded-lg flex items-center justify-center">
-                      <span className="text-white/30 font-bold text-base tracking-wide">Stage</span>
+                {/* Upper-left tables (cols 1-6 rows 1-3, plus table 40 at col 7 row 3) */}
+                {SECTIONS.find(s => s.id === 'upper-left').seats.flatMap((row, r) =>
+                  row.map((num, c) => num === null ? null : (
+                    <div key={`ul-${num}`} style={{ gridColumn: c + 1, gridRow: r + 1 }}>
+                      <TableBtn tableNum={num} status={getTableStatus(num)}
+                        chairs={tableMap[num] || []} selectedSeats={selectedSeats}
+                        holderId={holderId} onChairClick={handleChairClick}
+                        isSpecial={!!selectedSession?.is_special_event} />
                     </div>
-                    <div className="w-7 h-7 bg-amber-800/60 border-2 border-amber-600/40 rounded-sm" title="Caller"></div>
-                    {SECTIONS.filter(s => s.id === 'stage-bridge').map(section => (
-                      <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                        openTable={openTable} onTableClick={setOpenTable}
-                        tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
-                    ))}
-                  </div>
+                  ))
+                )}
 
-                  {SECTIONS.filter(s => s.id === 'upper-right').map(section => (
-                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                      openTable={openTable} onTableClick={setOpenTable}
-                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
-                  ))}
+                {/* Table 45 — col 8 row 3 (under stage, between 40 and 50) */}
+                <div style={{ gridColumn: 8, gridRow: 3 }}>
+                  <TableBtn tableNum={45} status={getTableStatus(45)}
+                    chairs={tableMap[45] || []} selectedSeats={selectedSeats}
+                    holderId={holderId} onChairClick={handleChairClick}
+                    isSpecial={!!selectedSession?.is_special_event} />
                 </div>
 
-                {/* ── LOWER ROW: lower-left | lower-right (5 cols incl. 44-41 leftmost) ── */}
-                <div className="flex items-end gap-3 justify-center">
-                  {SECTIONS.filter(s => s.id === 'lower-left').map(section => (
-                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                      openTable={openTable} onTableClick={setOpenTable}
-                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
-                  ))}
+                {/* Upper-right tables — start at col 10 (after the 3-col stage) */}
+                {SECTIONS.find(s => s.id === 'upper-right').seats.flatMap((row, r) =>
+                  row.map((num, c) => (
+                    <div key={`ur-${num}`} style={{ gridColumn: c + 10, gridRow: r + 1 }}>
+                      <TableBtn tableNum={num} status={getTableStatus(num)}
+                        chairs={tableMap[num] || []} selectedSeats={selectedSeats}
+                        holderId={holderId} onChairClick={handleChairClick}
+                        isSpecial={!!selectedSession?.is_special_event} />
+                    </div>
+                  ))
+                )}
+              </div>
 
-                  {SECTIONS.filter(s => s.id === 'lower-right').map(section => (
-                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                      openTable={openTable} onTableClick={setOpenTable}
-                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
-                  ))}
-                </div>
+              {/* Gap with brown caller marker — between cols 7-8 boundary */}
+              <div className="floorplan-gap">
+                <div className="floorplan-caller-marker"></div>
+              </div>
 
+              {/* LOWER GRID: 4 rows x 13 cols. Lower-right occupies its own 4 rows;
+                  lower-left only fills rows 2-4 so its bottom aligns with lower-right's bottom. */}
+              <div className="floorplan-grid floorplan-grid-lower">
+                {/* Lower-left tables — cols 1-7, rows 2-4 (top row L1 stays empty for cols 1-7) */}
+                {SECTIONS.find(s => s.id === 'lower-left').seats.flatMap((row, r) =>
+                  row.map((num, c) => (
+                    <div key={`ll-${num}`} style={{ gridColumn: c + 1, gridRow: r + 2 }}>
+                      <TableBtn tableNum={num} status={getTableStatus(num)}
+                        chairs={tableMap[num] || []} selectedSeats={selectedSeats}
+                        holderId={holderId} onChairClick={handleChairClick}
+                        isSpecial={!!selectedSession?.is_special_event} />
+                    </div>
+                  ))
+                )}
+
+                {/* Lower-right tables — cols 8-12, all 4 rows */}
+                {SECTIONS.find(s => s.id === 'lower-right').seats.flatMap((row, r) =>
+                  row.map((num, c) => (
+                    <div key={`lr-${num}`} style={{ gridColumn: c + 8, gridRow: r + 1 }}>
+                      <TableBtn tableNum={num} status={getTableStatus(num)}
+                        chairs={tableMap[num] || []} selectedSeats={selectedSeats}
+                        holderId={holderId} onChairClick={handleChairClick}
+                        isSpecial={!!selectedSession?.is_special_event} />
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
