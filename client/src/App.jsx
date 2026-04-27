@@ -492,13 +492,16 @@ export default function App() {
             {/* Table Map — Venue Layout matching blueprint */}
             <div className="floorplan-interior">
               <div className="flex items-start gap-3">
-                {/* LEFT COLUMN: upper-left + gap + lower-left */}
-                <div className="flex flex-col gap-4">
+                {/* LEFT COLUMN: upper-left + caller in gap + lower-left */}
+                <div className="flex flex-col">
                   {SECTIONS.filter(s => s.id === 'upper-left').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                       openTable={openTable} onTableClick={setOpenTable}
                       tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                   ))}
+                  <div className="flex justify-end py-1 pr-3">
+                    <div className="w-7 h-7 bg-amber-800/60 border-2 border-amber-600/40 rounded-sm" title="Caller"></div>
+                  </div>
                   {SECTIONS.filter(s => s.id === 'lower-left').map(section => (
                     <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
                       openTable={openTable} onTableClick={setOpenTable}
@@ -506,16 +509,15 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* CENTER COLUMN: Stage + Caller + Center tables */}
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-[160px] h-[110px] border-2 border-white/20 bg-white/5 rounded-lg flex items-center justify-center">
+                {/* CENTER COLUMN: Stage then center tables (45-41) without section wrapper */}
+                <div className="flex flex-col items-center gap-1.5 pt-[17px]">
+                  <div className="w-[140px] h-[102px] border-2 border-white/20 bg-white/5 rounded-lg flex items-center justify-center">
                     <span className="text-white/30 font-bold text-base tracking-wide">Stage</span>
                   </div>
-                  <div className="w-7 h-7 bg-amber-800/60 border-2 border-amber-600/40 rounded-sm" title="Caller"></div>
-                  {SECTIONS.filter(s => s.id === 'center-column').map(section => (
-                    <TableSection key={section.id} section={section} getTableStatus={getTableStatus}
-                      openTable={openTable} onTableClick={setOpenTable}
-                      tableMap={tableMap} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
+                  {[45, 44, 43, 42, 41].map(num => (
+                    <TableBtn key={num} tableNum={num} status={getTableStatus(num)}
+                      isOpen={openTable === num} onClick={setOpenTable}
+                      chairs={tableMap[num] || []} selectedSeats={selectedSeats} holderId={holderId} onChairClick={handleChairClick} isSpecial={!!selectedSession?.is_special_event} />
                   ))}
                 </div>
 

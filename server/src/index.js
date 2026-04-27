@@ -1646,6 +1646,22 @@ async function start() {
   await migrate();
   logger.info('Migrations applied');
 
+  // Migrate existing sessions from 74-table layout (1-75, no 41) to 73-table layout (1-73)
+  const sessions = all('SELECT id FROM sessions');
+  for (const session of sessions) {
+    const has41 = get('SELECT id FROM seats WHERE session_id = ? AND table_number = 41', [session.id]);
+    if (!has41) {
+      for (let ch = 1; ch <= 6; ch++) {
+        run('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
+          [uuid(), session.id, 41, ch, 'vacant']);
+      }
+    }
+    const has74 = get('SELECT id FROM seats WHERE session_id = ? AND table_number = 74', [session.id]);
+    if (has74) {
+      run('DELETE FROM seats WHERE session_id = ? AND table_number IN (74, 75) AND status = ?', [session.id, 'vacant']);
+    }
+  }
+
   // Seed admin users (idempotent — skips if already exists)
   const seedAdmins = [
     { email: 'Kylepaul@stmec.com', password: 'b4KT!xrjpcNjXq', displayName: 'Kyle Paul' }
