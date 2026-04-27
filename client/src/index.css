@@ -333,6 +333,7 @@ html {
 }
 .floorplan-grid-lower {
   grid-template-rows: repeat(4, 56px);
+  margin-top: 40px; /* visible vertical gap between upper and lower halves */
 }
 .floorplan-stage-cell {
   border: 2px solid rgba(255,255,255,0.2);
