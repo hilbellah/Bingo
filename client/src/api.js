@@ -266,6 +266,19 @@ export async function fetchAuditLog(token, params = {}) {
   return res.json();
 }
 
+// Admin Schedule
+export async function fetchAdminSchedule(token) {
+  const res = await fetch(`${API}/admin/schedule`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
+export async function triggerScheduleGenerate(token) {
+  const res = await fetch(`${API}/admin/schedule/generate`, {
+    method: 'POST', headers: adminHeaders(token)
+  });
+  return res.json();
+}
+
 // Admin Seat Management
 export async function toggleAdminSeat(token, seatId, isDisabled) {
   const res = await fetch(`${API}/admin/seats/${seatId}`, {

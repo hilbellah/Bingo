@@ -194,18 +194,18 @@ export default function Tutorial() {
           </ul>
           <img src="/screenshots/step2-special-event.png" alt="Special event visible in session bar with orange SPECIAL EVENT banner" style={styles.img} />
 
-          <p style={{ marginTop: '20px', marginBottom: '12px' }}>When you <strong>click a special event session</strong>, the floor map loads with the event's custom configuration. The bottom banner shows the event title and all <strong>444 seats</strong> are available.</p>
+          <p style={{ marginTop: '20px', marginBottom: '12px' }}>When you <strong>click a special event session</strong>, the floor map loads with the event's custom configuration. The bottom banner shows the event title and all <strong>438 seats</strong> are available.</p>
           <ul style={styles.ul}>
             <li style={styles.li}>Special events use <strong>custom ticket packages</strong> instead of the standard ones (e.g., Gold Package, Silver Add-on, Mega Jackpot Entry).</li>
             <li style={styles.li}>The booking panel will show the event-specific packages when you proceed to book.</li>
             <li style={styles.li}>Everything else (seat selection, payment, tickets) works the same as regular sessions.</li>
           </ul>
-          <img src="/screenshots/step2-special-selected.png" alt="Special event selected showing 444 available chairs and event banner" style={styles.img} />
+          <img src="/screenshots/step2-special-selected.png" alt="Special event selected showing 438 available chairs and event banner" style={styles.img} />
         </Step>
 
         <Step number={3} title="Select Your Seats on the Floor Map">
           <ul style={styles.ul}>
-            <li style={styles.li}>A <strong>74-table floor plan</strong> appears showing the venue layout (tables 1-75, skipping table 41).</li>
+            <li style={styles.li}>A <strong>73-table floor plan</strong> appears showing the venue layout (tables 1-73).</li>
             <li style={styles.li}>The floor plan shows <strong>"FRONT OF ROOM -- STAGE"</strong> at the top and <strong>"ENTRANCE / BACK OF ROOM"</strong> at the bottom.</li>
             <li style={styles.li}>Each table shows its number and available seats (e.g., "6/6").</li>
             <li style={styles.li}><strong>Tap a table</strong> to expand it and see the individual chairs (6 per table, numbered 1-6).</li>
@@ -375,7 +375,7 @@ export default function Tutorial() {
             <li style={styles.li}>Add as many packages as needed. Remove with the <strong>X</strong> button.</li>
             <li style={styles.li}>Click <strong>"Add Special Event"</strong> to create it.</li>
           </ul>
-          <Note label="Behind the scenes">444 seats (74 tables x 6 chairs) are automatically generated. Custom packages are saved for this event only.</Note>
+          <Note label="Behind the scenes">438 seats (73 tables x 6 chairs) are automatically generated. Custom packages are saved for this event only.</Note>
           <Note label="Tip">You need at least one <strong style={styles.noteStrong}>Required</strong> package. This is every attendee's base ticket price.</Note>
           <img src="/screenshots/admin6-event-packages.png" alt="Event packages configuration" style={styles.img} />
         </Step>

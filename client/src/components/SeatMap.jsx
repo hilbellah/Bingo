@@ -35,14 +35,12 @@ function CountdownTimer({ expiry }) {
   );
 }
 
-/* Compact table box for the floor plan */
 function TableBox({ tableNumber, tableSeats, selectedSeats, holderId, onSeatClick, isExpanded, onToggle }) {
   if (tableNumber === null) return <div className="w-[52px] h-[52px]" />;
 
   const total = tableSeats.length;
   const available = tableSeats.filter(s => s.status === 'available' && !s.is_disabled).length;
   const mySelections = tableSeats.filter(s => selectedSeats.includes(s.id) || (s.status === 'held' && s.held_by === holderId)).length;
-  const soldOrHeld = tableSeats.filter(s => s.status === 'sold' || (s.status === 'held' && s.held_by !== holderId)).length;
   const allSold = available === 0 && mySelections === 0;
 
   let bgColor = 'bg-emerald-600 hover:bg-emerald-500 border-emerald-700';
@@ -70,7 +68,6 @@ function TableBox({ tableNumber, tableSeats, selectedSeats, holderId, onSeatClic
         <span className="text-[9px] leading-none mt-0.5 opacity-80">{mySelections > 0 ? `${mySelections}sel` : `${available}/${total}`}</span>
       </button>
 
-      {/* Expanded seat picker dropdown */}
       {isExpanded && (
         <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 bg-white rounded-xl shadow-2xl border-2 border-gray-200 p-3 min-w-[180px]"
           onClick={e => e.stopPropagation()}>
@@ -78,18 +75,15 @@ function TableBox({ tableNumber, tableSeats, selectedSeats, holderId, onSeatClic
             Table {tableNumber} — Pick Seats
           </div>
           <div className="flex items-center gap-2 justify-center">
-            {/* Left seats */}
             <div className="flex flex-col gap-1.5">
               {tableSeats.filter(s => s.seat_number % 2 === 1).sort((a, b) => a.seat_number - b.seat_number).map(seat => (
                 <SeatButton key={seat.id} seat={seat} isSelected={selectedSeats.includes(seat.id)}
                   holderId={holderId} onClick={onSeatClick} />
               ))}
             </div>
-            {/* Table surface */}
             <div className="w-8 h-20 rounded-lg bg-gray-100 border-2 border-gray-200 flex items-center justify-center">
               <span className="text-gray-300 text-[8px] font-bold uppercase [writing-mode:vertical-rl]">Table</span>
             </div>
-            {/* Right seats */}
             <div className="flex flex-col gap-1.5">
               {tableSeats.filter(s => s.seat_number % 2 === 0).sort((a, b) => a.seat_number - b.seat_number).map(seat => (
                 <SeatButton key={seat.id} seat={seat} isSelected={selectedSeats.includes(seat.id)}
@@ -144,7 +138,6 @@ function SeatButton({ seat, isSelected, holderId, onClick }) {
   );
 }
 
-/* Render a section as a grid of TableBoxes */
 function SectionGrid({ section, tables, selectedSeats, holderId, onSeatClick, expandedTable, onToggle }) {
   return (
     <div className="flex flex-col gap-1">
@@ -178,7 +171,6 @@ export default function SeatMap({ seats, selectedSeats, holderId, partySize, onS
     setExpandedTable(prev => prev === tableNum ? null : tableNum);
   };
 
-  // Close expanded table when clicking outside
   useEffect(() => {
     const handler = () => setExpandedTable(null);
     if (expandedTable !== null) {
@@ -187,7 +179,6 @@ export default function SeatMap({ seats, selectedSeats, holderId, partySize, onS
     }
   }, [expandedTable]);
 
-  // Group seats by table
   const tables = {};
   for (const seat of seats) {
     const tn = seat.table_number;
@@ -197,14 +188,10 @@ export default function SeatMap({ seats, selectedSeats, holderId, partySize, onS
 
   const seatsRemaining = partySize - selectedSeats.length;
 
-  // Get section data
   const upperLeft = SECTIONS.find(s => s.id === 'upper-left');
-  const upperRight = SECTIONS.find(s => s.id === 'upper-right');
   const lowerLeft = SECTIONS.find(s => s.id === 'lower-left');
-  const lowerCenterLeft = SECTIONS.find(s => s.id === 'lower-center-left');
-  const centerLeftInner = SECTIONS.find(s => s.id === 'center-left-inner');
   const centerColumn = SECTIONS.find(s => s.id === 'center-column');
-  const lowerRight = SECTIONS.find(s => s.id === 'lower-right');
+  const rightSection = SECTIONS.find(s => s.id === 'right');
 
   const sectionProps = { tables, selectedSeats, holderId, onSeatClick, expandedTable, onToggle: handleToggle };
 
@@ -259,43 +246,30 @@ export default function SeatMap({ seats, selectedSeats, holderId, partySize, onS
             <div className="mt-1.5 h-0.5 bg-gradient-to-r from-transparent via-slate-500 to-transparent"></div>
           </div>
 
-          {/* === UPPER SECTION: Left block + Floor Stage + Right block === */}
-          <div className="flex items-start justify-between gap-4 mb-6">
-            {/* Upper Left Block */}
-            <SectionGrid section={upperLeft} {...sectionProps} />
+          {/* Main layout: Left side + Center/Stage + Right side */}
+          <div className="flex items-start gap-4">
+            {/* LEFT COLUMN: upper-left + gap + lower-left */}
+            <div className="flex flex-col gap-5">
+              <SectionGrid section={upperLeft} {...sectionProps} />
+              <SectionGrid section={lowerLeft} {...sectionProps} />
+            </div>
 
-            {/* Floor Stage */}
-            <div className="flex-1 flex items-center justify-center min-h-[168px]">
-              <div className="w-full max-w-[220px] h-[140px] border-2 border-slate-500 bg-slate-700/50 rounded-lg flex items-center justify-center">
-                <span className="text-slate-400 font-bold text-lg tracking-wide">Floor Stage</span>
+            {/* CENTER COLUMN: Stage + Caller + Center tables */}
+            <div className="flex flex-col items-center gap-3 pt-0">
+              {/* Floor Stage */}
+              <div className="w-[160px] h-[110px] border-2 border-slate-500 bg-slate-700/50 rounded-lg flex items-center justify-center">
+                <span className="text-slate-400 font-bold text-base tracking-wide">Stage</span>
               </div>
-            </div>
 
-            {/* Upper Right Block */}
-            <SectionGrid section={upperRight} {...sectionProps} />
-          </div>
-
-          {/* === LOWER SECTION: Left + Center-Left + Inner + Center Column + Right === */}
-          <div className="flex items-start gap-3">
-            {/* Lower Left */}
-            <SectionGrid section={lowerLeft} {...sectionProps} />
-
-            {/* Lower Center Left */}
-            <SectionGrid section={lowerCenterLeft} {...sectionProps} />
-
-            {/* Center Left Inner (transition tables 34-36, 40) */}
-            <SectionGrid section={centerLeftInner} {...sectionProps} />
-
-            {/* Caller / Announcer position */}
-            <div className="flex items-center justify-center self-center">
+              {/* Caller / Announcer position */}
               <div className="w-8 h-8 bg-amber-800 border-2 border-amber-600 rounded-sm" title="Caller Position"></div>
+
+              {/* Center column tables (45-41) */}
+              <SectionGrid section={centerColumn} {...sectionProps} />
             </div>
 
-            {/* Center Column */}
-            <SectionGrid section={centerColumn} {...sectionProps} />
-
-            {/* Lower Right */}
-            <SectionGrid section={lowerRight} {...sectionProps} />
+            {/* RIGHT COLUMN: 4 cols x 7 rows */}
+            <SectionGrid section={rightSection} {...sectionProps} />
           </div>
 
           {/* BACK OF ROOM — ENTRANCE label */}

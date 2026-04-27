@@ -26,6 +26,10 @@ const PORT = process.env.PORT || 3001;
 const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '10');
 const startTime = Date.now();
 
+function formatLocalDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -114,7 +118,7 @@ function logAudit(action, entityType, entityId, details) {
 
 // --- Sessions ---
 app.get('/api/sessions', (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatLocalDate(new Date());
   const sessions = all(
     `SELECT s.*,
       COALESCE(SUM(CASE WHEN st.status = 'vacant' AND st.is_disabled = 0 THEN 1 ELSE 0 END), 0) as available_seats,
@@ -186,7 +190,7 @@ app.get('/api/theme', (req, res) => {
 
 // --- Announcements (public) ---
 app.get('/api/announcements', (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatLocalDate(new Date());
   const announcements = all(
     `SELECT * FROM announcements
      WHERE is_active = 1
@@ -654,7 +658,7 @@ app.put('/api/admin/phd-inventory', adminAuth, (req, res) => {
 });
 
 app.get('/api/admin/dashboard', adminAuth, (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatLocalDate(new Date());
   const dateFrom = req.query.dateFrom || req.query.date || today;
   const dateTo = req.query.dateTo || dateFrom;
   const todayBookings = get(
@@ -748,7 +752,7 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
 });
 
 app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
-  const date = req.query.date || new Date().toISOString().split('T')[0];
+  const date = req.query.date || formatLocalDate(new Date());
   const search = (req.query.search || '').trim().toLowerCase();
   const rows = all(`
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
@@ -896,10 +900,9 @@ app.post('/api/admin/sessions', adminAuth, (req, res) => {
   run('INSERT INTO sessions (id, date, time, cutoff_time, is_available, is_special_event, event_title, event_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [id, date, time, cutoff_time || '12:00', is_available !== false ? 1 : 0, is_special_event ? 1 : 0, event_title || null, event_description || null]);
 
-  // Create 74 tables x 6 chairs = 444 chairs per session
+  // Create 73 tables x 6 chairs = 438 chairs per session
   let chairCount = 0;
-  for (let tNum = 1; tNum <= 75; tNum++) {
-    if (tNum === 41) continue;
+  for (let tNum = 1; tNum <= 73; tNum++) {
     for (let ch = 1; ch <= 6; ch++) {
       run('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
         [uuid(), id, tNum, ch, 'vacant']);
@@ -1304,6 +1307,40 @@ app.post('/api/admin/sessions/:id/packages', adminAuth, (req, res) => {
   res.json({ success: true, count: pkgs.length });
 });
 
+// --- Admin: Schedule info and manual trigger ---
+app.get('/api/admin/schedule', adminAuth, (req, res) => {
+  const now = new Date();
+  const thisMonday = getWeekMonday(now);
+  const thisSunday = new Date(thisMonday);
+  thisSunday.setDate(thisMonday.getDate() + 6);
+  const mondayStr = formatLocalDate(thisMonday);
+  const sundayStr = formatLocalDate(thisSunday);
+
+  const thisWeekSessions = all(
+    `SELECT date, time, is_available, is_special_event FROM sessions
+     WHERE date >= ? AND date <= ? AND deleted_at IS NULL ORDER BY date ASC`,
+    [mondayStr, sundayStr]
+  );
+
+  const totalAuto = all(
+    `SELECT COUNT(*) as count FROM sessions WHERE date >= ? AND is_special_event = 0 AND deleted_at IS NULL`,
+    [formatLocalDate(now)]
+  );
+
+  res.json({
+    schedule: 'Tue-Sun weekly, opens Monday morning',
+    weeksGenerated: WEEKS_TO_GENERATE,
+    currentWeek: { monday: mondayStr, sunday: sundayStr, sessions: thisWeekSessions },
+    upcomingAutoSessions: totalAuto[0]?.count || 0
+  });
+});
+
+app.post('/api/admin/schedule/generate', adminAuth, (req, res) => {
+  openWeeklySessions();
+  ensureFutureSessions();
+  res.json({ success: true, message: 'Weekly sessions opened and future sessions generated' });
+});
+
 // ============ ADMIN: BULK TICKETS (Print all tickets for date range) ============
 
 app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
@@ -1482,11 +1519,20 @@ app.get('*', (req, res) => {
 
 // ============ AUTO-SESSION GENERATION ============
 
-const MAX_FUTURE_SESSIONS = 10; // Keep up to 10 upcoming sessions
+const WEEKS_TO_GENERATE = 3;
+
+function getWeekMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(12, 0, 0, 0);
+  return d;
+}
 
 function cleanupOldData() {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const thirtyDaysAgo = formatLocalDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  const ninetyDaysAgo = formatLocalDate(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000));
 
   // Delete old sessions (older than 30 days) that are NOT special events and have deleted_at set or are old enough
   const oldSessions = all(`
@@ -1523,45 +1569,71 @@ function cleanupOldData() {
 }
 
 function ensureFutureSessions() {
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const now = new Date();
+  const todayStr = formatLocalDate(now);
+  const thisMonday = getWeekMonday(now);
 
-  // Count existing future sessions
-  const { count: existingCount } = get('SELECT COUNT(*) as count FROM sessions WHERE date >= ? AND deleted_at IS NULL', [todayStr]);
-  if (existingCount >= MAX_FUTURE_SESSIONS) return;
-
-  const needed = MAX_FUTURE_SESSIONS - existingCount;
   let created = 0;
-  let dayOffset = 0;
+  for (let weekOffset = 0; weekOffset < WEEKS_TO_GENERATE; weekOffset++) {
+    const weekStart = new Date(thisMonday);
+    weekStart.setDate(thisMonday.getDate() + (weekOffset * 7));
 
-  while (created < needed) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + dayOffset);
-    dayOffset++;
-    if (d.getDay() === 3) continue; // Skip Wednesday (no bingo)
-    const dateStr = d.toISOString().split('T')[0];
+    // Tue(+1) through Sun(+6) relative to Monday
+    for (let dayOffset = 1; dayOffset <= 6; dayOffset++) {
+      const sessionDate = new Date(weekStart);
+      sessionDate.setDate(weekStart.getDate() + dayOffset);
+      const dateStr = formatLocalDate(sessionDate);
 
-    const existing = get('SELECT id FROM sessions WHERE date = ?', [dateStr]);
-    if (existing) continue;
+      if (dateStr < todayStr) continue;
 
-    const id = uuid();
-    run('INSERT INTO sessions (id, date, time, cutoff_time, is_available) VALUES (?, ?, ?, ?, ?)',
-      [id, dateStr, '18:30', '12:00', 1]);
+      const existing = get('SELECT id FROM sessions WHERE date = ? AND deleted_at IS NULL', [dateStr]);
+      if (existing) continue;
 
-    // Batch create 74 tables x 6 chairs without triggering individual saves
-    // This prevents 444 individual scheduleSave() calls, dramatically reducing memory bloat
-    for (let tNum = 1; tNum <= 75; tNum++) {
-      if (tNum === 41) continue;
-      for (let ch = 1; ch <= 6; ch++) {
-        batchRun('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
-          [uuid(), id, tNum, ch, 'vacant']);
+      // Current week sessions are available immediately; future weeks open on their Monday
+      const isAvailable = weekOffset === 0 ? 1 : 0;
+
+      const id = uuid();
+      run('INSERT INTO sessions (id, date, time, cutoff_time, is_available) VALUES (?, ?, ?, ?, ?)',
+        [id, dateStr, '18:30', '12:00', isAvailable]);
+
+      for (let tNum = 1; tNum <= 73; tNum++) {
+        for (let ch = 1; ch <= 6; ch++) {
+          batchRun('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
+            [uuid(), id, tNum, ch, 'vacant']);
+        }
       }
-    }
-    // Schedule a single save after all seats are created
-    scheduleSaveAfterBatch();
+      scheduleSaveAfterBatch();
 
-    logger.info('Auto-created session', { date: dateStr, seats: 444 });
-    created++;
+      logger.info('Auto-created session', { date: dateStr, available: isAvailable, seats: 438 });
+      created++;
+    }
+  }
+
+  if (created > 0) {
+    logger.info('Auto-session generation complete', { created });
+  }
+}
+
+function openWeeklySessions() {
+  const now = new Date();
+  const thisMonday = getWeekMonday(now);
+  const thisSunday = new Date(thisMonday);
+  thisSunday.setDate(thisMonday.getDate() + 6);
+
+  const mondayStr = formatLocalDate(thisMonday);
+  const sundayStr = formatLocalDate(thisSunday);
+
+  const { changes } = run(
+    `UPDATE sessions SET is_available = 1
+     WHERE date >= ? AND date <= ?
+     AND is_available = 0
+     AND is_special_event = 0
+     AND deleted_at IS NULL`,
+    [mondayStr, sundayStr]
+  );
+
+  if (changes > 0) {
+    logger.info('Opened weekly sessions', { week: mondayStr, count: changes });
   }
 }
 
@@ -1593,10 +1665,11 @@ async function start() {
   // Re-check daily (every 24 hours)
   setInterval(cleanupOldData, 24 * 60 * 60 * 1000);
 
-  // Ensure up to 10 upcoming sessions exist
+  // Open current week's sessions (Tue-Sun) and generate future weeks
+  openWeeklySessions();
   ensureFutureSessions();
-  // Re-check daily (every 24 hours)
-  setInterval(ensureFutureSessions, 24 * 60 * 60 * 1000);
+  // Re-check hourly for Monday morning openings and new session generation
+  setInterval(() => { openWeeklySessions(); ensureFutureSessions(); }, 60 * 60 * 1000);
 
   // Release expired holds every 30 seconds
   setInterval(releaseExpiredHolds, 30000);

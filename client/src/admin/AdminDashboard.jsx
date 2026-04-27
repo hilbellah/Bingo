@@ -32,7 +32,7 @@ export default function AdminDashboard() {
   const [packages, setPackages] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [reportSession, setReportSession] = useState('');
-  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: false, event_title: '', event_description: '', packages: [] });
+  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: [] });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
   const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false });
@@ -435,7 +435,7 @@ export default function AdminDashboard() {
     }
     try {
       await createAdminSession(token, payload);
-      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: false, event_title: '', event_description: '', packages: [] });
+      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: [] });
       loadSessions();
     } catch (err) {
       alert('Failed to create session: ' + (err?.message || 'Unknown error. Please try again.'));
@@ -913,8 +913,17 @@ export default function AdminDashboard() {
         {/* SESSIONS TAB */}
         {tab === 'sessions' && (
           <div>
+            <div className="bg-blue-50 rounded-xl p-4 shadow-sm mb-4 border border-blue-200">
+              <div className="flex items-center gap-3">
+                <div className="text-2xl">📅</div>
+                <div>
+                  <h3 className="font-semibold text-brand-blue text-sm">Auto-Schedule Active</h3>
+                  <p className="text-xs text-gray-600">Regular bingo sessions (Tue–Sun) are generated automatically. Each new week opens Monday morning. Use the form below only for special events.</p>
+                </div>
+              </div>
+            </div>
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-              <h3 className="font-semibold text-brand-blue mb-3">Create New Session</h3>
+              <h3 className="font-semibold text-brand-blue mb-3">Add Special Event</h3>
               <div className="flex flex-wrap gap-3 items-end">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Date</label>
@@ -1077,7 +1086,7 @@ export default function AdminDashboard() {
                               {s.event_title || 'Special Event'}
                             </span>
                           ) : (
-                            <span className="text-xs text-gray-400">Regular</span>
+                            <span className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-600">Auto</span>
                           )}
                         </td>
                         <td className="py-2">
