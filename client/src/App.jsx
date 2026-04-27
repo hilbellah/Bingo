@@ -629,16 +629,18 @@ export default function App() {
 // Section component — renders table buttons in venue layout grid
 function TableSection({ section, getTableStatus, openTable, onTableClick, tableMap, selectedSeats, holderId, onChairClick, isSpecial }) {
   return (
-    <div className={`rounded-2xl p-3 md:p-4 border shrink-0 ${
+    <div className={`rounded-xl p-2 border shrink-0 ${
       isSpecial
         ? 'bg-amber-950/20 border-amber-500/40 shadow-md shadow-amber-500/10'
-        : 'bg-white/5 border-white/10'
+        : 'bg-white/[0.03] border-white/5'
     }`}>
-      <div className="flex flex-col gap-1.5">
+      {/* Tight vertical stacking (gap-0.5 = 2px) so a column of tables looks "stacked"
+          like the floor plan; wider horizontal gap (gap-1.5 = 6px) separates columns. */}
+      <div className="flex flex-col gap-0.5">
         {section.seats.map((row, ri) => (
           <div key={ri} className="flex gap-1.5 justify-center shrink-0">
             {row.map((num, ci) => {
-              if (num === null) return <div key={ci} className="w-12 h-12 shrink-0" />;
+              if (num === null) return <div key={ci} className="w-10 h-14 shrink-0" />;
               return <TableBtn key={num} tableNum={num} status={getTableStatus(num)}
                 isOpen={openTable === num} onClick={onTableClick}
                 chairs={tableMap[num] || []} selectedSeats={selectedSeats} holderId={holderId} onChairClick={onChairClick} isSpecial={isSpecial} />;
@@ -679,7 +681,7 @@ function InlineChair({ chair, isSelected, holderId, onChairClick }) {
 // Table button — shows table number + vacancy count, with inline chair dropdown
 function TableBtn({ tableNum, status, isOpen, onClick, chairs, selectedSeats, holderId, onChairClick, isSpecial }) {
   if (status === 'empty' || !status) {
-    return <div className="w-12 h-12 shrink-0" />;
+    return <div className="w-10 h-14 shrink-0" />;
   }
 
   const { hasMyChairs, allSold, allVacant, vacantChairs } = status;
@@ -758,4 +760,3 @@ function TableBtn({ tableNum, status, isOpen, onClick, chairs, selectedSeats, ho
     </div>
   );
 }
-

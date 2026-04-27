@@ -36,7 +36,7 @@ function CountdownTimer({ expiry }) {
 }
 
 function TableBox({ tableNumber, tableSeats, selectedSeats, holderId, onSeatClick, isExpanded, onToggle }) {
-  if (tableNumber === null) return <div className="w-[52px] h-[52px]" />;
+  if (tableNumber === null) return <div className="w-10 h-14" />;
 
   const total = tableSeats.length;
   const available = tableSeats.filter(s => s.status === 'available' && !s.is_disabled).length;
@@ -61,7 +61,7 @@ function TableBox({ tableNumber, tableSeats, selectedSeats, holderId, onSeatClic
       <button
         onClick={() => !allSold && onToggle(tableNumber)}
         disabled={allSold}
-        className={`w-[52px] h-[52px] rounded-lg border-2 flex flex-col items-center justify-center transition-all duration-150 ${bgColor} ${textColor}`}
+        className={`w-10 h-14 rounded-md border-2 flex flex-col items-center justify-center transition-all duration-150 ${bgColor} ${textColor}`}
         title={`Table ${tableNumber} — ${available}/${total} available`}
       >
         <span className="text-sm font-bold leading-none">{tableNumber}</span>
