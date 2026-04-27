@@ -513,7 +513,7 @@ export default function App() {
                 )}
 
                 {/* Table 45 — col 8 row 3 (under stage, between 40 and 50) */}
-                <div style={{ gridColumn: 8, gridRow: 3 }}>
+                <div style={{ gridColumn: 9, gridRow: 3 }}>
                   <TableBtn tableNum={45} status={getTableStatus(45)}
                     chairs={tableMap[45] || []} selectedSeats={selectedSeats}
                     holderId={holderId} onChairClick={handleChairClick}
@@ -559,7 +559,7 @@ export default function App() {
                 {/* Lower-right tables — cols 8-12, all 4 rows */}
                 {SECTIONS.find(s => s.id === 'lower-right').seats.flatMap((row, r) =>
                   row.map((num, c) => (
-                    <div key={`lr-${num}`} style={{ gridColumn: c + 8, gridRow: r + 1 }}>
+                    <div key={`lr-${num}`} style={{ gridColumn: c + 9, gridRow: r + 1 }}>
                       <TableBtn tableNum={num} status={getTableStatus(num)}
                         chairs={tableMap[num] || []} selectedSeats={selectedSeats}
                         holderId={holderId} onChairClick={handleChairClick}

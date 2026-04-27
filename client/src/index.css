@@ -356,6 +356,6 @@ html {
   border-radius: 2px;
   top: 50%;
   /* Placed in horizontal gap between col 7 and col 8 (each col = 56px + 5px gap) */
-  left: calc(7 * (40px + 5px));
+  left: calc(7 * (40px + 5px) + 13px);
   transform: translateY(-50%);
 }
