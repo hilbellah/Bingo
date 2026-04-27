@@ -51,22 +51,33 @@ body {
   box-shadow: 0 2px 8px rgba(197, 165, 90, 0.4);
 }
 
-/* Table center label on the venue map (the actual table rectangle, flanked by chairs) */
+/* Table button on the venue map — solid rectangle clickable to open chair-picker zoom */
 .table-btn {
-  width: 26px;
+  width: 40px;
   height: 56px;
-  min-width: 26px;
+  min-width: 40px;
   min-height: 56px;
   flex-shrink: 0;
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: 6px;
+  font-size: 13px;
   font-weight: 700;
+  transition: all 0.18s ease;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  pointer-events: none; /* purely decorative — clicks happen on chairs */
+  gap: 2px;
+}
+
+.table-btn:hover:not(:disabled) {
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.table-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* Small chair buttons that flank each table on the floor plan
@@ -312,7 +323,7 @@ html {
 /* ── Unified floor-plan grid (12 columns) ── */
 .floorplan-grid {
   display: grid;
-  grid-template-columns: repeat(13, 56px);
+  grid-template-columns: repeat(13, 40px);
   gap: 3px 5px;
   margin: 0 auto;
   width: max-content;
@@ -345,6 +356,6 @@ html {
   border-radius: 2px;
   top: 50%;
   /* Placed in horizontal gap between col 7 and col 8 (each col = 56px + 5px gap) */
-  left: calc(7 * (56px + 5px));
+  left: calc(7 * (40px + 5px));
   transform: translateY(-50%);
 }
