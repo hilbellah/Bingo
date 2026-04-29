@@ -18,6 +18,53 @@ function formatTime(timeStr) {
   return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
 }
 
+// ---------- Payment validation helpers ----------
+// Luhn checksum — every real credit card number in circulation passes this.
+// Accepts ANY card brand (Visa, MC, Amex, Discover, JCB, Diners, etc.) so we
+// can keep testing with whichever card while still rejecting bogus input.
+function luhnValid(rawNumber) {
+  const digits = (rawNumber || '').replace(/\D/g, '');
+  if (digits.length < 13 || digits.length > 19) return false;
+  let sum = 0;
+  let shouldDouble = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let n = parseInt(digits[i], 10);
+    if (shouldDouble) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    shouldDouble = !shouldDouble;
+  }
+  return sum % 10 === 0;
+}
+
+// Auto-format expiry as MM/YY from raw digits.
+function formatExpiryInput(input) {
+  const digits = (input || '').replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return digits.slice(0, 2) + '/' + digits.slice(2);
+}
+
+// MM/YY format with valid month. Permissive on year so expired test cards
+// don't get blocked while we're still in testing.
+function expiryValid(exp) {
+  const m = (exp || '').match(/^(\d{2})\/(\d{2})$/);
+  if (!m) return false;
+  const mm = parseInt(m[1], 10);
+  return mm >= 1 && mm <= 12;
+}
+
+// CVV: 3 digits for most cards, 4 for Amex.
+function cvvValid(cvv, brand) {
+  if (brand === 'amex') return /^\d{4}$/.test(cvv);
+  return /^\d{3,4}$/.test(cvv);
+}
+
+function nameValid(name) {
+  return (name || '').trim().length >= 2;
+}
+
 export default function BookingPanel({
   isOpen, onClose, onPickChairs, session, partySize, onPartySize,
   attendees, onAttendees, selectedSeats, seats,
@@ -29,6 +76,38 @@ export default function BookingPanel({
   const setStep = onStepChange;
   const [cardNumber, setCardNumber] = useState('');
   const [selectedCard, setSelectedCard] = useState('');
+  const [cardName, setCardName] = useState('');
+  const [expiry, setExpiry] = useState('');
+  const [cvv, setCvv] = useState('');
+  // Track which fields the user has interacted with so we don't yell at them
+  // about empty fields the moment the panel opens.
+  const [touched, setTouched] = useState({ cardName: false, cardNumber: false, expiry: false, cvv: false });
+  const markTouched = (field) => setTouched(t => ({ ...t, [field]: true }));
+
+  // Field-level validity (on raw values)
+  const cardNumberDigits = cardNumber.replace(/\s/g, '');
+  const isCardNameValid = nameValid(cardName);
+  const isCardNumberValid = luhnValid(cardNumberDigits);
+  const isExpiryValid = expiryValid(expiry);
+  const isCvvValid = cvvValid(cvv, selectedCard);
+  const isPaymentValid = isCardNameValid && isCardNumberValid && isExpiryValid && isCvvValid;
+
+  const handleExpiryChange = (e) => {
+    setExpiry(formatExpiryInput(e.target.value));
+  };
+
+  const handleCvvChange = (e) => {
+    // Strip non-digits, max 4
+    const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
+    setCvv(digits);
+  };
+
+  const handlePaySubmit = () => {
+    // Mark all touched so any remaining errors surface
+    setTouched({ cardName: true, cardNumber: true, expiry: true, cvv: true });
+    if (!isPaymentValid) return;
+    onSubmit();
+  };
 
   // Auto-detect card type from number using IIN/BIN ranges
   const detectCardType = (number) => {
@@ -580,14 +659,35 @@ export default function BookingPanel({
               <div className="space-y-3 mb-5">
                 <div>
                   <label className="text-xs font-medium text-gray-500 mb-1 block">Cardholder Name</label>
-                  <input className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition"
+                  <input
+                    value={cardName}
+                    onChange={e => setCardName(e.target.value)}
+                    onBlur={() => markTouched('cardName')}
+                    className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
+                      touched.cardName && !isCardNameValid
+                        ? 'border-red-300 bg-red-50/40 focus:border-red-400'
+                        : 'border-gray-200 focus:border-brand-gold'
+                    }`}
                     placeholder="Name on card" />
+                  {touched.cardName && !isCardNameValid && (
+                    <p className="text-xs text-red-500 mt-1">Enter the cardholder's full name.</p>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-500 mb-1 block">Card Number</label>
                   <div className="relative">
-                    <input className="w-full px-3 py-2.5 pr-14 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition tracking-wider"
-                      placeholder="0000 0000 0000 0000" maxLength={19} value={cardNumber} onChange={handleCardNumberChange} />
+                    <input
+                      value={cardNumber}
+                      onChange={handleCardNumberChange}
+                      onBlur={() => markTouched('cardNumber')}
+                      inputMode="numeric"
+                      autoComplete="cc-number"
+                      className={`w-full px-3 py-2.5 pr-14 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition tracking-wider ${
+                        touched.cardNumber && !isCardNumberValid
+                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
+                          : 'border-gray-200 focus:border-brand-gold'
+                      }`}
+                      placeholder="0000 0000 0000 0000" maxLength={19} />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40">
                       {selectedCard === 'visa' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#1A1F71"/><text x="18" y="15" textAnchor="middle" fill="#FFF" fontSize="9" fontWeight="bold" fontStyle="italic" fontFamily="Arial">VISA</text></svg>}
                       {selectedCard === 'mastercard' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#252525"/><circle cx="14" cy="12" r="6" fill="#EB001B"/><circle cx="22" cy="12" r="6" fill="#F79E1B"/></svg>}
@@ -595,17 +695,52 @@ export default function BookingPanel({
                       {selectedCard === 'discover' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#FFF" stroke="#E0E0E0"/><circle cx="21" cy="12" r="5" fill="#F47216"/></svg>}
                     </div>
                   </div>
+                  {touched.cardNumber && !isCardNumberValid && (
+                    <p className="text-xs text-red-500 mt-1">
+                      {cardNumberDigits.length === 0
+                        ? 'Card number is required.'
+                        : cardNumberDigits.length < 13
+                          ? 'Card number is too short.'
+                          : 'That card number isn’t valid. Please double-check it.'}
+                    </p>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-gray-500 mb-1 block">Expiry</label>
-                    <input className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition"
+                    <input
+                      value={expiry}
+                      onChange={handleExpiryChange}
+                      onBlur={() => markTouched('expiry')}
+                      inputMode="numeric"
+                      autoComplete="cc-exp"
+                      className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
+                        touched.expiry && !isExpiryValid
+                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
+                          : 'border-gray-200 focus:border-brand-gold'
+                      }`}
                       placeholder="MM/YY" maxLength={5} />
+                    {touched.expiry && !isExpiryValid && (
+                      <p className="text-xs text-red-500 mt-1">Use MM/YY format.</p>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500 mb-1 block">CVV</label>
-                    <input className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-base focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition"
-                      placeholder="123" maxLength={4} type="password" />
+                    <input
+                      value={cvv}
+                      onChange={handleCvvChange}
+                      onBlur={() => markTouched('cvv')}
+                      inputMode="numeric"
+                      autoComplete="cc-csc"
+                      className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
+                        touched.cvv && !isCvvValid
+                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
+                          : 'border-gray-200 focus:border-brand-gold'
+                      }`}
+                      placeholder={selectedCard === 'amex' ? '1234' : '123'} maxLength={4} type="password" />
+                    {touched.cvv && !isCvvValid && (
+                      <p className="text-xs text-red-500 mt-1">{selectedCard === 'amex' ? '4-digit CVV.' : '3 or 4 digits.'}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -618,8 +753,8 @@ export default function BookingPanel({
                 Secure payment — your data is encrypted
               </div>
 
-              <button onClick={onSubmit} disabled={loading}
-                className="w-full bg-gradient-to-r from-brand-gold to-brand-gold-light text-white py-4 rounded-2xl font-bold text-lg transition hover:shadow-xl glow-gold disabled:opacity-50">
+              <button onClick={handlePaySubmit} disabled={loading || !isPaymentValid}
+                className="w-full bg-gradient-to-r from-brand-gold to-brand-gold-light text-white py-4 rounded-2xl font-bold text-lg transition hover:shadow-xl glow-gold disabled:opacity-50 disabled:cursor-not-allowed">
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
                     <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
@@ -632,6 +767,11 @@ export default function BookingPanel({
                   `Pay ${formatPrice(total)}`
                 )}
               </button>
+              {!isPaymentValid && (
+                <p className="text-center text-xs text-gray-400 mt-2">
+                  Enter valid card details to continue
+                </p>
+              )}
             </div>
             );
           })()}
