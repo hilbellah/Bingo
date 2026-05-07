@@ -291,6 +291,41 @@ export async function triggerScheduleGenerate(token) {
   return res.json();
 }
 
+// Admin Users (super users only)
+export async function fetchAdminUsers(token) {
+  const res = await fetch(`${API}/admin/users`, { headers: adminHeaders(token) });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to load users');
+  return json;
+}
+
+export async function createAdminUser(token, data) {
+  const res = await fetch(`${API}/admin/users`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to create user');
+  return json;
+}
+
+export async function updateAdminUser(token, id, data) {
+  const res = await fetch(`${API}/admin/users/${id}`, {
+    method: 'PATCH', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to update user');
+  return json;
+}
+
+export async function deactivateAdminUser(token, id) {
+  const res = await fetch(`${API}/admin/users/${id}`, {
+    method: 'DELETE', headers: adminHeaders(token)
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to deactivate user');
+  return json;
+}
+
 // Admin Seat Management
 export async function toggleAdminSeat(token, seatId, isDisabled) {
   const res = await fetch(`${API}/admin/seats/${seatId}`, {

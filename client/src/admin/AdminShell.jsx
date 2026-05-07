@@ -7,10 +7,13 @@ export default function AdminShell({
   collapsed,
   onToggleCollapsed,
   adminDisplayName,
+  isSuperUser,
   onLogout,
   rightActions,
   children
 }) {
+  const visibleTabs = ADMIN_TABS.filter(tab => !tab.requiresSuperUser || isSuperUser);
+
   return (
     <div className="min-h-screen bg-brand-light flex">
       <aside className={`bg-brand-blue text-white flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-56'} min-h-screen`}>
@@ -28,7 +31,7 @@ export default function AdminShell({
         </div>
 
         <nav className="flex-1 py-2">
-          {ADMIN_TABS.map(tab => (
+          {visibleTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}

@@ -10,7 +10,7 @@ import { migrate } from './migrate.js';
 import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
 import bcrypt from 'bcryptjs';
-import { adminAuth } from './middleware/adminAuth.js';
+import { adminAuth, requireSuperUser, isSuperUser } from './middleware/adminAuth.js';
 import { releaseExpiredHolds } from './services/holds.js';
 import { cleanupOldData, ensureFutureSessions, getScheduleSummary, openWeeklySessions } from './services/scheduler.js';
 import { createUploadMiddleware } from './uploads.js';
@@ -491,54 +491,97 @@ app.post('/api/bookings', (req, res) => {
 
 app.post('/api/admin/login', (req, res) => {
   const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
   // Check env-var admin
   if (username.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() && password === process.env.ADMIN_PASSWORD) {
     const token = Buffer.from(`${username}:${password}`).toString('base64');
-    return res.json({ token, displayName: 'Admin' });
+    return res.json({ token, displayName: 'Admin', isSuperUser: true });
   }
   // Check DB admin users
   const dbUser = get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [username]);
   if (dbUser && bcrypt.compareSync(password, dbUser.password_hash)) {
     const token = Buffer.from(`${username}:${password}`).toString('base64');
-    return res.json({ token, displayName: dbUser.display_name || dbUser.email });
+    return res.json({
+      token,
+      displayName: dbUser.display_name || dbUser.email,
+      isSuperUser: isSuperUser(dbUser.email, 'db', dbUser),
+    });
   }
   res.status(401).json({ error: 'Invalid credentials' });
 });
 
 // ============ ADMIN USERS ============
 
-app.get('/api/admin/users', adminAuth, (req, res) => {
-  const users = all('SELECT id, email, display_name, is_active, created_at FROM admin_users ORDER BY created_at');
+app.get('/api/admin/users', adminAuth, requireSuperUser, (req, res) => {
+  const users = all('SELECT id, email, display_name, is_active, is_super_user, created_at FROM admin_users ORDER BY created_at');
   res.json(users);
 });
 
-app.post('/api/admin/users', adminAuth, (req, res) => {
-  const { email, password, displayName } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
-  const existing = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [email]);
+app.post('/api/admin/users', adminAuth, requireSuperUser, (req, res) => {
+  const { email, password, displayName, isSuperUser: makeSuperUser } = req.body;
+  const normalizedEmail = (email || '').trim();
+  if (!normalizedEmail || !password) return res.status(400).json({ error: 'Email and password are required' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'A valid email address is required' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  const existing = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [normalizedEmail]);
   if (existing) return res.status(409).json({ error: 'User with this email already exists' });
   const id = uuid();
   const hash = bcrypt.hashSync(password, 10);
-  run('INSERT INTO admin_users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)',
-    [id, email, hash, displayName || null]);
-  res.status(201).json({ id, email, displayName: displayName || null });
+  run('INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user) VALUES (?, ?, ?, ?, ?)',
+    [id, normalizedEmail, hash, displayName || null, makeSuperUser ? 1 : 0]);
+  logAudit('admin_user_created', 'admin_user', id, {
+    email: normalizedEmail,
+    displayName: displayName || null,
+    isSuperUser: !!makeSuperUser,
+    createdBy: req.adminUser.email,
+  });
+  res.status(201).json({ id, email: normalizedEmail, displayName: displayName || null, isSuperUser: !!makeSuperUser });
 });
 
-app.patch('/api/admin/users/:id', adminAuth, (req, res) => {
+app.patch('/api/admin/users/:id', adminAuth, requireSuperUser, (req, res) => {
   const { email, password, displayName, isActive } = req.body;
   const user = get('SELECT * FROM admin_users WHERE id = ?', [req.params.id]);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  if (email !== undefined) run('UPDATE admin_users SET email = ?, updated_at = datetime(\'now\') WHERE id = ?', [email, req.params.id]);
+  if (email !== undefined) {
+    const normalizedEmail = (email || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'A valid email address is required' });
+    const existing = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?) AND id <> ?', [normalizedEmail, req.params.id]);
+    if (existing) return res.status(409).json({ error: 'User with this email already exists' });
+    run('UPDATE admin_users SET email = ?, updated_at = datetime(\'now\') WHERE id = ?', [normalizedEmail, req.params.id]);
+  }
+  if (password && password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
   if (password) run('UPDATE admin_users SET password_hash = ?, updated_at = datetime(\'now\') WHERE id = ?', [bcrypt.hashSync(password, 10), req.params.id]);
   if (displayName !== undefined) run('UPDATE admin_users SET display_name = ?, updated_at = datetime(\'now\') WHERE id = ?', [displayName, req.params.id]);
-  if (isActive !== undefined) run('UPDATE admin_users SET is_active = ?, updated_at = datetime(\'now\') WHERE id = ?', [isActive ? 1 : 0, req.params.id]);
+  if (isActive !== undefined) {
+    if (user.email.toLowerCase() === 'kylepaul@stmec.com' && !isActive) {
+      return res.status(400).json({ error: 'Kyle account must remain active' });
+    }
+    run('UPDATE admin_users SET is_active = ?, updated_at = datetime(\'now\') WHERE id = ?', [isActive ? 1 : 0, req.params.id]);
+  }
+  if (req.body.isSuperUser !== undefined) {
+    if (user.email.toLowerCase() === 'kylepaul@stmec.com' && !req.body.isSuperUser) {
+      return res.status(400).json({ error: 'Kyle account must remain a super user' });
+    }
+    run('UPDATE admin_users SET is_super_user = ?, updated_at = datetime(\'now\') WHERE id = ?', [req.body.isSuperUser ? 1 : 0, req.params.id]);
+  }
+  logAudit('admin_user_updated', 'admin_user', req.params.id, {
+    email: email !== undefined ? email : user.email,
+    updatedBy: req.adminUser.email,
+  });
   res.json({ success: true });
 });
 
-app.delete('/api/admin/users/:id', adminAuth, (req, res) => {
+app.delete('/api/admin/users/:id', adminAuth, requireSuperUser, (req, res) => {
   const user = get('SELECT * FROM admin_users WHERE id = ?', [req.params.id]);
   if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.email.toLowerCase() === 'kylepaul@stmec.com') {
+    return res.status(400).json({ error: 'Kyle account must remain active' });
+  }
   run('UPDATE admin_users SET is_active = 0, updated_at = datetime(\'now\') WHERE id = ?', [req.params.id]);
+  logAudit('admin_user_deactivated', 'admin_user', req.params.id, {
+    email: user.email,
+    deactivatedBy: req.adminUser.email,
+  });
   res.json({ success: true });
 });
 
@@ -1522,15 +1565,17 @@ async function start() {
 
   // Seed admin users (idempotent — skips if already exists)
   const seedAdmins = [
-    { email: 'Kylepaul@stmec.com', password: 'b4KT!xrjpcNjXq', displayName: 'Kyle Paul' }
+    { email: 'Kylepaul@stmec.com', password: 'b4KT!xrjpcNjXq', displayName: 'Kyle Paul', isSuperUser: true }
   ];
   for (const admin of seedAdmins) {
     const exists = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [admin.email]);
     if (!exists) {
       const hash = bcrypt.hashSync(admin.password, 10);
-      run('INSERT INTO admin_users (id, email, password_hash, display_name) VALUES (?, ?, ?, ?)',
-        [uuid(), admin.email, hash, admin.displayName]);
+      run('INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user) VALUES (?, ?, ?, ?, ?)',
+        [uuid(), admin.email, hash, admin.displayName, admin.isSuperUser ? 1 : 0]);
       logger.info('Seeded admin user', { email: admin.email });
+    } else if (admin.isSuperUser) {
+      run('UPDATE admin_users SET is_super_user = 1 WHERE LOWER(email) = LOWER(?)', [admin.email]);
     }
   }
 

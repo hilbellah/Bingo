@@ -27,6 +27,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const token = sessionStorage.getItem('admin_token');
   const adminDisplayName = sessionStorage.getItem('admin_display_name') || 'Admin';
+  const isSuperUser = sessionStorage.getItem('admin_is_super_user') === 'true';
 
   const [tab, setTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
@@ -125,6 +126,7 @@ export default function AdminDashboard() {
     if (tab === 'archive') { loadDeletedSessions(); loadAuditLogs(); }
     if (tab === 'inventory') { fetchAdminPhdInventory(token).then(data => { setPhdInventory(data); setPhdEditForm({ totalStock: data.totalStock, perPlayerLimit: data.perPlayerLimit }); }); }
     if (tab === 'chairs') loadSessions();
+    if (tab === 'users' && !isSuperUser) setTab('dashboard');
   }, [tab]);
 
   // Auto-print: keep refs in sync with state
@@ -427,6 +429,7 @@ export default function AdminDashboard() {
   const handleLogout = () => {
     sessionStorage.removeItem('admin_token');
     sessionStorage.removeItem('admin_display_name');
+    sessionStorage.removeItem('admin_is_super_user');
     navigate('/admin');
   };
 
@@ -703,6 +706,7 @@ export default function AdminDashboard() {
 
   const dashboardContext = {
     tab,
+    isSuperUser,
     dashboard,
     dashboardDateFrom,
     dashboardDateTo,
@@ -824,6 +828,7 @@ export default function AdminDashboard() {
       collapsed={sidebarCollapsed}
       onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
       adminDisplayName={adminDisplayName}
+      isSuperUser={isSuperUser}
       onLogout={handleLogout}
       rightActions={adminHeaderActions}
     >

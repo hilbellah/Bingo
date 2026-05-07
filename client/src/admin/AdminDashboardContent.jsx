@@ -8,6 +8,7 @@ import BulkPrintTab from './BulkPrintTab';
 import ArchiveAuditTab from './ArchiveAuditTab';
 import ChairManagementTab from './ChairManagementTab';
 import InventoryTab from './InventoryTab';
+import UsersTab from './UsersTab';
 import SettingsTab from './SettingsTab';
 import SalesDrilldownModal from './SalesDrilldownModal';
 import SoldTicketsModal from './SoldTicketsModal';
@@ -26,6 +27,7 @@ export default function AdminDashboardContent({ value }) {
         <ArchiveAuditTab />
         <ChairManagementTab />
         <InventoryTab />
+        <UsersTab />
         <SettingsTab />
       </div>
 

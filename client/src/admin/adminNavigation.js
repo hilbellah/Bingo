@@ -8,6 +8,7 @@ export const ADMIN_TABS = [
   { id: 'archive', label: 'Archive & Audit', icon: '\uD83D\uDDC3' },
   { id: 'chairs', label: 'Chair Management', icon: '\uD83E\uDE91' },
   { id: 'inventory', label: 'PHD Inventory', icon: '\uD83D\uDCF1' },
+  { id: 'users', label: 'Users', icon: '\uD83D\uDC64', requiresSuperUser: true },
   { id: 'settings', label: 'Printing Settings', icon: '\uD83D\uDDA8' },
 ];
 

@@ -223,10 +223,13 @@ async function migrate() {
       password_hash TEXT NOT NULL,
       display_name TEXT,
       is_active INTEGER NOT NULL DEFAULT 1,
+      is_super_user INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     )
   `);
+  try { exec('ALTER TABLE admin_users ADD COLUMN is_super_user INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
+  try { exec("UPDATE admin_users SET is_super_user = 1 WHERE LOWER(email) = LOWER('Kylepaul@stmec.com')"); } catch(e) {}
 
   // Backfill existing booking_items that have no reference_number
   const itemsWithoutRef = all("SELECT bi.id, b.reference_number as booking_ref FROM booking_items bi JOIN bookings b ON b.id = bi.booking_id WHERE bi.reference_number IS NULL");
