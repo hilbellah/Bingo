@@ -1,35 +1,68 @@
-// Booking-confirmation email via Resend's REST API.
+// Booking-confirmation email service.
 //
-// We use Resend (https://resend.com) because the API is dead-simple, the free
-// tier (3000 emails/month) is plenty for a bingo hall, and the REST endpoint
-// works with Node's built-in fetch — so no new npm dependencies.
+// Two providers are supported, chosen automatically by which env vars are set:
 //
-// Configuration is purely env-var driven so the build doesn't bake in any
-// secrets:
+//   1. Gmail SMTP (preferred when configured) — works for any recipient with
+//      no DNS setup. Uses nodemailer + a Gmail App Password. Best for demos
+//      and small deployments.
+//   2. Resend (fallback) — REST-based transactional email service. Requires
+//      domain verification before it'll deliver to non-account emails.
 //
-//   RESEND_API_KEY    Required to actually send. If unset, this module logs a
-//                     warning and no-ops — bookings still complete normally.
-//   EMAIL_FROM        Sender address shown to the customer.
-//                     Examples: "Wolastoq Bingo <tickets@yourdomain.com>"
-//                               "onboarding@resend.dev"  (Resend's sandbox)
-//                     Default: "onboarding@resend.dev" (Resend's free sandbox
-//                     sender — works for testing without domain verification).
-//   EMAIL_BCC         Optional. Comma-separated list of addresses to BCC on
-//                     every booking confirmation (used for admin
-//                     notifications). The customer never sees these; they
-//                     receive their normal confirmation. Example:
-//                     "bobby@redrockmarketinggroup.com,kyle@stmec.com".
-//                     Note: BCC recipients are subject to the same Resend
-//                     sandbox restriction as the primary recipient — until a
-//                     verified domain is in place, only the Resend account
-//                     owner's email can receive.
-//   PUBLIC_SITE_URL   Base URL used in the "View tickets online" link.
-//                     Default: "https://bingo-jk2h.onrender.com".
+// Selection logic: if BOTH GMAIL_USER and GMAIL_APP_PASSWORD are set, Gmail is
+// used. Otherwise, if RESEND_API_KEY is set, Resend is used. Otherwise the
+// module logs a warning and no-ops so the booking flow still completes.
 //
-// All export functions are async and return { ok, status, error? }. They never
-// throw — the booking flow shouldn't roll back if Resend is having a bad day.
+// Env vars (all optional unless noted):
+//
+//   --- Gmail SMTP path ---
+//   GMAIL_USER            The Gmail address to authenticate as, e.g.
+//                         "demo@gmail.com". This is also used as the From
+//                         envelope address regardless of EMAIL_FROM display.
+//   GMAIL_APP_PASSWORD    The 16-character app password generated at
+//                         https://myaccount.google.com/apppasswords. NOT
+//                         the normal Gmail login password — that won't work.
+//                         Account must have 2FA enabled to generate one.
+//
+//   --- Resend path ---
+//   RESEND_API_KEY        Resend account API key (re_*).
+//   PUBLIC_SITE_URL       Base URL used in the "View tickets online" link.
+//                         Default: "https://bingo-jk2h.onrender.com".
+//
+//   --- Shared (used by both providers) ---
+//   EMAIL_FROM            Display name + address shown to the customer.
+//                         e.g. "Wolastoq Bingo <demo@gmail.com>". For Gmail,
+//                         the address part SHOULD match GMAIL_USER (Gmail
+//                         rewrites mismatched From addresses anyway).
+//   EMAIL_BCC             Comma-separated addresses to BCC on every send.
+//                         Customer doesn't see these. Admin notification.
+//
+// All export functions are async and return { ok, status, error? }. They
+// never throw — the booking flow shouldn't roll back if email is broken.
+
+import nodemailer from 'nodemailer';
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
+
+// Reused across calls. Re-created if env vars change at runtime (rare).
+let _gmailTransporter = null;
+let _gmailTransporterKey = '';
+function getGmailTransporter() {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) return null;
+  const key = `${user}:${pass.length}`;
+  if (_gmailTransporter && _gmailTransporterKey === key) return _gmailTransporter;
+  // App passwords are 16 chars but Google copies them with spaces every 4. Strip.
+  const cleanedPass = pass.replace(/\s+/g, '');
+  _gmailTransporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: { user, pass: cleanedPass },
+  });
+  _gmailTransporterKey = key;
+  return _gmailTransporter;
+}
 
 function escapeHtml(s) {
   return String(s ?? '')
@@ -224,8 +257,6 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
  * doesn't block the booking response.
  */
 export async function sendBookingConfirmation({ to, booking, session, attendees, seats, packages }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || 'Wolastoq Bingo <onboarding@resend.dev>';
   const siteUrl = process.env.PUBLIC_SITE_URL || 'https://bingo-jk2h.onrender.com';
 
   // Optional admin BCC list. Comma-separated, whitespace tolerant. Filtered to
@@ -236,10 +267,6 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
     .map(s => s.trim())
     .filter(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
 
-  if (!apiKey) {
-    console.warn('[email] RESEND_API_KEY not set — skipping confirmation email. Set it on Render to enable.');
-    return { ok: false, status: 0, error: 'no_api_key' };
-  }
   if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
     console.warn('[email] booking has no valid email address; skipping. ref=' + booking?.referenceNumber);
     return { ok: false, status: 0, error: 'no_recipient' };
@@ -249,10 +276,52 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
   const text = renderBookingText({ booking, session, attendees, seats, packages, siteUrl });
   const subject = `Your Bingo Booking — ${booking.referenceNumber}`;
 
-  // Resend's API accepts `bcc` as either a string or an array of strings.
-  // Only include the field if we actually have addresses to BCC; sending an
-  // empty array or empty string can cause some providers to reject the
-  // request, and it adds noise to the audit trail.
+  // Decide provider: Gmail SMTP if creds are present, else Resend, else no-op.
+  const transporter = getGmailTransporter();
+  if (transporter) {
+    return sendViaGmail({ transporter, to, bcc, subject, html, text, booking });
+  }
+
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) {
+    return sendViaResend({ apiKey, to, bcc, subject, html, text, booking });
+  }
+
+  console.warn('[email] No email provider configured. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY on Render. Booking continues without email.');
+  return { ok: false, status: 0, error: 'no_provider_configured' };
+}
+
+// ---------- Provider: Gmail SMTP ----------
+async function sendViaGmail({ transporter, to, bcc, subject, html, text, booking }) {
+  const fromUser = process.env.GMAIL_USER;
+  // Gmail will rewrite the From envelope to match the authenticated user
+  // anyway, but a friendly display name in the EMAIL_FROM env var still works
+  // (e.g. "Wolastoq Bingo <demo@gmail.com>"). If EMAIL_FROM is unset we fall
+  // back to a sensible default.
+  const from = process.env.EMAIL_FROM || `Wolastoq Bingo <${fromUser}>`;
+
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to,
+      bcc: bcc.length > 0 ? bcc.join(',') : undefined,
+      subject,
+      html,
+      text,
+    });
+    const bccNote = bcc.length > 0 ? ` bcc=${bcc.join(',')}` : '';
+    console.log(`[email] sent confirmation for ${booking.referenceNumber} to ${to}${bccNote} via Gmail (messageId=${info.messageId})`);
+    return { ok: true, status: 200, id: info.messageId };
+  } catch (err) {
+    // Common Gmail errors: 535 invalid creds, 534 app password required.
+    console.error('[email] Gmail send failed:', err?.message || err);
+    return { ok: false, status: 0, error: err?.message || String(err) };
+  }
+}
+
+// ---------- Provider: Resend (fallback) ----------
+async function sendViaResend({ apiKey, to, bcc, subject, html, text, booking }) {
+  const from = process.env.EMAIL_FROM || 'Wolastoq Bingo <onboarding@resend.dev>';
   const payload = { from, to, subject, html, text };
   if (bcc.length > 0) payload.bcc = bcc;
 
@@ -273,10 +342,10 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
     }
     const body = await res.json().catch(() => ({}));
     const bccNote = bcc.length > 0 ? ` bcc=${bcc.join(',')}` : '';
-    console.log(`[email] sent confirmation for ${booking.referenceNumber} to ${to}${bccNote} (resend id=${body?.id || 'unknown'})`);
+    console.log(`[email] sent confirmation for ${booking.referenceNumber} to ${to}${bccNote} via Resend (id=${body?.id || 'unknown'})`);
     return { ok: true, status: res.status, id: body?.id };
   } catch (err) {
-    console.error('[email] send failed:', err?.message || err);
+    console.error('[email] Resend send failed:', err?.message || err);
     return { ok: false, status: 0, error: err?.message || String(err) };
   }
 }
