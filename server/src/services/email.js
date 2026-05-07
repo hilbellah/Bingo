@@ -14,6 +14,15 @@
 //                               "onboarding@resend.dev"  (Resend's sandbox)
 //                     Default: "onboarding@resend.dev" (Resend's free sandbox
 //                     sender — works for testing without domain verification).
+//   EMAIL_BCC         Optional. Comma-separated list of addresses to BCC on
+//                     every booking confirmation (used for admin
+//                     notifications). The customer never sees these; they
+//                     receive their normal confirmation. Example:
+//                     "bobby@redrockmarketinggroup.com,kyle@stmec.com".
+//                     Note: BCC recipients are subject to the same Resend
+//                     sandbox restriction as the primary recipient — until a
+//                     verified domain is in place, only the Resend account
+//                     owner's email can receive.
 //   PUBLIC_SITE_URL   Base URL used in the "View tickets online" link.
 //                     Default: "https://bingo-jk2h.onrender.com".
 //
@@ -219,6 +228,14 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
   const from = process.env.EMAIL_FROM || 'Wolastoq Bingo <onboarding@resend.dev>';
   const siteUrl = process.env.PUBLIC_SITE_URL || 'https://bingo-jk2h.onrender.com';
 
+  // Optional admin BCC list. Comma-separated, whitespace tolerant. Filtered to
+  // valid-looking addresses so a typo'd env var doesn't blow up the send.
+  const bccRaw = process.env.EMAIL_BCC || '';
+  const bcc = bccRaw
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
+
   if (!apiKey) {
     console.warn('[email] RESEND_API_KEY not set — skipping confirmation email. Set it on Render to enable.');
     return { ok: false, status: 0, error: 'no_api_key' };
@@ -232,6 +249,13 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
   const text = renderBookingText({ booking, session, attendees, seats, packages, siteUrl });
   const subject = `Your Bingo Booking — ${booking.referenceNumber}`;
 
+  // Resend's API accepts `bcc` as either a string or an array of strings.
+  // Only include the field if we actually have addresses to BCC; sending an
+  // empty array or empty string can cause some providers to reject the
+  // request, and it adds noise to the audit trail.
+  const payload = { from, to, subject, html, text };
+  if (bcc.length > 0) payload.bcc = bcc;
+
   try {
     const res = await fetch(RESEND_ENDPOINT, {
       method: 'POST',
@@ -239,7 +263,7 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from, to, subject, html, text }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       let errBody = '';
@@ -248,7 +272,8 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
       return { ok: false, status: res.status, error: errBody };
     }
     const body = await res.json().catch(() => ({}));
-    console.log(`[email] sent confirmation for ${booking.referenceNumber} to ${to} (resend id=${body?.id || 'unknown'})`);
+    const bccNote = bcc.length > 0 ? ` bcc=${bcc.join(',')}` : '';
+    console.log(`[email] sent confirmation for ${booking.referenceNumber} to ${to}${bccNote} (resend id=${body?.id || 'unknown'})`);
     return { ok: true, status: res.status, id: body?.id };
   } catch (err) {
     console.error('[email] send failed:', err?.message || err);
