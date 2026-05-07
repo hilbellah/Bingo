@@ -210,6 +210,10 @@ async function migrate() {
   try { exec('ALTER TABLE booking_items ADD COLUMN reference_number TEXT'); } catch(e) {}
   try { exec('CREATE UNIQUE INDEX idx_booking_items_reference ON booking_items(reference_number)'); } catch(e) {}
 
+  // --- Customer email on bookings (for confirmation emails) ---
+  console.log('Running booking email migration...');
+  try { exec('ALTER TABLE bookings ADD COLUMN email TEXT'); } catch(e) {}
+
   // --- Admin Users migration ---
   console.log('Running admin users migration...');
   exec(`

@@ -62,9 +62,12 @@ export default function BookingPanel({
   const [cardName, setCardName] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvv, setCvv] = useState('');
+  // Confirmation email — required so the customer receives the booking by email
+  // instead of needing to print on the spot.
+  const [email, setEmail] = useState('');
   // Track which fields the user has interacted with so we don't yell at them
   // about empty fields the moment the panel opens.
-  const [touched, setTouched] = useState({ cardName: false, cardNumber: false, expiry: false, cvv: false });
+  const [touched, setTouched] = useState({ cardName: false, cardNumber: false, expiry: false, cvv: false, email: false });
   const markTouched = (field) => setTouched(t => ({ ...t, [field]: true }));
 
   // Field-level validity (on raw values)
@@ -73,7 +76,12 @@ export default function BookingPanel({
   const isCardNumberValid = luhnValid(cardNumberDigits);
   const isExpiryValid = expiryValid(expiry);
   const isCvvValid = cvvValid(cvv, selectedCard);
-  const isPaymentValid = isCardNameValid && isCardNumberValid && isExpiryValid && isCvvValid;
+  // Permissive but useful email check — must contain a non-empty local part,
+  // an @, a domain, and a TLD-style segment after the dot. Catches real typos
+  // ("foo@bar", "foo@bar.") without rejecting unusual but valid addresses.
+  const trimmedEmail = (email || '').trim();
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
+  const isPaymentValid = isCardNameValid && isCardNumberValid && isExpiryValid && isCvvValid && isEmailValid;
 
   const handleExpiryChange = (e) => {
     setExpiry(formatExpiryInput(e.target.value));
@@ -87,9 +95,9 @@ export default function BookingPanel({
 
   const handlePaySubmit = () => {
     // Mark all touched so any remaining errors surface
-    setTouched({ cardName: true, cardNumber: true, expiry: true, cvv: true });
+    setTouched({ cardName: true, cardNumber: true, expiry: true, cvv: true, email: true });
     if (!isPaymentValid) return;
-    onSubmit();
+    onSubmit(trimmedEmail);
   };
 
   // Auto-detect card type from number using IIN/BIN ranges
@@ -640,6 +648,31 @@ export default function BookingPanel({
 
               {/* Payment fields */}
               <div className="space-y-3 mb-5">
+                {/* Email — required so we can send the confirmation/receipt */}
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">
+                    Email (for booking confirmation)
+                  </label>
+                  <input
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    onBlur={() => markTouched('email')}
+                    className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
+                      touched.email && !isEmailValid
+                        ? 'border-red-300 bg-red-50/40 focus:border-red-400'
+                        : 'border-gray-200 focus:border-brand-gold'
+                    }`}
+                    placeholder="you@example.com"
+                  />
+                  {touched.email && !isEmailValid ? (
+                    <p className="text-xs text-red-500 mt-1">Enter a valid email so we can send your tickets.</p>
+                  ) : (
+                    <p className="text-xs text-gray-400 mt-1">We'll send your booking confirmation here.</p>
+                  )}
+                </div>
                 <div>
                   <label className="text-xs font-medium text-gray-500 mb-1 block">Cardholder Name</label>
                   <input

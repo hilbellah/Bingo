@@ -60,11 +60,11 @@ export async function unlockSeat(seatId, holderId) {
   return res.json();
 }
 
-export async function createBooking(sessionId, holderId, attendees) {
+export async function createBooking(sessionId, holderId, attendees, email) {
   const res = await fetch(`${API}/bookings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, holderId, attendees })
+    body: JSON.stringify({ sessionId, holderId, attendees, email })
   });
   return res.json();
 }

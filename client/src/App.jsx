@@ -199,7 +199,7 @@ export default function App() {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (email) => {
     setLoading(true);
     setError('');
 
@@ -210,7 +210,7 @@ export default function App() {
       addons: (attendee.addons || []).filter(addon => addon.quantity > 0)
     }));
 
-    const result = await createBooking(selectedSession.id, holderId, bookingAttendees);
+    const result = await createBooking(selectedSession.id, holderId, bookingAttendees, email);
     setLoading(false);
 
     if (result.bookingId) setBooking(result);

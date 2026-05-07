@@ -57,6 +57,16 @@ export default function SalesDrilldownModal() {
                         </button>
                       </div>
                     </div>
+                    {/* Customer email — shown so admins can resend tickets or follow up.
+                        Older bookings made before email was required will show "(no email)". */}
+                    {b.email ? (
+                      <div className="mb-2 text-xs text-gray-500">
+                        <span className="text-gray-400">Email:</span>{' '}
+                        <a href={`mailto:${b.email}`} className="text-brand-blue hover:underline">{b.email}</a>
+                      </div>
+                    ) : (
+                      <div className="mb-2 text-xs text-gray-400 italic">Email: (none on file)</div>
+                    )}
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-gray-400 border-b">

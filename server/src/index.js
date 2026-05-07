@@ -15,6 +15,7 @@ import { releaseExpiredHolds } from './services/holds.js';
 import { cleanupOldData, ensureFutureSessions, getScheduleSummary, openWeeklySessions } from './services/scheduler.js';
 import { createUploadMiddleware } from './uploads.js';
 import { formatLocalDate, formatPrice, generateRef } from './utils/format.js';
+import { sendBookingConfirmation } from './services/email.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -230,10 +231,17 @@ app.post('/api/seats/:seatId/unlock', (req, res) => {
 
 // --- Create Booking ---
 app.post('/api/bookings', (req, res) => {
-  const { sessionId, holderId, attendees } = req.body;
+  const { sessionId, holderId, attendees, email } = req.body;
 
   if (!sessionId || !holderId || !attendees?.length) {
     return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  // Email is required so we can send the confirmation. Permissive regex —
+  // we just want to catch typos like "foo@bar" before saving.
+  const trimmedEmail = (email || '').trim();
+  if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    return res.status(400).json({ error: 'A valid email address is required for the booking confirmation.' });
   }
 
   const session = get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
@@ -344,8 +352,8 @@ app.post('/api/bookings', (req, res) => {
       }
     }
 
-    run('INSERT INTO bookings (id, session_id, reference_number, total_amount, payment_status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [bookingId, sessionId, refNumber, totalAmount, 'paid', new Date().toISOString()]);
+    run('INSERT INTO bookings (id, session_id, reference_number, total_amount, payment_status, created_at, email) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [bookingId, sessionId, refNumber, totalAmount, 'paid', new Date().toISOString(), trimmedEmail]);
 
     for (const att of attendees) {
       io.to(`session:${sessionId}`).emit('seat:sold', { seatId: att.seatId, sessionId });
@@ -441,7 +449,37 @@ app.post('/api/bookings', (req, res) => {
       referenceNumber: refNumber,
       itemReferences: itemRefs,
       totalAmount,
-      totalFormatted: '$' + formatPrice(totalAmount)
+      totalFormatted: '$' + formatPrice(totalAmount),
+      email: trimmedEmail
+    });
+
+    // Fire the confirmation email AFTER responding so the customer never
+    // waits on Resend. Failure here must not affect the booking — we already
+    // wrote it to disk and returned 200. Any send error is logged inside
+    // sendBookingConfirmation and shows up in Render's logs.
+    //
+    // We use the same package list source the booking actually used (session
+    // override or global) so addon names render correctly in the email.
+    setImmediate(() => {
+      const emailPackages = useSessionPkgs
+        ? sessionPkgs
+        : all('SELECT * FROM packages WHERE is_active = 1');
+      sendBookingConfirmation({
+        to: trimmedEmail,
+        booking: {
+          referenceNumber: refNumber,
+          itemReferences: itemRefs,
+          totalAmount,
+          totalFormatted: '$' + formatPrice(totalAmount),
+        },
+        session,
+        attendees,
+        seats: attendees.map(a => {
+          const s = get('SELECT id, table_number, chair_number FROM seats WHERE id = ?', [a.seatId]);
+          return s || { id: a.seatId, table_number: '?', chair_number: '?' };
+        }),
+        packages: emailPackages,
+      }).catch(err => console.error('[email] unexpected error:', err));
     });
   } catch (err) {
     console.error('Booking error:', err);
@@ -1004,7 +1042,7 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
   if (sessionId) { whereClause = 'WHERE b.session_id = ?'; params.push(sessionId); }
 
   const rows = all(`
-    SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
+    SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at, b.email,
            s.date as session_date, s.time as session_time,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
            bi.reference_number as item_reference_number,
@@ -1030,6 +1068,7 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
         totalFormatted: '$' + formatPrice(row.total_amount),
         paymentStatus: row.payment_status,
         createdAt: row.created_at,
+        email: row.email,
         sessionDate: row.session_date,
         sessionTime: row.session_time,
         items: []

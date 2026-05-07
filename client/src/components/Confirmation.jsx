@@ -1,9 +1,7 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { formatDateLong, formatTime, formatPrice } from '../utils/formatters';
 
 export default function Confirmation({ booking, session, attendees, seats, selectedSeats, requiredPkg, optionalPkgs = [] }) {
-  const navigate = useNavigate();
 
   const getSeatInfo = (seatId) => {
     const seat = seats.find(s => s.id === seatId);
@@ -90,6 +88,34 @@ export default function Confirmation({ booking, session, attendees, seats, selec
           </div>
         </div>
 
+        {/* Email-confirmation notice — replaces the old Print Tickets flow.
+            Customers now receive their booking by email; this block tells them
+            where to expect it and what to do if it doesn't arrive. */}
+        <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-4 mb-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <div>
+              <p className="text-sm font-semibold text-green-800">
+                Confirmation email sent
+              </p>
+              {booking.email ? (
+                <p className="text-sm text-green-700 mt-0.5">
+                  We've emailed your tickets to <strong className="font-semibold">{booking.email}</strong>.
+                </p>
+              ) : (
+                <p className="text-sm text-green-700 mt-0.5">
+                  We've emailed your tickets to the address you provided.
+                </p>
+              )}
+              <p className="text-xs text-green-700 mt-1">
+                Don't see it? Check your spam folder, then keep this booking reference handy as a backup.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Reminder */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 mb-6">
           <p className="text-sm text-blue-700 font-medium">
@@ -99,19 +125,10 @@ export default function Confirmation({ booking, session, attendees, seats, selec
         </div>
 
         {/* Actions */}
-        <div className="flex gap-3">
-          <button
-            onClick={() => navigate(`/tickets/${booking.referenceNumber}`)}
-            className="flex-1 bg-brand-blue text-white py-3 rounded-xl font-semibold text-base hover:bg-brand-blue/90 transition flex items-center justify-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-            Print Tickets
-          </button>
+        <div>
           <button
             onClick={() => window.location.reload()}
-            className="flex-1 bg-brand-gold text-white py-3 rounded-xl font-semibold text-base hover:bg-brand-gold-light transition flex items-center justify-center gap-2"
+            className="w-full bg-brand-gold text-white py-3 rounded-xl font-semibold text-base hover:bg-brand-gold-light transition flex items-center justify-center gap-2"
           >
             Book Again
           </button>
