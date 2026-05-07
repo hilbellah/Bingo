@@ -92,18 +92,18 @@ app.get('/api/sessions', (req, res) => {
 
 // --- Session-specific packages (public) ---
 app.get('/api/sessions/:sessionId/packages', (req, res) => {
-  const session = get('SELECT * FROM sessions WHERE id = ?', [req.params.sessionId]);
-  const isSpecial = session && session.is_special_event;
-
+  // If the session has its own override list (special events use this), return it as-is.
   const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.sessionId]);
   if (sessionPkgs.length > 0) {
     return res.json(sessionPkgs);
   }
-  // Fall back to global packages; PHD packages are only available for special events
+  // Otherwise fall back to the global active package list — including PHD packages.
+  // PHD availability is enforced by the global PHD inventory (see /api/phd-inventory
+  // and the validator in POST /api/bookings), not by session type, so PHD packages
+  // are offered on every session that uses the global list. To hide a PHD package
+  // from a specific session, give that session its own override list via the admin
+  // Sessions tab, or disable the PHD package globally.
   const globalPkgs = all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC');
-  if (!isSpecial) {
-    return res.json(globalPkgs.filter(p => !p.is_phd));
-  }
   res.json(globalPkgs);
 });
 
