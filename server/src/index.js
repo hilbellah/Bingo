@@ -959,6 +959,33 @@ app.patch('/api/admin/packages/:id', adminAuth, (req, res) => {
   res.json({ success: true });
 });
 
+// Delete a package — but ONLY if it isn't referenced by any historical booking.
+// booking_items.package_id and booking_addons.package_id are FKs into packages(id),
+// and `PRAGMA foreign_keys = ON`, so deleting a referenced package would fail with
+// a constraint violation AND would corrupt historical sales reports if it didn't.
+// If the package has bookings, we return 409 with a clear message telling the
+// admin to Disable it instead.
+app.delete('/api/admin/packages/:id', adminAuth, (req, res) => {
+  const id = req.params.id;
+  const pkg = get('SELECT id, name FROM packages WHERE id = ?', [id]);
+  if (!pkg) return res.status(404).json({ error: 'Package not found' });
+
+  const itemRow = get('SELECT COUNT(*) AS c FROM booking_items WHERE package_id = ?', [id]);
+  const addonRow = get('SELECT COUNT(*) AS c FROM booking_addons WHERE package_id = ?', [id]);
+  const totalRefs = (itemRow ? itemRow.c : 0) + (addonRow ? addonRow.c : 0);
+
+  if (totalRefs > 0) {
+    return res.status(409).json({
+      error: 'package_in_use',
+      message: `Cannot delete "${pkg.name}" — it is referenced by ${totalRefs} booking record${totalRefs === 1 ? '' : 's'}. Disable it instead so it stops appearing on new bookings while preserving sales history.`,
+      references: totalRefs,
+    });
+  }
+
+  run('DELETE FROM packages WHERE id = ?', [id]);
+  res.json({ success: true, deleted: pkg.name });
+});
+
 app.patch('/api/admin/seats/:id', adminAuth, (req, res) => {
   const { is_disabled } = req.body;
   if (is_disabled !== undefined) {

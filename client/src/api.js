@@ -145,6 +145,18 @@ export async function updateAdminPackage(token, id, data) {
   return res.json();
 }
 
+export async function deleteAdminPackage(token, id) {
+  const res = await fetch(`${API}/admin/packages/${id}`, {
+    method: 'DELETE', headers: adminHeaders(token)
+  });
+  // 200 → { success: true, deleted: name }
+  // 409 → { error: 'package_in_use', message, references }
+  // 404 → { error: 'Package not found' }
+  // Caller should check both ok and parsed body so they can show the message.
+  const body = await res.json();
+  return { ok: res.ok, status: res.status, ...body };
+}
+
 export async function fetchDailySales(token, date, search) {
   const params = new URLSearchParams();
   if (date) params.set('date', date);

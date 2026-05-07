@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
-  updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage,
+  updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
   fetchAdminBookings, cancelAdminBooking, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
@@ -38,6 +38,7 @@ export default function AdminDashboard() {
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
   const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false });
+  const [editingPackage, setEditingPackage] = useState(null); // { id, name, price, type, max_quantity, sort_order, is_phd } — null when not editing
   const [editingSessionPkgs, setEditingSessionPkgs] = useState(null); // session id being edited
   const [sessionPkgList, setSessionPkgList] = useState([]);
   const [editingSession, setEditingSession] = useState(null); // session object being edited
@@ -564,6 +565,78 @@ export default function AdminDashboard() {
     loadPackages();
   };
 
+  // --- Package edit/delete ---
+  // Edit: load the package's current values into the inline edit form (price is
+  // converted from cents to a string of dollars so the admin sees what they
+  // typed originally). Cancel discards. Save PATCHes the row and reloads.
+  const handleStartEditPackage = (pkg) => {
+    setEditingPackage({
+      id: pkg.id,
+      name: pkg.name || '',
+      price: ((pkg.price || 0) / 100).toFixed(2),
+      type: pkg.type || 'optional',
+      max_quantity: pkg.max_quantity ?? 1,
+      sort_order: pkg.sort_order ?? 0,
+      is_phd: !!pkg.is_phd,
+    });
+  };
+
+  const handleCancelEditPackage = () => setEditingPackage(null);
+
+  const handleSaveEditPackage = async () => {
+    if (!editingPackage) return;
+    if (!editingPackage.name || editingPackage.price === '' || editingPackage.price == null) {
+      alert('Name and price are required.');
+      return;
+    }
+    const priceCents = Math.round(parseFloat(editingPackage.price) * 100);
+    if (Number.isNaN(priceCents) || priceCents < 0) {
+      alert('Price must be a non-negative number.');
+      return;
+    }
+    try {
+      await updateAdminPackage(token, editingPackage.id, {
+        name: editingPackage.name,
+        price: priceCents,
+        type: editingPackage.type,
+        max_quantity: parseInt(editingPackage.max_quantity) || 1,
+        sort_order: parseInt(editingPackage.sort_order) || 0,
+        is_phd: editingPackage.is_phd,
+      });
+      setEditingPackage(null);
+      loadPackages();
+    } catch (err) {
+      alert('Failed to update package: ' + (err?.message || 'Unknown error'));
+    }
+  };
+
+  // Delete: confirms first. Server hard-deletes only if no booking_items or
+  // booking_addons reference the package; otherwise it returns 409 with a
+  // friendly message and the admin sees a guidance alert (use Disable instead).
+  const handleDeletePackage = async (pkg) => {
+    const confirmMsg =
+      `Delete package "${pkg.name}"?\n\nThis will permanently remove it. ` +
+      `If this package has ever been used in a booking, the system will block the delete and ` +
+      `you'll be told to disable it instead.\n\nThis cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      const result = await deleteAdminPackage(token, pkg.id);
+      if (!result.ok) {
+        // 409 → in use, 404 → already gone, anything else → generic
+        if (result.error === 'package_in_use' && result.message) {
+          alert(result.message);
+        } else if (result.error) {
+          alert('Could not delete package: ' + (result.message || result.error));
+        } else {
+          alert('Could not delete package (HTTP ' + result.status + ').');
+        }
+      }
+    } catch (err) {
+      alert('Failed to delete package: ' + (err?.message || 'Unknown error'));
+    }
+    loadPackages();
+  };
+
   const handleRestoreSession = async (id) => {
     if (!window.confirm('Restore this deleted session?')) return;
     await restoreSession(token, id);
@@ -664,6 +737,12 @@ export default function AdminDashboard() {
     setNewPackage,
     handleCreatePackage,
     handleTogglePackage,
+    editingPackage,
+    setEditingPackage,
+    handleStartEditPackage,
+    handleCancelEditPackage,
+    handleSaveEditPackage,
+    handleDeletePackage,
     formatPrice,
     announcements,
     newAnnouncement,
