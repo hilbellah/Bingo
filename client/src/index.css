@@ -359,12 +359,12 @@ html {
 
 /* ── Unified floor-plan grid (13 columns) ──
    Each cell holds one "table unit" = left chair col (14px) + table (40px)
-   + right chair col (14px) = 68px wide. The horizontal gap is small so the
-   chairs of adjacent tables sit close together (matching the venue blueprint). */
+   + right chair col (14px) = 68px wide. Horizontal gap gives breathing room
+   between adjacent tables; vertical gap separates rows. */
 .floorplan-grid {
   display: grid;
   grid-template-columns: repeat(13, 68px);
-  gap: 5px 6px;
+  gap: 10px 18px;
   margin: 0 auto;
   width: max-content;
 }
