@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wolastoq BINGO - Step-by-Step Guide</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a1628;
+    color: #e0e0e0;
+    line-height: 1.6;
+    padding: 0;
+  }
+  .header {
+    background: linear-gradient(135deg, #0d1f3c, #1a3a5c);
+    padding: 40px 20px;
+    text-align: center;
+    border-bottom: 3px solid #c9a84c;
+  }
+  .header h1 { color: #c9a84c; font-size: 2.5em; margin-bottom: 8px; }
+  .header p { color: #aaa; font-size: 1.1em; }
+  .header a { color: #c9a84c; text-decoration: none; }
+  .header a:hover { text-decoration: underline; }
+  .container { max-width: 900px; margin: 0 auto; padding: 30px 20px; }
+  .part-header {
+    background: linear-gradient(135deg, #1a3a5c, #0d1f3c);
+    padding: 30px;
+    border-radius: 12px;
+    margin: 40px 0 30px;
+    border-left: 5px solid #c9a84c;
+  }
+  .part-header h2 { color: #c9a84c; font-size: 1.8em; margin-bottom: 5px; }
+  .part-header p { color: #aaa; }
+  .step {
+    background: #111d2e;
+    border-radius: 12px;
+    padding: 30px;
+    margin-bottom: 25px;
+    border: 1px solid #1e3a5f;
+  }
+  .step h3 {
+    color: #c9a84c;
+    font-size: 1.3em;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .step-number {
+    background: #c9a84c;
+    color: #0a1628;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 0.9em;
+    flex-shrink: 0;
+  }
+  .step ul { margin: 10px 0 15px 20px; }
+  .step li { margin-bottom: 6px; }
+  .step img {
+    width: 100%;
+    border-radius: 8px;
+    margin-top: 15px;
+    border: 2px solid #1e3a5f;
+    cursor: pointer;
+  }
+  .step img:hover { border-color: #c9a84c; }
+  .note {
+    background: #1a2a3c;
+    border-left: 4px solid #c9a84c;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.95em;
+  }
+  .note strong { color: #c9a84c; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+  }
+  th {
+    background: #1a3a5c;
+    color: #c9a84c;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 2px solid #c9a84c;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #1e3a5f;
+  }
+  tr:hover td { background: #152236; }
+  .flow-diagram {
+    background: #0d1f3c;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    font-family: monospace;
+    font-size: 0.95em;
+    color: #c9a84c;
+    margin: 15px 0;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .ref-card {
+    background: #111d2e;
+    border-radius: 12px;
+    padding: 30px;
+    margin-top: 30px;
+    border: 1px solid #1e3a5f;
+  }
+  .ref-card h2 { color: #c9a84c; margin-bottom: 20px; }
+  .ref-card h3 { color: #c9a84c; margin: 20px 0 10px; }
+  code {
+    background: #1a2a3c;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: #c9a84c;
+  }
+  .divider {
+    height: 2px;
+    background: linear-gradient(to right, transparent, #c9a84c, transparent);
+    margin: 40px 0;
+  }
+  @media print {
+    body { background: white; color: #222; }
+    .header { background: #f5f5f5; border-bottom-color: #c9a84c; }
+    .step { border-color: #ddd; background: #fafafa; break-inside: avoid; }
+    .step img { border-color: #ccc; max-height: 400px; object-fit: contain; }
+    .part-header { background: #f0f0f0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Wolastoq BINGO</h1>
+  <p>Step-by-Step Guide for Presentation & Testing</p>
+  <p style="margin-top: 10px;">Live Site: <a href="https://bingo-jk2h.onrender.com" target="_blank">https://bingo-jk2h.onrender.com</a></p>
+</div>
+
+<div class="container">
+
+<!-- ============ PART 1 ============ -->
+<div class="part-header">
+  <h2>PART 1: Buying Tickets (Customer Flow)</h2>
+  <p>This is what a customer sees when they visit the site to purchase bingo tickets.</p>
+</div>
+
+<div class="step">
+  <h3><span class="step-number">1</span> Open the Website</h3>
+  <ul>
+    <li>Go to <strong><a href="https://bingo-jk2h.onrender.com" target="_blank" style="color:#c9a84c;">https://bingo-jk2h.onrender.com</a></strong></li>
+    <li>The site loads with the <strong>Saint Mary's Entertainment Centre</strong> branding.</li>
+    <li>The first available bingo session is automatically selected.</li>
+    <li>Any active announcements appear at the top of the page.</li>
+  </ul>
+  <img src="screenshots/step1-homepage.png" alt="Homepage with floor map and session selector">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">2</span> Choose a Session (Date & Time)</h3>
+  <ul>
+    <li>Sessions are displayed in a <strong>weekly calendar bar</strong> at the top.</li>
+    <li>Use the <strong>left/right arrows</strong> to navigate between weeks (e.g., "APR 6 - APR 12").</li>
+    <li>Each session shows its <strong>date, time, and available seats</strong> (e.g., "Tue, Apr 7 - 6:30 PM (444)").</li>
+    <li>The currently selected session is highlighted in <strong>gold</strong>.</li>
+  </ul>
+  <div class="note">
+    <strong>Color Legend:</strong> Green = Available | Amber = Partial | Blue = Your Pick | Gray = Full
+  </div>
+  <img src="screenshots/step2-sessions.png" alt="Session selector bar with week navigation">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">3</span> Select Your Seats on the Floor Map</h3>
+  <ul>
+    <li>A <strong>74-table floor plan</strong> appears showing the venue layout (tables 1-75, skipping table 41).</li>
+    <li>The floor plan shows "FRONT OF ROOM - STAGE" at the top and "ENTRANCE / BACK OF ROOM" at the bottom.</li>
+    <li>Each table shows its number and available seats (e.g., "6/6").</li>
+    <li><strong>Click a table</strong> to expand it and see the individual chairs (6 per table, numbered 1-6).</li>
+  </ul>
+  <img src="screenshots/step3-seat-selection.png" alt="Table clicked showing 6 available chairs">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">4</span> Lock a Seat</h3>
+  <ul>
+    <li><strong>Click a chair number</strong> inside the expanded table to lock it.</li>
+    <li>The seat is held for <strong>10 minutes</strong> (a countdown timer appears in the header).</li>
+    <li>Your locked seats turn <strong>blue</strong> on the floor map.</li>
+    <li>Other customers see your locked seats in real time -- they cannot double-book.</li>
+    <li>The booking panel opens automatically after your first seat selection.</li>
+  </ul>
+  <img src="screenshots/step4-seat-locked.png" alt="Seat selected with chair picker visible">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">5</span> Choose Party Size & Enter Player Names</h3>
+  <ul>
+    <li>After selecting a seat, the <strong>booking panel</strong> opens on the right side.</li>
+    <li>Select your party size: <strong>1 through 6</strong> players (Just Me, Pair, Trio, Group of 4/5, Full Table).</li>
+    <li>For each player, enter <strong>First Name</strong> and <strong>Last Name</strong>.</li>
+    <li>The <strong>base package</strong> is automatically included (e.g., "Mega Bucks Bingo - $25.00").</li>
+    <li>Optional <strong>add-ons</strong> can be selected with quantity controls (+/-).</li>
+    <li>A <strong>running subtotal</strong> is shown for each player in gold text.</li>
+  </ul>
+  <div class="note">
+    <strong>Note:</strong> For special events, players will see the event's custom packages instead of the standard ones.
+  </div>
+  <img src="screenshots/step5-booking-panel.png" alt="Booking panel with party size and name entry">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">6</span> Review Your Order</h3>
+  <ul>
+    <li>A summary screen shows session info, per-player breakdown (name, table/seat, packages, price), and <strong>grand total</strong> in gold.</li>
+    <li>Use the <strong>Back</strong> button to make changes, or <strong>Next</strong> to proceed to payment.</li>
+  </ul>
+  <img src="screenshots/step6-packages.png" alt="Order summary with packages breakdown">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">7</span> Enter Payment Information</h3>
+  <ul>
+    <li>A yellow banner reminds you this is <strong>demo mode</strong> (no real charges).</li>
+    <li>Fill in: <strong>Cardholder Name</strong>, <strong>Card Number</strong> (auto-detects Visa/Mastercard/Amex/Discover), <strong>Expiry Date</strong> (MM/YY), <strong>CVV</strong>, <strong>Address</strong>, <strong>Postal Code</strong>.</li>
+    <li>Click <strong>"Complete Booking - $XX.XX"</strong> to submit.</li>
+  </ul>
+</div>
+
+<div class="step">
+  <h3><span class="step-number">8</span> Booking Confirmation</h3>
+  <ul>
+    <li>A <strong>success screen</strong> appears with a green checkmark.</li>
+    <li>You see: <strong>Booking Reference Number</strong> (BNG-XXXXXX), <strong>date/time</strong>, <strong>total paid</strong>, <strong>seat assignments</strong>.</li>
+    <li>Two options: <strong>"View Printable Tickets"</strong> or <strong>"Start New Booking"</strong>.</li>
+  </ul>
+</div>
+
+<div class="step">
+  <h3><span class="step-number">9</span> Print Your Tickets</h3>
+  <ul>
+    <li>Tickets can be accessed anytime at <strong><a href="https://bingo-jk2h.onrender.com/tickets" target="_blank" style="color:#c9a84c;">https://bingo-jk2h.onrender.com/tickets</a></strong></li>
+    <li>Enter your <strong>reference number</strong> (BNG-XXXXXX) to look up your tickets.</li>
+    <li>Each attendee gets a <strong>double-sided tear-off ticket</strong> with venue copy and customer copy.</li>
+    <li>Optimized for <strong>A4 printing</strong> -- use your browser's Print function (Ctrl+P).</li>
+    <li>No login required -- just the reference number.</li>
+  </ul>
+  <img src="screenshots/step7-tickets-lookup.png" alt="Ticket lookup page">
+</div>
+
+<div class="divider"></div>
+
+<!-- ============ PART 2 ============ -->
+<div class="part-header">
+  <h2>PART 2: Setting Up Special Events (Admin Flow)</h2>
+  <p>This is what an administrator does to create and manage special bingo events.</p>
+</div>
+
+<div class="step">
+  <h3><span class="step-number">1</span> Log In to the Admin Panel</h3>
+  <ul>
+    <li>Navigate to <strong><a href="https://bingo-jk2h.onrender.com/admin" target="_blank" style="color:#c9a84c;">https://bingo-jk2h.onrender.com/admin</a></strong></li>
+    <li>Enter your <strong>Username</strong> and <strong>Password</strong>.</li>
+    <li>Click <strong>Sign In</strong>.</li>
+  </ul>
+  <img src="screenshots/admin1-login.png" alt="Admin login page">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">2</span> View the Dashboard</h3>
+  <ul>
+    <li>Key metrics at the top: <strong>Today's Bookings</strong>, <strong>Today's Revenue</strong>, <strong>Upcoming Sessions</strong>.</li>
+    <li>Below: table of <strong>Upcoming Sessions</strong> with date, time, available/sold/held seats.</li>
+  </ul>
+  <table>
+    <tr><th>Tab</th><th>Purpose</th></tr>
+    <tr><td><strong>Dashboard</strong></td><td>Key metrics and upcoming sessions overview</td></tr>
+    <tr><td><strong>Sessions</strong></td><td>Create and manage sessions/special events</td></tr>
+    <tr><td><strong>Packages</strong></td><td>View and manage global ticket packages</td></tr>
+    <tr><td><strong>Announcements</strong></td><td>Create public announcements</td></tr>
+    <tr><td><strong>Bookings & Reports</strong></td><td>View bookings, filter, export CSV</td></tr>
+    <tr><td><strong>Bulk Print</strong></td><td>Print all tickets for a date range</td></tr>
+  </table>
+  <img src="screenshots/admin2-dashboard.png" alt="Admin Dashboard with metrics">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">3</span> Go to Sessions Tab</h3>
+  <ul>
+    <li>Click the <strong>Sessions</strong> tab.</li>
+    <li>Two sections: <strong>Create New Session</strong> form at the top, and <strong>All Sessions</strong> table below.</li>
+  </ul>
+  <img src="screenshots/admin3-sessions-tab.png" alt="Sessions tab with create form and session list">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">4</span> Create a New Special Event</h3>
+  <ul>
+    <li><strong>Enter the date</strong> for the event.</li>
+    <li><strong>Enter the start time</strong> (default: 6:30 PM).</li>
+    <li><strong>Enter the cutoff time</strong> -- when online booking closes (default: 12:00 PM).</li>
+    <li><strong>Check the "Special Event" checkbox</strong>. The button changes to "Add Special Event" and a configuration section expands.</li>
+  </ul>
+  <img src="screenshots/admin4-create-session.png" alt="Create session form">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">5</span> Fill In Special Event Details</h3>
+  <ul>
+    <li><strong>Event Title</strong> (e.g., "Special Bingo Event 1") -- required.</li>
+    <li><strong>Description</strong> (optional -- visible to customers).</li>
+    <li><strong>Event Packages</strong> section with a <strong>"+ Add Package"</strong> link.</li>
+  </ul>
+  <img src="screenshots/admin5-special-event.png" alt="Special Event checkbox enabled with details">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">6</span> Configure Event Packages</h3>
+  <ul>
+    <li>Click <strong>"+ Add Package"</strong> to add custom packages.</li>
+    <li>For each package, enter: <strong>Package Name</strong>, <strong>Price</strong>, <strong>Type</strong> (Required or Add-on), <strong>Max Quantity</strong>.</li>
+    <li>Add as many packages as needed. Remove with the <strong>X</strong> button.</li>
+    <li>Click <strong>"Add Special Event"</strong> to create it.</li>
+  </ul>
+  <div class="note">
+    <strong>Behind the scenes:</strong> 444 seats (74 tables x 6 chairs) are automatically generated. Custom packages are saved for this event only.
+  </div>
+  <div class="note">
+    <strong>Tip:</strong> You need at least one <strong>Required</strong> package. This is every attendee's base ticket price.
+  </div>
+  <img src="screenshots/admin6-event-packages.png" alt="Event packages configuration">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">7</span> View All Sessions</h3>
+  <ul>
+    <li>Scroll down to see the <strong>All Sessions</strong> table with Date, Time, Cutoff, Type, Status, and Actions.</li>
+    <li>Special events show their event title under "Type" instead of "Regular".</li>
+    <li>Actions: <strong>Edit</strong>, <strong>Disable/Enable</strong> buttons.</li>
+  </ul>
+  <img src="screenshots/admin7-sessions-list.png" alt="All Sessions table">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">8</span> Manage Packages (Global)</h3>
+  <ul>
+    <li>Click the <strong>Packages</strong> tab to view and manage global ticket packages that apply to all regular (non-special-event) sessions.</li>
+  </ul>
+  <img src="screenshots/admin11-packages.png" alt="Global packages management tab">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">9</span> Monitor Bookings & Sales</h3>
+  <ul>
+    <li>Click the <strong>Bookings & Reports</strong> tab.</li>
+    <li><strong>Filter by Session</strong> using the dropdown.</li>
+    <li>Click <strong>"Export CSV"</strong> to download booking data as a spreadsheet.</li>
+    <li>View each booking with reference number, total, payment status, and attendee details.</li>
+    <li>Actions: <strong>Print Tickets</strong> or <strong>Cancel Booking</strong> (red).</li>
+  </ul>
+  <img src="screenshots/admin8-bookings.png" alt="Bookings & Reports tab">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">10</span> Bulk Print Tickets</h3>
+  <ul>
+    <li>Click the <strong>Bulk Print</strong> tab.</li>
+    <li>Select <strong>"From Date"</strong> and optional <strong>"To Date"</strong>.</li>
+    <li>Click <strong>"Load Tickets"</strong> to see a summary.</li>
+    <li>Click <strong>"Print All (X tickets)"</strong> to open browser print dialog.</li>
+    <li>Tickets print <strong>3 per page</strong> with venue and customer copies.</li>
+  </ul>
+  <img src="screenshots/admin9-bulk-print.png" alt="Bulk Print tab">
+</div>
+
+<div class="step">
+  <h3><span class="step-number">11</span> Create Announcements (Optional)</h3>
+  <ul>
+    <li>Click the <strong>Announcements</strong> tab.</li>
+    <li>Enter a <strong>Title</strong> (optional), select <strong>Type</strong> (Info/Warning/Success), enter <strong>Message</strong>.</li>
+    <li>Set <strong>Start Date</strong> and <strong>End Date</strong> (optional).</li>
+    <li>Click <strong>"Create Announcement"</strong>.</li>
+    <li>The announcement appears on the public booking page in real time.</li>
+  </ul>
+  <img src="screenshots/admin10-announcements.png" alt="Announcements tab">
+</div>
+
+<div class="divider"></div>
+
+<!-- ============ QUICK REFERENCE ============ -->
+<div class="ref-card">
+  <h2>Quick Reference Card</h2>
+
+  <h3>Customer Booking Flow</h3>
+  <div class="flow-diagram">
+    Homepage &rarr; Select Session &rarr; Pick Seats &rarr; Party Size &rarr; Names & Packages &rarr; Review &rarr; Pay &rarr; Confirmation &rarr; Print Tickets
+  </div>
+
+  <h3>Admin Event Setup Flow</h3>
+  <div class="flow-diagram">
+    Login &rarr; Sessions Tab &rarr; Create Session &rarr; Enable Special Event &rarr; Add Title &rarr; Configure Packages &rarr; Save &rarr; Monitor Bookings
+  </div>
+
+  <h3>Key URLs</h3>
+  <table>
+    <tr><th>Page</th><th>URL</th></tr>
+    <tr><td>Homepage (Booking)</td><td><a href="https://bingo-jk2h.onrender.com" target="_blank" style="color:#c9a84c;">https://bingo-jk2h.onrender.com</a></td></tr>
+    <tr><td>Ticket Lookup</td><td><a href="https://bingo-jk2h.onrender.com/tickets" target="_blank" style="color:#c9a84c;">https://bingo-jk2h.onrender.com/tickets</a></td></tr>
+    <tr><td>View Tickets</td><td>https://bingo-jk2h.onrender.com/tickets/{reference-number}</td></tr>
+    <tr><td>Admin Login</td><td><a href="https://bingo-jk2h.onrender.com/admin" target="_blank" style="color:#c9a84c;">https://bingo-jk2h.onrender.com/admin</a></td></tr>
+  </table>
+
+  <h3>Key Terms</h3>
+  <table>
+    <tr><th>Term</th><th>Meaning</th></tr>
+    <tr><td><strong>Session</strong></td><td>A scheduled bingo event on a specific date and time</td></tr>
+    <tr><td><strong>Special Event</strong></td><td>A session with a custom title, description, and unique packages</td></tr>
+    <tr><td><strong>Package</strong></td><td>A ticket type with a name and price (required or add-on)</td></tr>
+    <tr><td><strong>Reference Number</strong></td><td>Unique booking ID (format: BNG-XXXXXX)</td></tr>
+    <tr><td><strong>Cutoff Time</strong></td><td>Deadline for online booking before the session starts</td></tr>
+    <tr><td><strong>Hold Timer</strong></td><td>10-minute lock on selected seats to prevent double-booking</td></tr>
+    <tr><td><strong>SMEC</strong></td><td>Saint Mary's Entertainment Centre (venue name)</td></tr>
+  </table>
+</div>
+
+</div><!-- /container -->
+
+</body>
+</html>

@@ -2,7 +2,7 @@
 //
 // Layout (looking down at the room with the stage at the top):
 //
-//   FRONT OF ROOM — STAGE
+//   FRONT OF ROOM - STAGE
 //   +---------------------------+   +-----+   +----------------+
 //   |  upper-left (6 cols x 3   |   |Stage|   |  upper-right   |
 //   |  rows + col 7 has only    |   |  +  |   |  (4 cols x 3   |
@@ -13,7 +13,7 @@
 //   |  lower-left (7 cols x 3   |   |  lower-right (5 cols x 4    |
 //   |  rows)                    |   |  rows; leftmost col = 44-41)|
 //   +---------------------------+   +-----------------------------+
-//   BACK OF ROOM — ENTRANCE
+//   BACK OF ROOM - ENTRANCE
 
 export const SECTIONS = [
   {

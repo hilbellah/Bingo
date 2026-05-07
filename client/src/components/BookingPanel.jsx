@@ -1,25 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-
-function formatPrice(cents) {
-  return '$' + (cents / 100).toFixed(2);
-}
-
-function formatDate(dateStr) {
-  const d = new Date(dateStr + 'T12:00:00');
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-}
-
-function formatTime(timeStr) {
-  const [h, m] = timeStr.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-}
+import { formatDateShort, formatTime, formatPrice } from '../utils/formatters';
 
 // ---------- Payment validation helpers ----------
-// Luhn checksum — every real credit card number in circulation passes this.
+// Luhn checksum - every real credit card number in circulation passes this.
 // Accepts ANY card brand (Visa, MC, Amex, Discover, JCB, Diners, etc.) so we
 // can keep testing with whichever card while still rejecting bogus input.
 function luhnValid(rawNumber) {
@@ -219,7 +202,7 @@ export default function BookingPanel({
           <div>
             <h2 className="text-white font-bold text-lg">Book Your Seats</h2>
             {session && (
-              <p className="text-blue-200 text-sm">{formatDate(session.date)} at {formatTime(session.time)}</p>
+              <p className="text-blue-200 text-sm">{formatDateShort(session.date)} at {formatTime(session.time)}</p>
             )}
           </div>
           <button onClick={onClose} className="text-white/60 hover:text-white p-1 transition">
@@ -244,7 +227,7 @@ export default function BookingPanel({
                 <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold mr-1.5 ${
                   step === t.idx ? 'bg-brand-blue text-white' :
                   step > t.idx ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
-                }`}>{step > t.idx ? '✓' : t.idx + 1}</span>
+                }`}>{step > t.idx ? '\u2713' : t.idx + 1}</span>
                 {t.label}
               </button>
             );
@@ -292,7 +275,7 @@ export default function BookingPanel({
                 </div>
               </div>
 
-              {/* Name Forms — shown immediately based on party size */}
+              {/* Name Forms - shown immediately based on party size */}
               {partySize > 0 && (
                 <div>
                   <h3 className="font-bold text-brand-blue text-lg mb-3">
@@ -344,7 +327,7 @@ export default function BookingPanel({
               {partySize > 0 && (
                 <div className="mt-5 space-y-3">
                   {allNamesValid && chairsNeeded > 0 ? (
-                    /* Names filled but need more chairs — guide them to floor plan */
+                    /* Names filled but need more chairs - guide them to floor plan */
                     <button onClick={onPickChairs}
                       className="w-full bg-brand-gold text-white py-3.5 rounded-xl font-semibold text-lg transition hover:bg-brand-gold-light glow-gold-sm flex items-center justify-center gap-2">
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -353,7 +336,7 @@ export default function BookingPanel({
                       Select {chairsNeeded} More Chair{chairsNeeded !== 1 ? 's' : ''} on Floor Plan
                     </button>
                   ) : allNamesValid && allSeatsSelected ? (
-                    /* All good — go to packages */
+                    /* All good - go to packages */
                     <button onClick={() => setStep(1)}
                       className="w-full bg-brand-gold text-white py-3.5 rounded-xl font-semibold text-lg transition hover:bg-brand-gold-light glow-gold-sm">
                       Next: Choose Packages
@@ -400,7 +383,7 @@ export default function BookingPanel({
                           <span className="w-5 h-5 rounded-md bg-brand-blue text-white flex items-center justify-center shrink-0 text-[10px] font-bold">
                             {i + 1}
                           </span>
-                          {attendees[i]?.firstName || 'Player'} — T{info?.table} C{info?.chair}
+                          {attendees[i]?.firstName || 'Player'} - T{info?.table} C{info?.chair}
                         </span>
                       );
                     })}
@@ -482,7 +465,7 @@ export default function BookingPanel({
                               const soldOut = pkg.is_phd && phdInventory && phdInventory.remaining <= 0 && getAddonQty(i, pkg.id) === 0;
                               return (
                                 <option key={pkg.id} value={pkg.id} disabled={soldOut}>
-                                  {pkg.name} — {formatPrice(pkg.price)}{pkg.is_phd ? ' (PHD)' : ''}{soldOut ? ' — SOLD OUT' : ''}
+                                  {pkg.name} - {formatPrice(pkg.price)}{pkg.is_phd ? ' (PHD)' : ''}{soldOut ? ' - SOLD OUT' : ''}
                                 </option>
                               );
                             })}
@@ -623,12 +606,12 @@ export default function BookingPanel({
                 <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                 </svg>
-                Demo mode — no real charges
+                Demo mode - no real charges
               </div>
 
               {/* Card Type Auto-Detection Display */}
               <div className="mb-4">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 block">Card Type {selectedCard ? `— ${selectedCard === 'visa' ? 'Visa' : selectedCard === 'mastercard' ? 'Mastercard' : selectedCard === 'amex' ? 'American Express' : 'Discover'} detected` : '— enter card number'}</label>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 block">Card Type {selectedCard ? `- ${selectedCard === 'visa' ? 'Visa' : selectedCard === 'mastercard' ? 'Mastercard' : selectedCard === 'amex' ? 'American Express' : 'Discover'} detected` : '- enter card number'}</label>
                 <div className="grid grid-cols-4 gap-2">
                   {[
                     { id: 'visa', name: 'Visa',
@@ -701,7 +684,7 @@ export default function BookingPanel({
                         ? 'Card number is required.'
                         : cardNumberDigits.length < 13
                           ? 'Card number is too short.'
-                          : 'That card number isn’t valid. Please double-check it.'}
+                          : 'That card number is not valid. Please double-check it.'}
                     </p>
                   )}
                 </div>
@@ -750,7 +733,7 @@ export default function BookingPanel({
                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                 </svg>
-                Secure payment — your data is encrypted
+                Secure payment - your data is encrypted
               </div>
 
               <button onClick={handlePaySubmit} disabled={loading || !isPaymentValid}

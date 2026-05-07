@@ -1,4 +1,4 @@
-# Wolastoq Bingo — Saint Mary's Entertainment Centre
+# Wolastoq Bingo - Saint Mary's Entertainment Centre
 
 Online bingo ticket booking system with real-time seat selection, built for Saint Mary's Entertainment Centre (SMEC).
 
@@ -57,23 +57,24 @@ npm run dev
 
 ```
 wolastoq-bingo/
-├── client/               # React frontend
-│   ├── src/
-│   │   ├── components/   # Booking page components
-│   │   ├── admin/        # Admin panel components
-│   │   ├── App.jsx       # Main booking page
-│   │   ├── api.js        # API client functions
-│   │   └── useSocket.js  # Socket.io hook
-│   └── index.html
-├── server/               # Express backend
-│   ├── src/
-│   │   ├── index.js      # Server + API routes + Socket.io
-│   │   ├── database.js   # SQLite connection (sql.js)
-│   │   ├── migrate.js    # Schema migrations
-│   │   └── seed.js       # Sample data seeder
-│   └── .env              # Environment config
-├── exports/              # CSV report exports
-└── package.json          # Root scripts
+|-- client/               # React frontend
+|   |-- src/
+|   |   |-- admin/        # Admin panel components
+|   |   |-- components/   # Booking page, floor plan, tickets, tutorial UI
+|   |   |-- utils/        # Shared formatting/helpers
+|   |   |-- App.jsx       # Customer booking page orchestration
+|   |   |-- api.js        # API client functions
+|   |   `-- useSocket.js  # Socket.io hook
+|   `-- index.html
+|-- server/               # Express backend
+|   |-- src/
+|   |   |-- index.js      # Server + API routes + Socket.io
+|   |   |-- database.js   # SQLite connection (sql.js)
+|   |   |-- migrate.js    # Schema migrations
+|   |   `-- seed.js       # Sample data seeder
+|   `-- .env              # Environment config
+|-- exports/              # CSV report exports
+`-- package.json          # Root scripts
 ```
 
 ## Scripts

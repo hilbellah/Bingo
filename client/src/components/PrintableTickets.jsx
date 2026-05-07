@@ -1,23 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-
-function formatDate(dateStr) {
-  const d = new Date(dateStr + 'T12:00:00');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-}
-
-function formatTime(timeStr) {
-  const [h, m] = timeStr.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-}
-
-function formatPrice(cents) {
-  return '$' + (cents / 100).toFixed(2);
-}
+import { formatDateShort, formatTime, formatPrice } from '../utils/formatters';
 
 function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTitle }) {
   const displayTitle = eventTitle || 'Mega Bucks Bingo';
@@ -25,7 +8,7 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
   return (
     <div className="ticket-card">
       <div className="ticket-inner">
-        {/* Left half: Client/Venue copy — name prominent */}
+        {/* Left half: Client/Venue copy - name prominent */}
         <div className="ticket-half ticket-half-left">
           <div className="ticket-name-prominent">
             {ticket.firstName} {ticket.lastName}
@@ -54,7 +37,7 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
             </div>
           )}
           <div className="ticket-half-row ticket-meta">
-            <span className="ticket-meta-text">{formatDate(sessionDate)}</span>
+            <span className="ticket-meta-text">{formatDateShort(sessionDate)}</span>
             <span className="ticket-meta-text">{formatTime(sessionTime)}</span>
           </div>
           <div className="ticket-ref-block">
@@ -62,7 +45,7 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
           </div>
         </div>
 
-        {/* Right half: Customer/Attendee copy — table/seat prominent */}
+        {/* Right half: Customer/Attendee copy - table/seat prominent */}
         <div className="ticket-half ticket-half-right">
           <h2 className="ticket-title">{displayTitle}</h2>
           <div className="ticket-logo">
@@ -81,7 +64,7 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
           <div className="ticket-name-secondary">
             {ticket.firstName} {ticket.lastName}
           </div>
-          <p className="ticket-price-sm">{formatPrice(ticket.packagePrice)} — {ticket.packageName}</p>
+          <p className="ticket-price-sm">{formatPrice(ticket.packagePrice)} - {ticket.packageName}</p>
           {ticket.addons && ticket.addons.length > 0 && (
             <div className="ticket-addons">
               {ticket.addons.map((a, idx) => (
@@ -90,7 +73,7 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
             </div>
           )}
           <div className="ticket-half-row ticket-meta">
-            <span className="ticket-meta-text">{formatDate(sessionDate)}</span>
+            <span className="ticket-meta-text">{formatDateShort(sessionDate)}</span>
             <span className="ticket-meta-text">{formatTime(sessionTime)}</span>
           </div>
           <div className="ticket-ref-block">
@@ -134,7 +117,7 @@ export default function PrintableTickets() {
   };
 
   if (!ref) {
-    // No ref in URL — show search form only
+    // No ref in URL - show search form only
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="bg-white rounded-xl p-8 shadow max-w-md w-full">

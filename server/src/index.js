@@ -3,15 +3,18 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import multer from 'multer';
-import { getDb, all, get, run, exec, saveDb, batchRun, scheduleSaveAfterBatch } from './database.js';
+import { getDb, all, get, run, saveDb } from './database.js';
 import { migrate } from './migrate.js';
 import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
 import bcrypt from 'bcryptjs';
+import { adminAuth } from './middleware/adminAuth.js';
+import { releaseExpiredHolds } from './services/holds.js';
+import { cleanupOldData, ensureFutureSessions, getScheduleSummary, openWeeklySessions } from './services/scheduler.js';
+import { createUploadMiddleware } from './uploads.js';
+import { formatLocalDate, formatPrice, generateRef } from './utils/format.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -26,32 +29,7 @@ const PORT = process.env.PORT || 3001;
 const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '10');
 const startTime = Date.now();
 
-function formatLocalDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-// Configure multer for image uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${uuid()}${ext}`);
-  }
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error('Only image files (jpg, png, gif, webp) are allowed'));
-  }
-});
+const { uploadsDir, upload } = createUploadMiddleware(__dirname);
 
 app.use(cors());
 app.use(express.json());
@@ -84,28 +62,6 @@ app.get('/health', async (req, res) => {
     });
   }
 });
-
-// ============ HELPERS ============
-
-function generateRef() {
-  return 'BNG-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-}
-
-function formatPrice(cents) {
-  return (cents / 100).toFixed(2);
-}
-
-function releaseExpiredHolds() {
-  const now = new Date().toISOString();
-  const result = run(
-    `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
-     WHERE status = 'held' AND held_until < ?`, [now]
-  );
-  if (result.changes > 0) {
-    logger.info('Released expired seat holds', { seats_released: result.changes });
-    io.emit('seats:refresh');
-  }
-}
 
 // ============ AUDIT HELPER ============
 
@@ -494,27 +450,6 @@ app.post('/api/bookings', (req, res) => {
 });
 
 // ============ ADMIN ============
-
-function adminAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Basic ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  const decoded = Buffer.from(auth.split(' ')[1], 'base64').toString();
-  const [user, pass] = decoded.split(':');
-  // Check env-var admin first
-  if (user.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() && pass === process.env.ADMIN_PASSWORD) {
-    req.adminUser = { email: user, source: 'env' };
-    return next();
-  }
-  // Check DB admin users
-  const dbUser = get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [user]);
-  if (dbUser && bcrypt.compareSync(pass, dbUser.password_hash)) {
-    req.adminUser = { id: dbUser.id, email: dbUser.email, displayName: dbUser.display_name, source: 'db' };
-    return next();
-  }
-  res.status(401).json({ error: 'Invalid credentials' });
-}
 
 app.post('/api/admin/login', (req, res) => {
   const { username, password } = req.body;
@@ -1309,30 +1244,7 @@ app.post('/api/admin/sessions/:id/packages', adminAuth, (req, res) => {
 
 // --- Admin: Schedule info and manual trigger ---
 app.get('/api/admin/schedule', adminAuth, (req, res) => {
-  const now = new Date();
-  const thisMonday = getWeekMonday(now);
-  const thisSunday = new Date(thisMonday);
-  thisSunday.setDate(thisMonday.getDate() + 6);
-  const mondayStr = formatLocalDate(thisMonday);
-  const sundayStr = formatLocalDate(thisSunday);
-
-  const thisWeekSessions = all(
-    `SELECT date, time, is_available, is_special_event FROM sessions
-     WHERE date >= ? AND date <= ? AND deleted_at IS NULL ORDER BY date ASC`,
-    [mondayStr, sundayStr]
-  );
-
-  const totalAuto = all(
-    `SELECT COUNT(*) as count FROM sessions WHERE date >= ? AND is_special_event = 0 AND deleted_at IS NULL`,
-    [formatLocalDate(now)]
-  );
-
-  res.json({
-    schedule: 'Tue-Sun weekly, opens Monday morning',
-    weeksGenerated: WEEKS_TO_GENERATE,
-    currentWeek: { monday: mondayStr, sunday: sundayStr, sessions: thisWeekSessions },
-    upcomingAutoSessions: totalAuto[0]?.count || 0
-  });
+  res.json(getScheduleSummary());
 });
 
 app.post('/api/admin/schedule/generate', adminAuth, (req, res) => {
@@ -1517,126 +1429,6 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(clientBuild, 'index.html'));
 });
 
-// ============ AUTO-SESSION GENERATION ============
-
-const WEEKS_TO_GENERATE = 3;
-
-function getWeekMonday(date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = (day === 0 ? -6 : 1) - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(12, 0, 0, 0);
-  return d;
-}
-
-function cleanupOldData() {
-  const thirtyDaysAgo = formatLocalDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
-  const ninetyDaysAgo = formatLocalDate(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000));
-
-  // Delete old sessions (older than 30 days) that are NOT special events and have deleted_at set or are old enough
-  const oldSessions = all(`
-    SELECT id FROM sessions
-    WHERE date < ?
-      AND is_special_event = 0
-      AND deleted_at IS NOT NULL
-  `, [thirtyDaysAgo]);
-
-  if (oldSessions.length > 0) {
-    const sessionIds = oldSessions.map(s => s.id);
-    const placeholders = sessionIds.map(() => '?').join(',');
-
-    // Delete in transaction for efficiency
-    exec('BEGIN TRANSACTION');
-
-    // Delete dependent records via CASCADE
-    run(`DELETE FROM seats WHERE session_id IN (${placeholders})`, sessionIds);
-    run(`DELETE FROM sessions WHERE id IN (${placeholders})`, sessionIds);
-
-    exec('COMMIT');
-    logger.info('Cleaned up old sessions', { count: oldSessions.length });
-  }
-
-  // Prune audit log entries older than 90 days
-  const auditDeleted = run('DELETE FROM audit_log WHERE created_at < ?', [ninetyDaysAgo]);
-  if (auditDeleted.changes > 0) {
-    logger.info('Pruned audit log', { entries_deleted: auditDeleted.changes });
-  }
-
-  // Reclaim memory with VACUUM
-  exec('VACUUM');
-  logger.info('Database vacuumed');
-}
-
-function ensureFutureSessions() {
-  const now = new Date();
-  const todayStr = formatLocalDate(now);
-  const thisMonday = getWeekMonday(now);
-
-  let created = 0;
-  for (let weekOffset = 0; weekOffset < WEEKS_TO_GENERATE; weekOffset++) {
-    const weekStart = new Date(thisMonday);
-    weekStart.setDate(thisMonday.getDate() + (weekOffset * 7));
-
-    // Tue(+1) through Sun(+6) relative to Monday
-    for (let dayOffset = 1; dayOffset <= 6; dayOffset++) {
-      const sessionDate = new Date(weekStart);
-      sessionDate.setDate(weekStart.getDate() + dayOffset);
-      const dateStr = formatLocalDate(sessionDate);
-
-      if (dateStr < todayStr) continue;
-
-      const existing = get('SELECT id FROM sessions WHERE date = ? AND deleted_at IS NULL', [dateStr]);
-      if (existing) continue;
-
-      // Current week sessions are available immediately; future weeks open on their Monday
-      const isAvailable = weekOffset === 0 ? 1 : 0;
-
-      const id = uuid();
-      run('INSERT INTO sessions (id, date, time, cutoff_time, is_available) VALUES (?, ?, ?, ?, ?)',
-        [id, dateStr, '18:30', '12:00', isAvailable]);
-
-      for (let tNum = 1; tNum <= 73; tNum++) {
-        for (let ch = 1; ch <= 6; ch++) {
-          batchRun('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
-            [uuid(), id, tNum, ch, 'vacant']);
-        }
-      }
-      scheduleSaveAfterBatch();
-
-      logger.info('Auto-created session', { date: dateStr, available: isAvailable, seats: 438 });
-      created++;
-    }
-  }
-
-  if (created > 0) {
-    logger.info('Auto-session generation complete', { created });
-  }
-}
-
-function openWeeklySessions() {
-  const now = new Date();
-  const thisMonday = getWeekMonday(now);
-  const thisSunday = new Date(thisMonday);
-  thisSunday.setDate(thisMonday.getDate() + 6);
-
-  const mondayStr = formatLocalDate(thisMonday);
-  const sundayStr = formatLocalDate(thisSunday);
-
-  const { changes } = run(
-    `UPDATE sessions SET is_available = 1
-     WHERE date >= ? AND date <= ?
-     AND is_available = 0
-     AND is_special_event = 0
-     AND deleted_at IS NULL`,
-    [mondayStr, sundayStr]
-  );
-
-  if (changes > 0) {
-    logger.info('Opened weekly sessions', { week: mondayStr, count: changes });
-  }
-}
-
 // ============ START ============
 async function start() {
   await getDb();
@@ -1688,8 +1480,8 @@ async function start() {
   setInterval(() => { openWeeklySessions(); ensureFutureSessions(); }, 60 * 60 * 1000);
 
   // Release expired holds every 30 seconds
-  setInterval(releaseExpiredHolds, 30000);
-  releaseExpiredHolds();
+  setInterval(() => releaseExpiredHolds(io), 30000);
+  releaseExpiredHolds(io);
 
   server.listen(PORT, () => {
     logger.info('Server started', { port: PORT, url: `http://localhost:${PORT}` });

@@ -1,23 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-
-function formatPrice(cents) {
-  return '$' + (cents / 100).toFixed(2);
-}
-
-function formatDate(dateStr) {
-  const d = new Date(dateStr + 'T12:00:00');
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-}
-
-function formatTime(timeStr) {
-  const [h, m] = timeStr.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-}
+import { formatDateLong, formatTime, formatPrice } from '../utils/formatters';
 
 export default function Confirmation({ booking, session, attendees, seats, selectedSeats, requiredPkg, optionalPkgs = [] }) {
   const navigate = useNavigate();
@@ -51,7 +34,7 @@ export default function Confirmation({ booking, session, attendees, seats, selec
         <div className="bg-gray-50 rounded-2xl p-5 mb-6 space-y-3">
           <div className="flex justify-between items-center">
             <span className="text-gray-500 font-medium">Session</span>
-            <span className="font-semibold text-brand-blue">{formatDate(session?.date)}</span>
+            <span className="font-semibold text-brand-blue">{formatDateLong(session?.date)}</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-gray-500 font-medium">Time</span>
@@ -96,9 +79,9 @@ export default function Confirmation({ booking, session, attendees, seats, selec
                     </div>
                   )}
                   <div className="ml-9 mt-1 text-sm text-gray-500 space-y-0.5">
-                    {requiredPkg && <p>{requiredPkg.name} — {formatPrice(requiredPkg.price)}</p>}
+                    {requiredPkg && <p>{requiredPkg.name} - {formatPrice(requiredPkg.price)}</p>}
                     {addonDetails.map((a, j) => (
-                      <p key={j}>{a.name} x{a.qty} — {formatPrice(a.price)}</p>
+                      <p key={j}>{a.name} x{a.qty} - {formatPrice(a.price)}</p>
                     ))}
                   </div>
                 </div>
@@ -110,7 +93,7 @@ export default function Confirmation({ booking, session, attendees, seats, selec
         {/* Reminder */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 mb-6">
           <p className="text-sm text-blue-700 font-medium">
-            Please arrive by <strong>4:30 PM</strong> — Doors open 1 hour before the session starts.
+            Please arrive by <strong>4:30 PM</strong> - Doors open 1 hour before the session starts.
             Bring this reference number with you.
           </p>
         </div>

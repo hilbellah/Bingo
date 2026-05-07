@@ -81,16 +81,18 @@ body {
 }
 
 /* Small chair buttons that flank each table on the floor plan
-   (3 on the left = seats 5/3/1, 3 on the right = seats 6/4/2) */
+   (3 on the left = seats 5/3/1, 3 on the right = seats 6/4/2).
+   Always visible — direct click selects, click on the table center opens the
+   zoom popup with bigger chair buttons. */
 .chair-mini {
   width: 14px;
-  height: 18px;
+  height: 16px;
   min-width: 14px;
-  min-height: 18px;
-  border-radius: 2px;
+  min-height: 16px;
+  border-radius: 3px;
   border-width: 1px;
   border-style: solid;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -103,13 +105,48 @@ body {
 }
 
 .chair-mini:not(:disabled):hover {
-  transform: scale(1.4);
+  transform: scale(1.6);
   z-index: 20;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
 }
 
 .chair-mini:disabled {
   cursor: not-allowed;
+}
+
+/* Chair-mini status variants (mirror the popup's InlineChair palette) */
+.chair-mini-vacant {
+  background: rgba(22, 163, 74, 0.55);
+  border-color: rgba(34, 197, 94, 0.7);
+  color: #ffffff;
+}
+.chair-mini-mine {
+  background: rgba(59, 130, 246, 0.85);
+  border-color: rgba(96, 165, 250, 1);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.6);
+}
+.chair-mini-other {
+  background: rgba(245, 158, 11, 0.55);
+  border-color: rgba(251, 191, 36, 0.7);
+  color: #fef3c7;
+}
+.chair-mini-sold {
+  background: rgba(75, 85, 99, 0.55);
+  border-color: rgba(107, 114, 128, 0.55);
+  color: rgba(229, 231, 235, 0.65);
+}
+.chair-mini-disabled {
+  background: rgba(55, 65, 81, 0.4);
+  border-color: rgba(75, 85, 99, 0.4);
+  color: rgba(156, 163, 175, 0.55);
+}
+.chair-mini-empty {
+  background: transparent;
+  border-color: transparent;
+  color: transparent;
+  cursor: default;
+  pointer-events: none;
 }
 
 /* Special event table buttons — animated glow */
@@ -320,11 +357,14 @@ html {
   .no-print { display: none; }
 }
 
-/* ── Unified floor-plan grid (12 columns) ── */
+/* ── Unified floor-plan grid (13 columns) ──
+   Each cell holds one "table unit" = left chair col (14px) + table (40px)
+   + right chair col (14px) = 68px wide. The horizontal gap is small so the
+   chairs of adjacent tables sit close together (matching the venue blueprint). */
 .floorplan-grid {
   display: grid;
-  grid-template-columns: repeat(13, 40px);
-  gap: 5px 30px;
+  grid-template-columns: repeat(13, 68px);
+  gap: 5px 6px;
   margin: 0 auto;
   width: max-content;
 }
@@ -334,6 +374,32 @@ html {
 .floorplan-grid-lower {
   grid-template-rows: repeat(4, 56px);
   margin-top: 80px; /* clear vertical gap (full table height) between upper and lower halves */
+}
+
+/* Table-unit wrapper: chairs ▌table▐ chairs, all flush against each other */
+.floorplan-table-unit {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  height: 56px;
+  width: 68px;
+}
+
+/* Vertical column of 3 chairs flanking one side of a table */
+.floorplan-chair-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  height: 56px;
+  width: 14px;
+  flex-shrink: 0;
+}
+
+/* Empty placeholder cell (e.g., upper-left col 7 rows 1-2) */
+.floorplan-cell-empty {
+  width: 68px;
+  height: 56px;
 }
 .floorplan-stage-cell {
   border: 2px solid rgba(255,255,255,0.2);

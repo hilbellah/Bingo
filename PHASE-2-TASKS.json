@@ -1,0 +1,22 @@
+[
+  {
+    "title": "Phase 2a: Implement Stripe Payment Integration",
+    "description": "Replace mock payment processing with live Stripe integration:\n\n- Integrate Stripe SDK for Node.js backend\n- Update checkout flow to create real Stripe payment intents\n- Handle Stripe webhooks for payment confirmation\n- Update admin panel to display real payment status\n- Test with Stripe test keys in staging\n- Document Stripe configuration for production\n\nParent: [PHWA-54](/PHWA/issues/PHWA-54) (Bingo Full Build)\nDependency: [PHWA-56](/PHWA/issues/PHWA-56) must be live",
+    "priority": "high"
+  },
+  {
+    "title": "Phase 2b: Add Email Confirmation Notifications",
+    "description": "Implement SendGrid email integration for booking confirmations:\n\n- Integrate SendGrid SDK for transactional emails\n- Send booking confirmation email with reference number\n- Send cancellation confirmation emails\n- Add email template management to admin panel\n- Test email delivery in staging\n- Document SendGrid API key configuration\n\nParent: [PHWA-54](/PHWA/issues/PHWA-54)\nDependency: [PHWA-56](/PHWA/issues/PHWA-56) must be live",
+    "priority": "high"
+  },
+  {
+    "title": "Phase 2c: Build Customer Accounts & Login System",
+    "description": "Add customer registration and login for booking history:\n\n- Create customer registration form (email/password)\n- Implement JWT-based authentication\n- Add customer dashboard showing booking history\n- Allow customers to view/cancel their own bookings\n- Add password reset functionality\n- Implement session persistence across browser restarts\n\nParent: [PHWA-54](/PHWA/issues/PHWA-54)\nDependency: [PHWA-56](/PHWA/issues/PHWA-56) must be live",
+    "priority": "high"
+  },
+  {
+    "title": "Phase 2d: Configure Production Domain & SSL",
+    "description": "Move Bingo system from render.onrender.com to custom domain:\n\n- Purchase or use client's domain (e.g., bingo.smec.ca)\n- Configure DNS records pointing to Render deployment\n- Set up SSL certificate (Render auto-provides Let's Encrypt)\n- Update admin credentials for production\n- Configure environment variables for production\n- Verify HTTPS and security headers\n- Test full booking flow on production domain\n\nParent: [PHWA-54](/PHWA/issues/PHWA-54)\nDependency: [PHWA-56](/PHWA/issues/PHWA-56) must be live",
+    "priority": "high"
+  }
+]
