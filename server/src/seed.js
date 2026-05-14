@@ -13,12 +13,12 @@ async function seed() {
 
   // === IDEMPOTENCY GUARD ===
   //
-  // This seed file is DESTRUCTIVE — the DROP TABLE statements below wipe all
+  // This seed file is DESTRUCTIVE - the DROP TABLE statements below wipe all
   // bookings, sessions, seats, packages, and announcements. We must NEVER let
   // it run against a populated production database.
   //
   // This guard checks whether `packages` already has rows. If it does, the DB
-  // has been seeded before — we exit immediately, preserving all data.
+  // has been seeded before - we exit immediately, preserving all data.
   //
   // To force a re-seed on a populated DB, manually drop the `packages` table
   // first, then run `node src/seed.js`.
@@ -35,7 +35,7 @@ async function seed() {
       process.exit(0);
     }
   } catch (e) {
-    // `packages` table doesn't exist yet — fresh database — proceed with seed
+    // `packages` table doesn't exist yet - fresh database - proceed with seed
   }
 
   console.log('Running migrations...');
@@ -154,20 +154,21 @@ async function seed() {
   // --- Packages ---
   const requiredPkg = uuid();
   const opt1 = uuid(), opt2 = uuid(), opt3 = uuid(), opt4 = uuid();
-  const opt5 = uuid(), opt6 = uuid(), opt7 = uuid();
+  const opt5 = uuid(), opt6 = uuid(), opt7 = uuid(), phdPkg = uuid();
 
   const pkgs = [
-    [requiredPkg, '12up / Toonie', 1800, 'required', 1, 1, 0],
-    [opt1, '3 Special Books (1 Free)', 1400, 'optional', 4, 1, 1],
-    [opt2, 'Single Special Book', 700, 'optional', 7, 1, 2],
-    [opt3, '6-up Admission Book', 500, 'optional', 4, 1, 3],
-    [opt4, '3-up Admission Book', 300, 'optional', 4, 1, 4],
-    [opt5, 'Letter "W" Card', 200, 'optional', 4, 1, 5],
-    [opt6, 'Mega Jackpot', 200, 'optional', 12, 1, 6],
-    [opt7, 'Winner Take All', 100, 'optional', 12, 1, 7],
+    [requiredPkg, '12up / Toonie', 1800, 'required', 1, 1, 0, 0],
+    [phdPkg, 'Personal Handheld Device', 5000, 'optional', 2, 1, 0, 1],
+    [opt1, '3 Special Books (1 Free)', 1400, 'optional', 4, 1, 1, 0],
+    [opt2, 'Single Special Book', 700, 'optional', 7, 1, 2, 0],
+    [opt3, '6-up Admission Book', 500, 'optional', 4, 1, 3, 0],
+    [opt4, '3-up Admission Book', 300, 'optional', 4, 1, 4, 0],
+    [opt5, 'Letter "W" Card', 200, 'optional', 4, 1, 5, 0],
+    [opt6, 'Mega Jackpot', 200, 'optional', 12, 1, 6, 0],
+    [opt7, 'Winner Take All', 100, 'optional', 12, 1, 7, 0],
   ];
   for (const p of pkgs) {
-    db.run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)', p);
+    db.run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', p);
   }
 
   // --- Sessions (next 10 upcoming sessions, skip Wednesdays) ---

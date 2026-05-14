@@ -2,12 +2,19 @@ services:
   - type: web
     name: wolastoq-bingo
     runtime: node
-    plan: free
-    # Migrations run on every deploy (idempotent, additive schema changes).
-    # Seeds DO NOT run on deploy — seed.js is destructive (drops tables) and
-    # would wipe the production database. To seed a fresh install, manually
-    # run `node src/seed.js` once via Render Shell after the first deploy.
-    buildCommand: "cd client && npm install --include=dev && npm run build && cd ../server && npm install && node src/migrate.js"
+    # Persistent disks require a paid Render web service. This keeps the SQLite
+    # database under /var/data across deploys, restarts, and idle spin-downs.
+    plan: starter
+    disk:
+      name: bingo-data
+      mountPath: /var/data
+      sizeGB: 1
+    # Build phase: only install deps and build the client bundle.
+    # Render persistent disks are mounted at runtime, not during build.
+    # Seeds do not run on deploy because seed.js drops tables.
+    buildCommand: "cd client && npm install --include=dev && npm run build && cd ../server && npm install"
+    # server/src/index.js runs idempotent migrations on startup, after the
+    # runtime disk has mounted.
     startCommand: "cd server && node src/index.js"
     envVars:
       - key: NODE_ENV
@@ -19,9 +26,9 @@ services:
       - key: ADMIN_PASSWORD
         generateValue: true
       - key: DATABASE_URL
-        value: ./bingo.db
+        value: /var/data/bingo.db
       - key: SESSION_HOLD_MINUTES
-        value: "60"             # Generous timeout for elderly audience while still releasing abandoned carts
+        value: "60"
       # === Authorize.Net Payment Integration ===
       # Start in sandbox; flip to 'production' only after end-to-end testing.
       - key: ANET_ENV

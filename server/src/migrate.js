@@ -1,5 +1,30 @@
 import { getDb, exec, all, run } from './database.js';
 
+const BASELINE_PACKAGES = [
+  ['pkg-required-12up-toonie', '12up / Toonie', 1800, 'required', 1, 1, 0, 0],
+  ['pkg-phd-handheld-device', 'Personal Handheld Device', 5000, 'optional', 2, 1, 0, 1],
+  ['pkg-special-books-3-plus-1', '3 Special Books (1 Free)', 1400, 'optional', 4, 1, 1, 0],
+  ['pkg-single-special-book', 'Single Special Book', 700, 'optional', 7, 1, 2, 0],
+  ['pkg-admission-book-6up', '6-up Admission Book', 500, 'optional', 4, 1, 3, 0],
+  ['pkg-admission-book-3up', '3-up Admission Book', 300, 'optional', 4, 1, 4, 0],
+  ['pkg-letter-w-card', 'Letter "W" Card', 200, 'optional', 4, 1, 5, 0],
+  ['pkg-mega-jackpot', 'Mega Jackpot', 200, 'optional', 12, 1, 6, 0],
+  ['pkg-winner-take-all', 'Winner Take All', 100, 'optional', 12, 1, 7, 0],
+];
+
+function ensureBaselinePackages() {
+  const countRow = all('SELECT COUNT(*) as count FROM packages')[0];
+  if ((countRow?.count || 0) > 0) return;
+
+  console.log('No packages found; inserting baseline ticket packages including PHD.');
+  for (const pkg of BASELINE_PACKAGES) {
+    run(
+      'INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      pkg
+    );
+  }
+}
+
 async function migrate() {
   await getDb();
   console.log('Running migrations...');
@@ -204,6 +229,11 @@ async function migrate() {
     perPlayerLimit: 2
   });
   try { run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [defaultPhdInventory]); } catch(e) {}
+
+  // Empty databases can happen on a fresh install or after an accidental data
+  // reset. Restore the sellable baseline package list without touching
+  // existing/admin-managed package rows.
+  ensureBaselinePackages();
 
   // --- Per-attendee ticket reference migration ---
   console.log('Running per-attendee ticket reference migration...');
