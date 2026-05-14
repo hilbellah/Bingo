@@ -2,6 +2,8 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -23,21 +25,89 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
 const server = createServer(app);
+app.set('trust proxy', 1);
+
+const configuredOrigins = (process.env.CORS_ORIGINS || process.env.PUBLIC_BASE_URL || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+const allowedOrigins = new Set([
+  ...configuredOrigins,
+  'https://bingo-jk2h.onrender.com',
+]);
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.add('http://localhost:3000');
+  allowedOrigins.add('http://localhost:3001');
+}
+
+function corsOrigin(origin, callback) {
+  if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+  return callback(new Error('Not allowed by CORS'));
+}
+
+const corsOptions = {
+  origin: corsOrigin,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-ANET-Signature'],
+};
+
 const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] }
+  cors: { origin: corsOrigin, methods: ['GET', 'POST'] }
 });
 
 const PORT = process.env.PORT || 3001;
 const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '10');
 const startTime = Date.now();
 
-const { uploadsDir, upload } = createUploadMiddleware(__dirname);
+const { uploadsDir, upload, saveUploadedImage } = createUploadMiddleware(__dirname);
 
-app.use(cors());
-app.use(express.json());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+app.use(cors(corsOptions));
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, res, buf) => {
+    if (req.originalUrl === '/api/webhooks/authorize-net') {
+      req.rawBody = Buffer.from(buf);
+    }
+  }
+}));
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_GENERAL || 600),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const bookingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_BOOKING || 30),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_ADMIN_LOGIN || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_WEBHOOK || 120),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api', generalLimiter);
 
 // Serve uploaded files
-app.use('/uploads', express.static(uploadsDir));
+app.use('/uploads', express.static(uploadsDir, {
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+  }
+}));
 
 // Serve static build in production
 const clientBuild = path.join(__dirname, '../../client/dist');
@@ -615,7 +685,7 @@ app.get('/api/packages', (req, res) => {
 });
 
 // --- Seat Lock ---
-app.post('/api/seats/:seatId/lock', (req, res) => {
+app.post('/api/seats/:seatId/lock', bookingLimiter, (req, res) => {
   const { seatId } = req.params;
   const { holderId } = req.body;
 
@@ -667,7 +737,7 @@ app.post('/api/seats/:seatId/unlock', (req, res) => {
 // a real payment processor. Originally the only path; now reserved for admin
 // comp/staff bookings or any flow where money was collected elsewhere.
 // Customer-facing UI should hit POST /api/bookings/initiate instead.
-app.post('/api/bookings', (req, res) => {
+app.post('/api/bookings', adminAuth, (req, res) => {
   const validation = validateBookingRequest(req.body);
   if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
   const { sessionId, attendees, trimmedEmail, useSessionPkgs, sessionPkgs, requiredPkg } = validation.data;
@@ -706,7 +776,7 @@ app.post('/api/bookings', (req, res) => {
 //
 // Seats are NOT flipped to 'sold' here — they remain 'held' with a refreshed
 // held_until so they survive the time the customer spends on the hosted page.
-app.post('/api/bookings/initiate', async (req, res) => {
+app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
   const validation = validateBookingRequest(req.body);
   if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
   const { sessionId, attendees, trimmedEmail, useSessionPkgs, sessionPkgs, requiredPkg } = validation.data;
@@ -849,10 +919,15 @@ app.all('/payment/cancel', (req, res) => {
 //   net.authorize.payment.fraud.declined        — Authorize.Net's fraud rule rejected
 //   net.authorize.payment.fraud.held            — held for manual fraud review
 app.post('/api/webhooks/authorize-net',
-  express.raw({ type: 'application/json' }),
+  webhookLimiter,
   async (req, res) => {
-    const rawBody = req.body; // Buffer because of express.raw()
+    const rawBody = req.rawBody; // Buffer captured by express.json verify hook.
     const sigHeader = req.get('X-ANET-Signature');
+
+    if (!Buffer.isBuffer(rawBody)) {
+      console.warn('[webhooks] missing raw request body');
+      return res.status(400).end();
+    }
 
     // Verify signature FIRST. Anything past this point assumes the payload
     // is authentic. Returning 401 without logging prevents an attacker from
@@ -905,7 +980,10 @@ app.post('/api/webhooks/authorize-net',
         // in depth: the signature proves the payload is from Authorize.Net,
         // but a redundant API lookup also confirms the transaction approved.
         const verify = await verifyTransaction(transId);
-        if (verify.ok && verify.approved) {
+        if (!verify.ok) {
+          throw new Error(`Authorize.Net transaction verification failed: ${verify.error || 'unknown error'}`);
+        }
+        if (verify.approved) {
           markBookingPaid({
             bookingId: booking.id,
             transactionId: transId,
@@ -945,10 +1023,15 @@ app.post('/api/webhooks/authorize-net',
         console.log(`[webhooks] unhandled eventType: ${eventType}`);
       }
     } catch (err) {
-      // We caught the error so Authorize.Net doesn't retry indefinitely on
-      // our internal bugs. The error is logged and we return 200; you'll see
-      // it in the logs and the payment_events table.
       console.error(`[webhooks] handler error for ${eventType}:`, err?.message || err);
+      logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
+        eventType,
+        notificationId,
+        transId,
+        invoiceNumber,
+        error: err?.message || String(err),
+      });
+      return res.status(500).end();
     }
 
     return res.status(200).end();
@@ -957,7 +1040,7 @@ app.post('/api/webhooks/authorize-net',
 
 // ============ ADMIN ============
 
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', adminLoginLimiter, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
   // Check env-var admin
@@ -1854,10 +1937,14 @@ app.post('/api/admin/announcements', adminAuth, (req, res) => {
 });
 
 // Image upload for announcements
-app.post('/api/admin/upload', adminAuth, upload.single('image'), (req, res) => {
+app.post('/api/admin/upload', adminAuth, upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file provided' });
-  const url = `/uploads/${req.file.filename}`;
-  res.json({ url, filename: req.file.filename });
+  try {
+    const saved = await saveUploadedImage(req.file);
+    res.json(saved);
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Invalid image upload' });
+  }
 });
 
 app.patch('/api/admin/announcements/:id', adminAuth, (req, res) => {
