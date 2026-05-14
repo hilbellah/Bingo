@@ -163,8 +163,18 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, r
     // Customer sees this text on the hosted card-entry page next to the order summary.
     pushSetting('hostedPaymentOrderOptions', { show: true, merchantName: 'Wolastoq Bingo' });
     pushSetting('hostedPaymentPaymentOptions', { cardCodeRequired: true, showCreditCard: true });
-    pushSetting('hostedPaymentBillingAddressOptions', { show: true, required: false });
-    pushSetting('hostedPaymentCustomerOptions', { showEmail: true, requiredEmail: true, addPaymentProfile: false });
+    // UX: hide the billing address form on the hosted page. The customer already
+    // entered their info on our booking form (name, email), so re-collecting it
+    // would feel redundant. They only need to enter card number / exp / CVV on
+    // Authorize.Net's hosted page.
+    // Tradeoff: AVS (Address Verification System) won't run. For low-risk
+    // community bingo transactions this is acceptable. Re-enable show:true if
+    // chargebacks become a concern.
+    pushSetting('hostedPaymentBillingAddressOptions', { show: false });
+    // Show the email field but pre-filled (from the customer data we passed
+    // above) and NOT required — customer can glance at it to confirm without
+    // having to type it again.
+    pushSetting('hostedPaymentCustomerOptions', { showEmail: true, requiredEmail: false, addPaymentProfile: false });
 
     const arrayOfSettings = new APIContracts.ArrayOfSetting();
     arrayOfSettings.setSetting(settings);
