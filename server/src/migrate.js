@@ -313,5 +313,21 @@ const isMainModule = process.argv[1] && (
   process.argv[1].endsWith('migrate.js') || process.argv[1].endsWith('migrate')
 );
 if (isMainModule) {
-  migrate().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
+  migrate().then(() => process.exit(0)).catch(e => {
+    const isRenderDiskUnavailable = String(e?.message || '').includes('Render persistent disk is not available');
+    const databaseUrl = process.env.DATABASE_URL || '';
+
+    // Render persistent disks are mounted only at runtime, not during the build
+    // command. If an older/manual Render build command still runs migrate.js,
+    // skip it here so the build can finish. server/src/index.js runs the same
+    // migrations again at runtime, where the disk must be mounted and writable.
+    if (isRenderDiskUnavailable && databaseUrl.startsWith('/var/data/')) {
+      console.warn('Skipping direct migrate.js run because Render persistent disk is unavailable during build.');
+      console.warn('Migrations will run during server startup after the runtime disk mounts.');
+      process.exit(0);
+    }
+
+    console.error(e);
+    process.exit(1);
+  });
 }
