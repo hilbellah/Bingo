@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const dbPath = path.resolve(__dirname, '..', process.env.DATABASE_URL || './bingo.db');
+const legacyDbPath = path.resolve(__dirname, '..', './bingo.db');
 
 let db = null;
 let saveTimer = null;
@@ -17,6 +18,12 @@ export async function getDb() {
   if (db) return db;
 
   const SQL = await initSqlJs();
+
+  if (!process.env.SKIP_LEGACY_DB_COPY && !fs.existsSync(dbPath) && dbPath !== legacyDbPath && fs.existsSync(legacyDbPath)) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    fs.copyFileSync(legacyDbPath, dbPath);
+    console.log(`Copied existing database from ${legacyDbPath} to ${dbPath}`);
+  }
 
   // Load existing database file if it exists
   if (fs.existsSync(dbPath)) {
@@ -37,10 +44,11 @@ export function saveDb() {
   if (!db) return;
   const data = db.export();
   const buffer = Buffer.from(data);
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   fs.writeFileSync(dbPath, buffer);
 }
 
-// Debounced save — batches rapid writes into a single disk flush
+// Debounced save - batches rapid writes into a single disk flush
 function scheduleSave() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
