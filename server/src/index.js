@@ -2179,6 +2179,43 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(clientBuild, 'index.html'));
 });
 
+function seedInitialAdminFromEnv() {
+  const email = (process.env.INITIAL_ADMIN_EMAIL || '').trim();
+  const password = process.env.INITIAL_ADMIN_PASSWORD || '';
+  const displayName = (process.env.INITIAL_ADMIN_DISPLAY_NAME || '').trim() || null;
+  const shouldBeSuper = process.env.INITIAL_ADMIN_SUPER_USER !== 'false';
+
+  if (!email && !password) return;
+
+  if (!email || !password) {
+    logger.warn('INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD must both be set to seed an admin user');
+    return;
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    logger.warn('INITIAL_ADMIN_EMAIL is invalid; skipping initial admin seed');
+    return;
+  }
+
+  if (password.length < 12) {
+    logger.warn('INITIAL_ADMIN_PASSWORD must be at least 12 characters; skipping initial admin seed');
+    return;
+  }
+
+  const existing = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [email]);
+  if (existing) {
+    if (shouldBeSuper) {
+      run('UPDATE admin_users SET is_super_user = 1, updated_at = datetime(\'now\') WHERE id = ?', [existing.id]);
+    }
+    return;
+  }
+
+  const hash = bcrypt.hashSync(password, 10);
+  run('INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user) VALUES (?, ?, ?, ?, ?)',
+    [uuid(), email, hash, displayName, shouldBeSuper ? 1 : 0]);
+  logger.info('Seeded initial admin user from env', { email, isSuperUser: shouldBeSuper });
+}
+
 // ============ START ============
 async function start() {
   await getDb();
@@ -2204,21 +2241,8 @@ async function start() {
     }
   }
 
-  // Seed admin users (idempotent — skips if already exists)
-  const seedAdmins = [
-    { email: 'Kylepaul@stmec.com', password: 'b4KT!xrjpcNjXq', displayName: 'Kyle Paul', isSuperUser: true }
-  ];
-  for (const admin of seedAdmins) {
-    const exists = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [admin.email]);
-    if (!exists) {
-      const hash = bcrypt.hashSync(admin.password, 10);
-      run('INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user) VALUES (?, ?, ?, ?, ?)',
-        [uuid(), admin.email, hash, admin.displayName, admin.isSuperUser ? 1 : 0]);
-      logger.info('Seeded admin user', { email: admin.email });
-    } else if (admin.isSuperUser) {
-      run('UPDATE admin_users SET is_super_user = 1 WHERE LOWER(email) = LOWER(?)', [admin.email]);
-    }
-  }
+  // Optional first-run admin seed, configured through env vars only.
+  seedInitialAdminFromEnv();
 
   // Clean up old data and reclaim memory
   cleanupOldData();

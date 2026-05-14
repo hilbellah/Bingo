@@ -1,16 +1,11 @@
 import bcrypt from 'bcryptjs';
 import { get } from '../database.js';
 
-const DEFAULT_SUPER_USER_EMAILS = ['kylepaul@stmec.com'];
-
 function getSuperUserEmails() {
-  return [
-    ...DEFAULT_SUPER_USER_EMAILS,
-    ...(process.env.SUPER_ADMIN_EMAILS || '')
-      .split(',')
-      .map(email => email.trim().toLowerCase())
-      .filter(Boolean),
-  ];
+  return (process.env.SUPER_ADMIN_EMAILS || '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function isSuperUser(email, source, dbUser = null) {
