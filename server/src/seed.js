@@ -11,6 +11,33 @@ const CHAIRS_PER_TABLE = 6;
 async function seed() {
   const db = await getDb();
 
+  // === IDEMPOTENCY GUARD ===
+  //
+  // This seed file is DESTRUCTIVE — the DROP TABLE statements below wipe all
+  // bookings, sessions, seats, packages, and announcements. We must NEVER let
+  // it run against a populated production database.
+  //
+  // This guard checks whether `packages` already has rows. If it does, the DB
+  // has been seeded before — we exit immediately, preserving all data.
+  //
+  // To force a re-seed on a populated DB, manually drop the `packages` table
+  // first, then run `node src/seed.js`.
+  //
+  // Note: this seed is NO LONGER called from render.yaml's buildCommand. It
+  // only runs when someone (you, or a setup script) explicitly invokes it via
+  // `node src/seed.js`. The guard is an additional safety layer.
+  try {
+    const result = db.exec('SELECT COUNT(*) as cnt FROM packages');
+    const pkgCount = result[0]?.values?.[0]?.[0] || 0;
+    if (pkgCount > 0) {
+      console.log(`Seed skipped: ${pkgCount} packages already exist. Database is already populated.`);
+      console.log('To force a re-seed, drop the packages table manually first.');
+      process.exit(0);
+    }
+  } catch (e) {
+    // `packages` table doesn't exist yet — fresh database — proceed with seed
+  }
+
   console.log('Running migrations...');
 
   // Drop old tables to start fresh

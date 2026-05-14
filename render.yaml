@@ -3,7 +3,11 @@ services:
     name: wolastoq-bingo
     runtime: node
     plan: free
-    buildCommand: "cd client && npm install --include=dev && npm run build && cd ../server && npm install && node src/migrate.js && node src/seed.js"
+    # Migrations run on every deploy (idempotent, additive schema changes).
+    # Seeds DO NOT run on deploy — seed.js is destructive (drops tables) and
+    # would wipe the production database. To seed a fresh install, manually
+    # run `node src/seed.js` once via Render Shell after the first deploy.
+    buildCommand: "cd client && npm install --include=dev && npm run build && cd ../server && npm install && node src/migrate.js"
     startCommand: "cd server && node src/index.js"
     envVars:
       - key: NODE_ENV
