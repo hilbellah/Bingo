@@ -1,52 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { formatDateShort, formatTime, formatPrice } from '../utils/formatters';
 
-// ---------- Payment validation helpers ----------
-// Luhn checksum - every real credit card number in circulation passes this.
-// Accepts ANY card brand (Visa, MC, Amex, Discover, JCB, Diners, etc.) so we
-// can keep testing with whichever card while still rejecting bogus input.
-function luhnValid(rawNumber) {
-  const digits = (rawNumber || '').replace(/\D/g, '');
-  if (digits.length < 13 || digits.length > 19) return false;
-  let sum = 0;
-  let shouldDouble = false;
-  for (let i = digits.length - 1; i >= 0; i--) {
-    let n = parseInt(digits[i], 10);
-    if (shouldDouble) {
-      n *= 2;
-      if (n > 9) n -= 9;
-    }
-    sum += n;
-    shouldDouble = !shouldDouble;
-  }
-  return sum % 10 === 0;
-}
-
-// Auto-format expiry as MM/YY from raw digits.
-function formatExpiryInput(input) {
-  const digits = (input || '').replace(/\D/g, '').slice(0, 4);
-  if (digits.length <= 2) return digits;
-  return digits.slice(0, 2) + '/' + digits.slice(2);
-}
-
-// MM/YY format with valid month. Permissive on year so expired test cards
-// don't get blocked while we're still in testing.
-function expiryValid(exp) {
-  const m = (exp || '').match(/^(\d{2})\/(\d{2})$/);
-  if (!m) return false;
-  const mm = parseInt(m[1], 10);
-  return mm >= 1 && mm <= 12;
-}
-
-// CVV: 3 digits for most cards, 4 for Amex.
-function cvvValid(cvv, brand) {
-  if (brand === 'amex') return /^\d{4}$/.test(cvv);
-  return /^\d{3,4}$/.test(cvv);
-}
-
-function nameValid(name) {
-  return (name || '').trim().length >= 2;
-}
+// NOTE: All credit-card collection happens on Authorize.Net's hosted payment
+// page (Accept Hosted integration). This file does NOT and MUST NOT collect
+// card data — doing so would violate our PCI scope (SAQ A) and require
+// SAQ A-EP or SAQ D. The booking form only collects: attendee names, email,
+// seat selection, and optional add-ons. The customer is redirected to
+// Authorize.Net to enter card details.
 
 export default function BookingPanel({
   isOpen, onClose, onPickChairs, session, partySize, onPartySize,
@@ -57,66 +17,31 @@ export default function BookingPanel({
 }) {
   // Steps: 0 = party size & names, 1 = packages & add-ons, 2 = review & pay
   const setStep = onStepChange;
-  const [cardNumber, setCardNumber] = useState('');
-  const [selectedCard, setSelectedCard] = useState('');
-  const [cardName, setCardName] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [cvv, setCvv] = useState('');
+
   // Confirmation email — required so the customer receives the booking by email
-  // instead of needing to print on the spot.
+  // instead of needing to print on the spot. Pre-filled into Authorize.Net's
+  // hosted page (we pass it via the customer record on the transaction request).
   const [email, setEmail] = useState('');
+
   // Track which fields the user has interacted with so we don't yell at them
   // about empty fields the moment the panel opens.
-  const [touched, setTouched] = useState({ cardName: false, cardNumber: false, expiry: false, cvv: false, email: false });
+  const [touched, setTouched] = useState({ email: false });
   const markTouched = (field) => setTouched(t => ({ ...t, [field]: true }));
 
-  // Field-level validity (on raw values)
-  const cardNumberDigits = cardNumber.replace(/\s/g, '');
-  const isCardNameValid = nameValid(cardName);
-  const isCardNumberValid = luhnValid(cardNumberDigits);
-  const isExpiryValid = expiryValid(expiry);
-  const isCvvValid = cvvValid(cvv, selectedCard);
   // Permissive but useful email check — must contain a non-empty local part,
   // an @, a domain, and a TLD-style segment after the dot. Catches real typos
   // ("foo@bar", "foo@bar.") without rejecting unusual but valid addresses.
   const trimmedEmail = (email || '').trim();
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
-  const isPaymentValid = isCardNameValid && isCardNumberValid && isExpiryValid && isCvvValid && isEmailValid;
 
-  const handleExpiryChange = (e) => {
-    setExpiry(formatExpiryInput(e.target.value));
-  };
-
-  const handleCvvChange = (e) => {
-    // Strip non-digits, max 4
-    const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
-    setCvv(digits);
-  };
+  // Submission validity now only requires a valid email. All card data is
+  // collected on Authorize.Net's hosted page after redirect.
+  const isPaymentValid = isEmailValid;
 
   const handlePaySubmit = () => {
-    // Mark all touched so any remaining errors surface
-    setTouched({ cardName: true, cardNumber: true, expiry: true, cvv: true, email: true });
+    setTouched({ email: true });
     if (!isPaymentValid) return;
     onSubmit(trimmedEmail);
-  };
-
-  // Auto-detect card type from number using IIN/BIN ranges
-  const detectCardType = (number) => {
-    const n = number.replace(/\s/g, '');
-    if (/^4/.test(n)) return 'visa';
-    if (/^5[1-5]/.test(n) || /^2[2-7]/.test(n)) return 'mastercard';
-    if (/^3[47]/.test(n)) return 'amex';
-    if (/^6(?:011|5)/.test(n)) return 'discover';
-    return '';
-  };
-
-  const handleCardNumberChange = (e) => {
-    // Strip non-digits, limit to 16 (19 with spaces)
-    const raw = e.target.value.replace(/\D/g, '').slice(0, 16);
-    // Format as groups of 4
-    const formatted = raw.replace(/(.{4})/g, '$1 ').trim();
-    setCardNumber(formatted);
-    setSelectedCard(detectCardType(raw));
   };
 
   // Auto-advance: when panel opens and all names valid + all seats selected, go to step 1
@@ -609,164 +534,46 @@ export default function BookingPanel({
                 <span className="text-brand-gold text-2xl font-bold">{formatPrice(total)}</span>
               </div>
 
-              {/* Demo payment notice */}
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-4 text-sm text-amber-700 font-medium flex items-center gap-2">
-                <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                Demo mode - no real charges
+              {/* Email — required so we can send the confirmation/receipt and
+                  so Authorize.Net's hosted page pre-fills it for the customer. */}
+              <div className="mb-5">
+                <label className="text-xs font-medium text-gray-500 mb-1 block">
+                  Email (for booking confirmation)
+                </label>
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  onBlur={() => markTouched('email')}
+                  className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
+                    touched.email && !isEmailValid
+                      ? 'border-red-300 bg-red-50/40 focus:border-red-400'
+                      : 'border-gray-200 focus:border-brand-gold'
+                  }`}
+                  placeholder="you@example.com"
+                />
+                {touched.email && !isEmailValid ? (
+                  <p className="text-xs text-red-500 mt-1">Enter a valid email so we can send your tickets.</p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1">We'll send your booking confirmation here.</p>
+                )}
               </div>
 
-              {/* Card Type Auto-Detection Display */}
-              <div className="mb-4">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 block">Card Type {selectedCard ? `- ${selectedCard === 'visa' ? 'Visa' : selectedCard === 'mastercard' ? 'Mastercard' : selectedCard === 'amex' ? 'American Express' : 'Discover'} detected` : '- enter card number'}</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    { id: 'visa', name: 'Visa',
-                      logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#1A1F71"/><text x="24" y="20" textAnchor="middle" fill="#FFFFFF" fontSize="12" fontWeight="bold" fontStyle="italic" fontFamily="Arial">VISA</text></svg> },
-                    { id: 'mastercard', name: 'Mastercard',
-                      logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#252525"/><circle cx="19" cy="16" r="8" fill="#EB001B"/><circle cx="29" cy="16" r="8" fill="#F79E1B"/><path d="M24 9.86A8 8 0 0124 22.14 8 8 0 0124 9.86z" fill="#FF5F00"/></svg> },
-                    { id: 'amex', name: 'Amex',
-                      logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#006FCF"/><text x="24" y="20" textAnchor="middle" fill="#FFFFFF" fontSize="8" fontWeight="bold" fontFamily="Arial">AMEX</text></svg> },
-                    { id: 'discover', name: 'Discover',
-                      logo: <svg viewBox="0 0 48 32" className="w-10 h-7"><rect width="48" height="32" rx="4" fill="#FFFFFF" stroke="#E0E0E0"/><circle cx="28" cy="16" r="7" fill="#F47216"/><text x="18" y="20" textAnchor="middle" fill="#000" fontSize="6" fontWeight="bold" fontFamily="Arial">D</text></svg> },
-                  ].map(card => (
-                    <div key={card.id}
-                      className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all ${
-                        selectedCard === card.id
-                          ? 'border-brand-gold shadow-md ring-2 ring-brand-gold/30 scale-105'
-                          : cardNumber.replace(/\s/g, '').length > 0 && selectedCard !== card.id
-                            ? 'border-gray-100 opacity-30'
-                            : 'border-gray-200'
-                      }`}>
-                      {card.logo}
-                      <span className="text-[10px] font-semibold text-gray-600">{card.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Payment fields */}
-              <div className="space-y-3 mb-5">
-                {/* Email — required so we can send the confirmation/receipt */}
-                <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">
-                    Email (for booking confirmation)
-                  </label>
-                  <input
-                    type="email"
-                    inputMode="email"
-                    autoComplete="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    onBlur={() => markTouched('email')}
-                    className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
-                      touched.email && !isEmailValid
-                        ? 'border-red-300 bg-red-50/40 focus:border-red-400'
-                        : 'border-gray-200 focus:border-brand-gold'
-                    }`}
-                    placeholder="you@example.com"
-                  />
-                  {touched.email && !isEmailValid ? (
-                    <p className="text-xs text-red-500 mt-1">Enter a valid email so we can send your tickets.</p>
-                  ) : (
-                    <p className="text-xs text-gray-400 mt-1">We'll send your booking confirmation here.</p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Cardholder Name</label>
-                  <input
-                    value={cardName}
-                    onChange={e => setCardName(e.target.value)}
-                    onBlur={() => markTouched('cardName')}
-                    className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
-                      touched.cardName && !isCardNameValid
-                        ? 'border-red-300 bg-red-50/40 focus:border-red-400'
-                        : 'border-gray-200 focus:border-brand-gold'
-                    }`}
-                    placeholder="Name on card" />
-                  {touched.cardName && !isCardNameValid && (
-                    <p className="text-xs text-red-500 mt-1">Enter the cardholder's full name.</p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Card Number</label>
-                  <div className="relative">
-                    <input
-                      value={cardNumber}
-                      onChange={handleCardNumberChange}
-                      onBlur={() => markTouched('cardNumber')}
-                      inputMode="numeric"
-                      autoComplete="cc-number"
-                      className={`w-full px-3 py-2.5 pr-14 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition tracking-wider ${
-                        touched.cardNumber && !isCardNumberValid
-                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
-                          : 'border-gray-200 focus:border-brand-gold'
-                      }`}
-                      placeholder="0000 0000 0000 0000" maxLength={19} />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40">
-                      {selectedCard === 'visa' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#1A1F71"/><text x="18" y="15" textAnchor="middle" fill="#FFF" fontSize="9" fontWeight="bold" fontStyle="italic" fontFamily="Arial">VISA</text></svg>}
-                      {selectedCard === 'mastercard' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#252525"/><circle cx="14" cy="12" r="6" fill="#EB001B"/><circle cx="22" cy="12" r="6" fill="#F79E1B"/></svg>}
-                      {selectedCard === 'amex' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#006FCF"/><text x="18" y="15" textAnchor="middle" fill="#FFF" fontSize="6" fontWeight="bold" fontFamily="Arial">AMEX</text></svg>}
-                      {selectedCard === 'discover' && <svg viewBox="0 0 36 24" className="w-8 h-5"><rect width="36" height="24" rx="3" fill="#FFF" stroke="#E0E0E0"/><circle cx="21" cy="12" r="5" fill="#F47216"/></svg>}
-                    </div>
-                  </div>
-                  {touched.cardNumber && !isCardNumberValid && (
-                    <p className="text-xs text-red-500 mt-1">
-                      {cardNumberDigits.length === 0
-                        ? 'Card number is required.'
-                        : cardNumberDigits.length < 13
-                          ? 'Card number is too short.'
-                          : 'That card number is not valid. Please double-check it.'}
-                    </p>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 mb-1 block">Expiry</label>
-                    <input
-                      value={expiry}
-                      onChange={handleExpiryChange}
-                      onBlur={() => markTouched('expiry')}
-                      inputMode="numeric"
-                      autoComplete="cc-exp"
-                      className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
-                        touched.expiry && !isExpiryValid
-                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
-                          : 'border-gray-200 focus:border-brand-gold'
-                      }`}
-                      placeholder="MM/YY" maxLength={5} />
-                    {touched.expiry && !isExpiryValid && (
-                      <p className="text-xs text-red-500 mt-1">Use MM/YY format.</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 mb-1 block">CVV</label>
-                    <input
-                      value={cvv}
-                      onChange={handleCvvChange}
-                      onBlur={() => markTouched('cvv')}
-                      inputMode="numeric"
-                      autoComplete="cc-csc"
-                      className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
-                        touched.cvv && !isCvvValid
-                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
-                          : 'border-gray-200 focus:border-brand-gold'
-                      }`}
-                      placeholder={selectedCard === 'amex' ? '1234' : '123'} maxLength={4} type="password" />
-                    {touched.cvv && !isCvvValid && (
-                      <p className="text-xs text-red-500 mt-1">{selectedCard === 'amex' ? '4-digit CVV.' : '3 or 4 digits.'}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Secure payment indicator */}
-              <div className="flex items-center justify-center gap-1.5 mb-4 text-xs text-gray-400">
-                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+              {/* Authorize.Net redirect notice — replaces the old in-page card form.
+                  Card details are now collected on Authorize.Net's hosted page
+                  (PCI-compliant — we never touch the card on our domain). */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 flex items-start gap-3">
+                <svg className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                 </svg>
-                Secure payment - your data is encrypted
+                <div className="text-sm text-blue-900">
+                  <p className="font-semibold mb-0.5">Secure payment via Authorize.Net</p>
+                  <p className="text-xs text-blue-700">
+                    When you click below you'll be taken to our payment processor (Authorize.Net) to enter your card details. Your card information is never seen or stored by this site.
+                  </p>
+                </div>
               </div>
 
               <button onClick={handlePaySubmit} disabled={loading || !isPaymentValid}
@@ -777,15 +584,15 @@ export default function BookingPanel({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                     </svg>
-                    Processing...
+                    Redirecting to payment...
                   </span>
                 ) : (
-                  `Pay ${formatPrice(total)}`
+                  `Continue to Payment - ${formatPrice(total)}`
                 )}
               </button>
               {!isPaymentValid && (
                 <p className="text-center text-xs text-gray-400 mt-2">
-                  Enter valid card details to continue
+                  Enter a valid email to continue
                 </p>
               )}
             </div>
