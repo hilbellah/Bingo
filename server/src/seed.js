@@ -249,4 +249,20 @@ async function seed() {
   process.exit(0);
 }
 
-seed().catch(e => { console.error(e); process.exit(1); });
+seed().catch(e => {
+  const isRenderDiskUnavailable = String(e?.message || '').includes('Render persistent disk is not available');
+  const databaseUrl = process.env.DATABASE_URL || '';
+
+  // Render persistent disks are mounted only at runtime, not during build.
+  // Some Render service settings still run seed.js in the build command. Seed
+  // is destructive and should never run on deploy, so skip this build-time path
+  // cleanly when the runtime disk is unavailable.
+  if (isRenderDiskUnavailable && databaseUrl.startsWith('/var/data/')) {
+    console.warn('Skipping direct seed.js run because Render persistent disk is unavailable during build.');
+    console.warn('Seeds do not run on deploy; migrations and baseline-package recovery run during server startup.');
+    process.exit(0);
+  }
+
+  console.error(e);
+  process.exit(1);
+});
