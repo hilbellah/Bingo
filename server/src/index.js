@@ -74,6 +74,7 @@ app.use(express.json({
     }
   }
 }));
+app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -863,38 +864,144 @@ app.get('/api/bookings/:id/status', (req, res) => {
 // their receipt page) or POST (showReceipt:false → browser submits form data
 // with transaction details). We handle both with app.all.
 //
-// NEITHER of these endpoints marks the booking 'paid'. That's done by the
-// webhook (Stage 5) which is signed and authoritative. These just redirect
-// the customer to a client-side processing/cancelled page.
-//
-// Why split it this way:
-//   - Customers close tabs after paying. The webhook fires regardless.
-//   - Browser redirects can be spoofed (no HMAC). The webhook is signed.
-//   - Authorize.Net's redirect doesn't reliably include transId.
+// The webhook is still the primary payment signal, but the browser return can
+// safely reconcile a payment when Authorize.Net includes a transaction id. The
+// browser return is not trusted by itself; we verify server-to-server and only
+// mark paid when invoice number and amount match our pending booking.
 
-app.all('/payment/return', (req, res) => {
-  const bookingId = req.query.bookingId || req.body?.bookingId;
+function firstString(...values) {
+  for (const value of values) {
+    const candidate = Array.isArray(value) ? value[0] : value;
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return '';
+}
+
+function findBookingForPaymentReturn(req) {
+  const body = req.body || {};
+  const bookingId = firstString(req.query.bookingId, body.bookingId, body.booking_id);
+  const invoiceNumber = firstString(
+    req.query.invoiceNumber,
+    req.query.invoice,
+    req.query.refNumber,
+    body.invoiceNumber,
+    body.invoice,
+    body.refNumber,
+    body.x_invoice_num,
+    body.merchantReferenceId
+  );
+
+  if (bookingId) {
+    const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+    if (booking) return booking;
+  }
+
+  if (invoiceNumber) {
+    const booking = get('SELECT * FROM bookings WHERE reference_number = ?', [invoiceNumber]);
+    if (booking) return booking;
+  }
+
+  return null;
+}
+
+function getReturnTransactionId(req) {
+  const body = req.body || {};
+  return firstString(
+    req.query.transId,
+    req.query.transactionId,
+    req.query.transaction_id,
+    body.transId,
+    body.transactionId,
+    body.transaction_id,
+    body.x_trans_id
+  );
+}
+
+async function reconcilePaymentReturn(booking, transactionId) {
+  if (!transactionId || booking.payment_status === 'paid') return;
+
+  const verify = await verifyTransaction(transactionId);
+  if (!verify.ok) {
+    logPaymentEvent(booking.id, 'return_verify_error', 'authorize_net_browser', {
+      transactionId,
+      error: verify.error,
+    });
+    return;
+  }
+
+  if (verify.invoiceNumber !== booking.reference_number) {
+    logPaymentEvent(booking.id, 'return_verify_mismatch', 'authorize_net_browser', {
+      transactionId,
+      expectedInvoiceNumber: booking.reference_number,
+      actualInvoiceNumber: verify.invoiceNumber,
+    });
+    return;
+  }
+
+  if (verify.amountCents !== booking.total_amount) {
+    logPaymentEvent(booking.id, 'return_verify_mismatch', 'authorize_net_browser', {
+      transactionId,
+      expectedAmountCents: booking.total_amount,
+      actualAmountCents: verify.amountCents,
+    });
+    return;
+  }
+
+  if (verify.approved) {
+    markBookingPaid({
+      bookingId: booking.id,
+      transactionId,
+      authCode: verify.authCode,
+      source: 'authorize_net_browser_verified',
+    });
+    return;
+  }
+
+  if (['2', '3'].includes(String(verify.responseCode))) {
+    markBookingFailed({
+      bookingId: booking.id,
+      reason: verify.error || `Authorize.Net response code ${verify.responseCode}`,
+      source: 'authorize_net_browser_verified',
+    });
+  }
+}
+
+app.all('/payment/return', async (req, res) => {
+  const booking = findBookingForPaymentReturn(req);
+  const transactionId = getReturnTransactionId(req);
+  const bookingId = booking?.id;
   if (!bookingId) {
-    console.warn('[payments] /payment/return called without bookingId');
+    console.warn('[payments] /payment/return called without a matching booking', {
+      method: req.method,
+      bodyKeys: Object.keys(req.body || {}),
+    });
     return res.redirect('/');
   }
   logPaymentEvent(bookingId, 'returned', 'authorize_net_browser', {
     method: req.method,
+    transactionId: transactionId || null,
+    bodyKeys: Object.keys(req.body || {}),
   });
-  // Client-side route — polls /api/bookings/:id/status until the webhook
-  // flips it to 'paid' or 'failed'. If the customer's browser dies before
-  // arriving here, the webhook still completes the booking out of band.
+  try {
+    await reconcilePaymentReturn(booking, transactionId);
+  } catch (err) {
+    console.error('[payments] browser return reconciliation failed:', err?.message || err);
+    logPaymentEvent(bookingId, 'return_verify_error', 'authorize_net_browser', {
+      transactionId: transactionId || null,
+      error: err?.message || String(err),
+    });
+  }
   return res.redirect(`/booking/${encodeURIComponent(bookingId)}/processing`);
 });
 
 app.all('/payment/cancel', (req, res) => {
-  const bookingId = req.query.bookingId || req.body?.bookingId;
-  if (bookingId) {
-    markBookingCancelled({ bookingId, source: 'customer' });
+  const booking = findBookingForPaymentReturn(req);
+  if (booking?.id) {
+    markBookingCancelled({ bookingId: booking.id, source: 'customer' });
   }
   // Client-side route — shows "Payment cancelled" with a "Try Again" button.
   // Seats remain 'held' so the customer can retry without losing them.
-  return res.redirect(`/booking/${encodeURIComponent(bookingId || '')}/cancelled`);
+  return res.redirect(`/booking/${encodeURIComponent(booking?.id || '')}/cancelled`);
 });
 
 // ============ AUTHORIZE.NET WEBHOOK ============

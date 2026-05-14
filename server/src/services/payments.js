@@ -261,6 +261,7 @@ export async function verifyTransaction(transId) {
         const status = t.getTransactionStatus?.(); // e.g. 'capturedPendingSettlement', 'settledSuccessfully'
         const authCode = t.getAuthCode?.();
         const authAmount = Number(t.getAuthAmount?.()) || 0;
+        const invoiceNumber = t.getOrder?.()?.getInvoiceNumber?.() || null;
         // Extract the last 4 digits of the card from the response. The SDK
         // returns the card number masked (e.g. "XXXX1111"); we slice the last
         // 4. Refunds require this; voids don't but we return it anyway.
@@ -271,6 +272,8 @@ export async function verifyTransaction(transId) {
           approved,
           status,
           authCode,
+          responseCode,
+          invoiceNumber,
           amountCents: Math.round(authAmount * 100),
           last4,
         });
