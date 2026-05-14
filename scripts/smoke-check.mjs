@@ -10,6 +10,7 @@ const dbPath = path.join(tmpDir, 'bingo.db');
 
 process.env.DATABASE_URL = dbPath;
 process.env.SKIP_LEGACY_DB_COPY = '1';
+process.env.SKIP_RENDER_DISK_CHECK = '1';
 
 const { migrate } = await import(pathToFileURL(path.join(repoRoot, 'server/src/migrate.js')));
 const { getDb, all } = await import(pathToFileURL(path.join(repoRoot, 'server/src/database.js')));

@@ -9,18 +9,78 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const dbPath = path.resolve(__dirname, '..', process.env.DATABASE_URL || './bingo.db');
 const legacyDbPath = path.resolve(__dirname, '..', './bingo.db');
+const renderDiskMountPath = '/var/data';
 
 let db = null;
 let saveTimer = null;
 const SAVE_DELAY_MS = 500; // batch writes within 500ms window
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function usesRenderPersistentDisk() {
+  if (process.env.SKIP_RENDER_DISK_CHECK) return false;
+  const rawDatabaseUrl = (process.env.DATABASE_URL || '').replace(/\\/g, '/');
+  if (rawDatabaseUrl === renderDiskMountPath || rawDatabaseUrl.startsWith(`${renderDiskMountPath}/`)) {
+    return true;
+  }
+  const normalized = dbPath.replace(/\\/g, '/');
+  return normalized === renderDiskMountPath || normalized.startsWith(`${renderDiskMountPath}/`);
+}
+
+function assertWritableDirectory(dirPath) {
+  const stat = fs.statSync(dirPath);
+  if (!stat.isDirectory()) {
+    throw new Error(`${dirPath} exists but is not a directory`);
+  }
+
+  const probePath = path.join(dirPath, `.write-test-${process.pid}-${Date.now()}`);
+  fs.writeFileSync(probePath, 'ok');
+  fs.unlinkSync(probePath);
+}
+
+async function waitForRenderDisk() {
+  if (!usesRenderPersistentDisk()) return;
+
+  const attempts = Number(process.env.RENDER_DISK_WAIT_ATTEMPTS || 30);
+  const delayMs = Number(process.env.RENDER_DISK_WAIT_MS || 1000);
+  let lastError = null;
+
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      assertWritableDirectory(renderDiskMountPath);
+      console.log(`Verified Render persistent disk at ${renderDiskMountPath}`);
+      return;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Waiting for Render persistent disk at ${renderDiskMountPath} (${i}/${attempts}): ${err.message}`);
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error(
+    `Render persistent disk is not available at ${renderDiskMountPath}. ` +
+    `DATABASE_URL=${dbPath}. Check the Render disk mount path and redeploy. ` +
+    `Last error: ${lastError?.message || 'unknown'}`
+  );
+}
+
+function ensureDatabaseDirectory() {
+  const dirPath = path.dirname(dbPath);
+  if (usesRenderPersistentDisk()) {
+    assertWritableDirectory(renderDiskMountPath);
+    return;
+  }
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
 export async function getDb() {
   if (db) return db;
 
   const SQL = await initSqlJs();
+  await waitForRenderDisk();
 
   if (!process.env.SKIP_LEGACY_DB_COPY && !fs.existsSync(dbPath) && dbPath !== legacyDbPath && fs.existsSync(legacyDbPath)) {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    ensureDatabaseDirectory();
     fs.copyFileSync(legacyDbPath, dbPath);
     console.log(`Copied existing database from ${legacyDbPath} to ${dbPath}`);
   }
@@ -44,7 +104,7 @@ export function saveDb() {
   if (!db) return;
   const data = db.export();
   const buffer = Buffer.from(data);
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  ensureDatabaseDirectory();
   fs.writeFileSync(dbPath, buffer);
 }
 
