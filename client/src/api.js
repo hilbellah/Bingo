@@ -69,6 +69,33 @@ export async function createBooking(sessionId, holderId, attendees, email) {
   return res.json();
 }
 
+// Initiates a customer booking through the Authorize.Net hosted-payment flow.
+// Returns { bookingId, referenceNumber, redirectUrl, token, totalAmount, ... }
+// on success, or { error } on validation failure / server error.
+// The caller is expected to build a self-submitting form that POSTs `token`
+// to `redirectUrl` to send the customer to Authorize.Net's hosted card page.
+export async function initiateBooking(sessionId, holderId, attendees, email) {
+  const res = await fetch(`${API}/bookings/initiate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, holderId, attendees, email })
+  });
+  return res.json();
+}
+
+// Polls booking payment status. Used by BookingProcessing while waiting for
+// the webhook to flip the booking to 'paid' / 'failed' / 'cancelled'.
+export async function fetchBookingStatus(bookingId) {
+  const res = await fetch(`${API}/bookings/${encodeURIComponent(bookingId)}/status`);
+  return res.json();
+}
+
+// Fetches the full ticket details (used to render the post-payment receipt).
+export async function fetchBookingTickets(referenceNumber) {
+  const res = await fetch(`${API}/bookings/${encodeURIComponent(referenceNumber)}/tickets`);
+  return res.json();
+}
+
 // Admin API
 export function adminHeaders(token) {
   return {
@@ -199,6 +226,18 @@ export async function cancelAdminBooking(token, id) {
     method: 'POST', headers: adminHeaders(token)
   });
   return res.json();
+}
+
+// Refund a paid booking through Authorize.Net. The server auto-decides
+// between void (pre-settlement) and refund (post-settlement) and always
+// releases seats. Returns { ok, action: 'void'|'refund', seatsReleased,
+// refundTransId } on success or { ok: false, error } on failure.
+export async function refundAdminBooking(token, id) {
+  const res = await fetch(`${API}/admin/bookings/${id}/refund`, {
+    method: 'POST', headers: adminHeaders(token)
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
 }
 
 export function getExportUrl(token, sessionId) {

@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, cancelAdminBooking, getExportUrl, adminHeaders,
+  fetchAdminBookings, cancelAdminBooking, refundAdminBooking, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -658,6 +658,29 @@ export default function AdminDashboard() {
     loadBookings(reportSession);
   };
 
+  // Refund a paid booking through Authorize.Net. Server auto-decides void vs
+  // refund and releases seats. /cancel is for legacy/admin bookings with no
+  // payment processor; /refund is for real Authorize.Net transactions.
+  const handleRefundBooking = async (id, refNumber) => {
+    const proceed = window.confirm(
+      `Refund booking ${refNumber || id}?\n\n` +
+      `This will return the customer's money via Authorize.Net and release the seats. ` +
+      `Cannot be undone. Proceed?`
+    );
+    if (!proceed) return;
+
+    const result = await refundAdminBooking(token, id);
+    if (result.ok) {
+      window.alert(
+        `Refund successful (${result.action || 'completed'}).` +
+        (result.seatsReleased ? ` ${result.seatsReleased} seat(s) released.` : '')
+      );
+      loadBookings(reportSession);
+    } else {
+      window.alert('Refund failed: ' + (result.error || 'Unknown error'));
+    }
+  };
+
   const handleExport = () => {
     const url = getExportUrl(token, reportSession);
     // Need to add auth header for download — open in iframe or use fetch+blob
@@ -775,6 +798,7 @@ export default function AdminDashboard() {
     bookings,
     loadBookings,
     handleCancelBooking,
+    handleRefundBooking,
     handleExport,
     bulkDateFrom,
     setBulkDateFrom,

@@ -16,6 +16,7 @@ import { cleanupOldData, ensureFutureSessions, getScheduleSummary, openWeeklySes
 import { createUploadMiddleware } from './uploads.js';
 import { formatLocalDate, formatPrice, generateRef } from './utils/format.js';
 import { sendBookingConfirmation } from './services/email.js';
+import { createHostedPaymentPage, verifyTransaction, verifyWebhookSignature, refundTransaction, voidTransaction } from './services/payments.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -69,6 +70,436 @@ app.get('/health', async (req, res) => {
 function logAudit(action, entityType, entityId, details) {
   run('INSERT INTO audit_log (id, action, entity_type, entity_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     [uuid(), action, entityType, entityId, typeof details === 'string' ? details : JSON.stringify(details), new Date().toISOString()]);
+}
+
+// ============ BOOKING + PAYMENT HELPERS ============
+//
+// Shared building blocks for:
+//   POST /api/bookings           — legacy/admin instant-paid path
+//   POST /api/bookings/initiate  — customer-facing path that returns a hosted-page token
+//   GET  /payment/return         — handles browser redirect from Authorize.Net (Stage 4)
+//   POST /api/webhooks/authorize-net — handles webhook events (Stage 5)
+//   POST /api/admin/bookings/:id/refund — admin refund (Stage 8)
+//
+// Convention: all helpers return either { ok: true, ... } or { ok: false, error, statusCode? }.
+// Helpers never throw on logic errors (DB exceptions still propagate as runtime errors).
+
+// Insert a single row in the payment_events audit table. Best-effort; never throws.
+function logPaymentEvent(bookingId, eventType, source, payload) {
+  try {
+    run('INSERT INTO payment_events (id, booking_id, event_type, source, raw_payload, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [uuid(), bookingId, eventType, source, JSON.stringify(payload || {}), new Date().toISOString()]);
+  } catch (err) {
+    console.error('[payments] logPaymentEvent failed:', err?.message || err);
+  }
+}
+
+// Validate the shape and integrity of a booking request body.
+// Returns { ok, data: { sessionId, holderId, attendees, trimmedEmail, session,
+//   useSessionPkgs, sessionPkgs, requiredPkg } } on success, or
+// { ok: false, statusCode, error } on failure.
+function validateBookingRequest(body) {
+  const { sessionId, holderId, attendees, email } = body || {};
+
+  if (!sessionId || !holderId || !attendees?.length) {
+    return { ok: false, statusCode: 400, error: 'Missing required fields' };
+  }
+
+  // Email required for confirmation. Permissive regex — just catches typos.
+  const trimmedEmail = (email || '').trim();
+  if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    return { ok: false, statusCode: 400, error: 'A valid email address is required for the booking confirmation.' };
+  }
+
+  const session = get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+  if (!session) return { ok: false, statusCode: 404, error: 'Session not found' };
+
+  // Session-specific packages override the global package list when present.
+  const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [sessionId]);
+  const useSessionPkgs = sessionPkgs.length > 0;
+  const requiredPkg = useSessionPkgs
+    ? sessionPkgs.find(p => p.type === 'required')
+    : get("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 LIMIT 1");
+  if (!requiredPkg) return { ok: false, statusCode: 500, error: 'No required package configured' };
+
+  // Every seat must currently be held by THIS holder. Prevents booking seats
+  // that someone else has held, or seats that aren't held at all.
+  for (const att of attendees) {
+    const seat = get('SELECT * FROM seats WHERE id = ?', [att.seatId]);
+    if (!seat || seat.status !== 'held' || seat.held_by !== holderId) {
+      return { ok: false, statusCode: 409, error: 'Seat not held by you' };
+    }
+  }
+
+  return {
+    ok: true,
+    data: { sessionId, holderId, attendees, trimmedEmail, session, useSessionPkgs, sessionPkgs, requiredPkg }
+  };
+}
+
+// Enforce PHD (Personal Handheld Device) per-player limit and total stock.
+// Returns { ok: true, phdPkgIds, phdConfig } or { ok: false, error }.
+function validatePhdInventory(attendees, useSessionPkgs, sessionPkgs) {
+  const phdSettingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
+  const phdConfig = phdSettingsRow ? JSON.parse(phdSettingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
+
+  const phdPkgIds = new Set();
+  if (useSessionPkgs) {
+    sessionPkgs.filter(p => p.is_phd).forEach(p => phdPkgIds.add(p.id));
+  } else {
+    all('SELECT id FROM packages WHERE is_phd = 1 AND is_active = 1').forEach(p => phdPkgIds.add(p.id));
+  }
+
+  if (phdPkgIds.size === 0) return { ok: true, phdPkgIds, phdConfig };
+
+  // Per-player limit
+  for (const att of attendees) {
+    if (!att.addons) continue;
+    let playerPhdQty = 0;
+    for (const addon of att.addons) {
+      if (phdPkgIds.has(addon.packageId)) playerPhdQty += addon.quantity;
+    }
+    if (playerPhdQty > phdConfig.perPlayerLimit) {
+      return { ok: false, error: `Each player can only add up to ${phdConfig.perPlayerLimit} handheld devices.` };
+    }
+  }
+
+  // Total inventory across all paid bookings vs total stock
+  let totalPhdInBooking = 0;
+  for (const att of attendees) {
+    if (!att.addons) continue;
+    for (const addon of att.addons) {
+      if (phdPkgIds.has(addon.packageId)) totalPhdInBooking += addon.quantity;
+    }
+  }
+
+  if (totalPhdInBooking > 0) {
+    const usedRow = get(`
+      SELECT COALESCE(SUM(ba.quantity), 0) as total_used
+      FROM booking_addons ba
+      JOIN booking_items bi ON bi.id = ba.booking_item_id
+      JOIN bookings b ON b.id = bi.booking_id
+      WHERE b.payment_status = 'paid'
+        AND (
+          ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+          OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+        )
+    `);
+    const totalUsed = usedRow?.total_used || 0;
+    const remaining = phdConfig.totalStock - totalUsed;
+
+    if (totalPhdInBooking > remaining) {
+      return { ok: false, error: `Only ${remaining} handheld device${remaining !== 1 ? 's' : ''} remaining in stock. You requested ${totalPhdInBooking}.` };
+    }
+  }
+
+  return { ok: true, phdPkgIds, phdConfig };
+}
+
+// Insert a booking + its items + addons. Always 'pending' status.
+// Does NOT flip seats and does NOT emit any sockets — that happens in markBookingPaid.
+// Returns { bookingId, refNumber, totalAmount, itemRefs }. Throws on DB error.
+function insertBookingRecord({ sessionId, attendees, requiredPkg, sessionPkgs, useSessionPkgs, email }) {
+  let totalAmount = 0;
+  const bookingId = uuid();
+  const refNumber = generateRef();
+  const itemRefs = [];
+
+  for (const att of attendees) {
+    const itemId = uuid();
+    const itemRef = generateRef();
+    itemRefs.push(itemRef);
+    totalAmount += requiredPkg.price;
+
+    run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [itemId, bookingId, att.firstName, att.lastName, att.seatId, requiredPkg.id, requiredPkg.price, itemRef]);
+
+    if (att.addons) {
+      for (const addon of att.addons) {
+        const pkg = useSessionPkgs
+          ? sessionPkgs.find(p => p.id === addon.packageId)
+          : get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
+        if (pkg) {
+          const addonPrice = pkg.price * addon.quantity;
+          totalAmount += addonPrice;
+          run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)',
+            [uuid(), itemId, addon.packageId, addon.quantity, addonPrice]);
+        }
+      }
+    }
+  }
+
+  run('INSERT INTO bookings (id, session_id, reference_number, total_amount, payment_status, created_at, email) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [bookingId, sessionId, refNumber, totalAmount, 'pending', new Date().toISOString(), email]);
+
+  // Preserve the original 'booking_created' audit event so any admin filters
+  // / dashboards watching for it keep working after the refactor.
+  logAudit('booking_created', 'booking', bookingId, {
+    referenceNumber: refNumber,
+    sessionId,
+    totalAmount,
+    attendees: attendees.map(a => ({ firstName: a.firstName, lastName: a.lastName, seatId: a.seatId }))
+  });
+
+  return { bookingId, refNumber, totalAmount, itemRefs };
+}
+
+// Idempotently transition a booking from 'pending' to 'paid'. Performs the
+// side effects that used to live inline in POST /api/bookings:
+//   - flip booked seats from 'held' to 'sold' + emit seat:sold
+//   - update bookings row with transaction_id, auth_code, payment_completed_at
+//   - emit receipt data to admin auto-print room
+//   - emit PHD inventory update if booking had PHD addons
+//   - log payment_event 'approved' + audit_log 'booking_paid'
+//   - fire confirmation email (setImmediate, never blocks caller)
+//
+// Returns { ok, alreadyPaid? }. Safe to call multiple times — second+ calls
+// short-circuit. This is what makes /payment/return and the webhook safe to
+// both fire for the same booking.
+function markBookingPaid({ bookingId, transactionId = null, authCode = null, source = 'instant' }) {
+  const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) {
+    console.error(`[bookings] markBookingPaid: booking ${bookingId} not found`);
+    return { ok: false, error: 'booking_not_found' };
+  }
+  if (booking.payment_status === 'paid') {
+    console.log(`[bookings] markBookingPaid: ${bookingId} already paid, idempotent skip`);
+    return { ok: true, alreadyPaid: true };
+  }
+
+  const session = get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
+  const items = all('SELECT * FROM booking_items WHERE booking_id = ?', [bookingId]);
+
+  // Update booking row
+  run(`UPDATE bookings SET
+    payment_status = 'paid',
+    transaction_id = ?,
+    auth_code = ?,
+    payment_completed_at = ?
+    WHERE id = ?`,
+    [transactionId, authCode, new Date().toISOString(), bookingId]);
+
+  // Flip seats to sold + emit per-seat for live seat-map updates
+  for (const it of items) {
+    run(`UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
+    io.to(`session:${booking.session_id}`).emit('seat:sold', { seatId: it.seat_id, sessionId: booking.session_id });
+  }
+
+  // Build receipt data and emit to admin auto-print room
+  const receiptItems = all(`
+    SELECT bi.id, bi.first_name, bi.last_name, bi.price, bi.reference_number,
+           seats.table_number, seats.chair_number,
+           COALESCE(p.name, sp.name) as package_name,
+           COALESCE(p.price, sp.price) as package_price
+    FROM booking_items bi
+    JOIN seats ON seats.id = bi.seat_id
+    LEFT JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN session_packages sp ON sp.id = bi.package_id
+    WHERE bi.booking_id = ?
+    ORDER BY bi.id
+  `, [bookingId]);
+  const receiptAddons = all(`
+    SELECT ba.booking_item_id, ba.quantity, ba.price,
+           COALESCE(p.name, sp.name) as package_name
+    FROM booking_addons ba
+    LEFT JOIN packages p ON p.id = ba.package_id
+    LEFT JOIN session_packages sp ON sp.id = ba.package_id
+    JOIN booking_items bi ON bi.id = ba.booking_item_id
+    WHERE bi.booking_id = ?
+  `, [bookingId]);
+  io.to('admin:receipts').emit('booking:new', {
+    referenceNumber: booking.reference_number,
+    sessionDate: session?.date,
+    sessionTime: session?.time,
+    totalAmount: booking.total_amount,
+    totalFormatted: '$' + formatPrice(booking.total_amount),
+    createdAt: new Date().toISOString(),
+    items: receiptItems.map(item => ({
+      firstName: item.first_name,
+      lastName: item.last_name,
+      tableNumber: item.table_number,
+      chairNumber: item.chair_number,
+      referenceNumber: item.reference_number,
+      packageName: item.package_name,
+      packagePrice: item.package_price,
+      packagePriceFormatted: '$' + formatPrice(item.package_price),
+      addons: receiptAddons
+        .filter(a => a.booking_item_id === item.id)
+        .map(a => ({ packageName: a.package_name, quantity: a.quantity, price: a.price, priceFormatted: '$' + formatPrice(a.price) }))
+    }))
+  });
+
+  // PHD inventory update emit — only if this booking had PHD addons
+  const phdInBooking = get(`
+    SELECT COALESCE(SUM(ba.quantity), 0) as cnt
+    FROM booking_addons ba
+    JOIN booking_items bi ON bi.id = ba.booking_item_id
+    WHERE bi.booking_id = ?
+      AND (ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+           OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1))
+  `, [bookingId]);
+  if (phdInBooking && phdInBooking.cnt > 0) {
+    const phdSettingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
+    const phdConfig = phdSettingsRow ? JSON.parse(phdSettingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
+    const phdUsedNow = get(`
+      SELECT COALESCE(SUM(ba.quantity), 0) as total_used
+      FROM booking_addons ba
+      JOIN booking_items bi ON bi.id = ba.booking_item_id
+      JOIN bookings b ON b.id = bi.booking_id
+      WHERE b.payment_status = 'paid'
+        AND (ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+             OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1))
+    `);
+    const phdUsed = phdUsedNow?.total_used || 0;
+    io.to('admin:receipts').emit('phd:updated', {
+      totalStock: phdConfig.totalStock,
+      totalUsed: phdUsed,
+      remaining: Math.max(0, phdConfig.totalStock - phdUsed),
+      perPlayerLimit: phdConfig.perPlayerLimit
+    });
+  }
+
+  // Flush to disk — critical write
+  saveDb();
+
+  logPaymentEvent(bookingId, 'approved', source, { transactionId, authCode });
+  logAudit('booking_paid', 'booking', bookingId, {
+    referenceNumber: booking.reference_number,
+    sessionId: booking.session_id,
+    totalAmount: booking.total_amount,
+    transactionId,
+    authCode,
+    source
+  });
+
+  // Fire confirmation email asynchronously so we don't block the caller.
+  setImmediate(() => sendBookingConfirmationEmail(bookingId).catch(err => {
+    console.error('[email] unexpected error:', err);
+  }));
+
+  return { ok: true };
+}
+
+// Idempotently mark a 'pending' booking as 'failed' (decline / error path).
+// Does not flip seats — they remain 'held' until the hold expires naturally,
+// freeing them for a retry by the same customer or for other buyers.
+function markBookingFailed({ bookingId, reason, source = 'server' }) {
+  const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) return { ok: false, error: 'booking_not_found' };
+  if (booking.payment_status === 'paid') return { ok: false, error: 'already_paid' };
+  if (booking.payment_status === 'failed') return { ok: true, alreadyFailed: true };
+
+  run(`UPDATE bookings SET payment_status = 'failed', payment_failure_reason = ? WHERE id = ?`,
+    [String(reason || 'unknown').slice(0, 500), bookingId]);
+  saveDb();
+
+  logPaymentEvent(bookingId, 'declined', source, { reason });
+  return { ok: true };
+}
+
+// Idempotently mark a 'pending' booking as 'cancelled' (customer clicked Cancel
+// on the Authorize.Net hosted page). Does not flip seats — they remain 'held'
+// so the customer can retry within the hold window without losing their spot.
+function markBookingCancelled({ bookingId, source = 'customer' }) {
+  const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) return { ok: false, error: 'booking_not_found' };
+  if (booking.payment_status === 'paid') return { ok: false, error: 'already_paid' };
+  if (booking.payment_status === 'cancelled') return { ok: true, alreadyCancelled: true };
+
+  run(`UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?`, [bookingId]);
+  saveDb();
+
+  logPaymentEvent(bookingId, 'cancelled', source, {});
+  return { ok: true };
+}
+
+// Idempotently mark a 'paid' booking as 'refunded' (post-settlement reversal).
+// Does NOT release seats — admin makes that decision in the refund UI based on
+// whether the session has already occurred. Emits a socket event so admin
+// dashboards refresh.
+function markBookingRefunded({ bookingId, transactionId = null, source = 'admin' }) {
+  const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) return { ok: false, error: 'booking_not_found' };
+  if (booking.payment_status === 'refunded') return { ok: true, alreadyRefunded: true };
+  if (booking.payment_status !== 'paid') {
+    return { ok: false, error: `cannot refund booking in status '${booking.payment_status}'` };
+  }
+
+  run(`UPDATE bookings SET payment_status = 'refunded' WHERE id = ?`, [bookingId]);
+  saveDb();
+
+  logPaymentEvent(bookingId, 'refunded', source, { transactionId });
+  logAudit('booking_refunded', 'booking', bookingId, { transactionId, source });
+  io.to('admin:receipts').emit('booking:refunded', { bookingId, transactionId });
+  return { ok: true };
+}
+
+// Idempotently mark a 'paid' booking as 'voided' (pre-settlement reversal).
+// Same semantics as markBookingRefunded but distinguished in audit logs so
+// admins can tell which type of reversal happened.
+function markBookingVoided({ bookingId, transactionId = null, source = 'admin' }) {
+  const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) return { ok: false, error: 'booking_not_found' };
+  if (booking.payment_status === 'voided') return { ok: true, alreadyVoided: true };
+  if (booking.payment_status !== 'paid') {
+    return { ok: false, error: `cannot void booking in status '${booking.payment_status}'` };
+  }
+
+  run(`UPDATE bookings SET payment_status = 'voided' WHERE id = ?`, [bookingId]);
+  saveDb();
+
+  logPaymentEvent(bookingId, 'voided', source, { transactionId });
+  logAudit('booking_voided', 'booking', bookingId, { transactionId, source });
+  io.to('admin:receipts').emit('booking:voided', { bookingId, transactionId });
+  return { ok: true };
+}
+
+// Loads a booking + related rows and fires the confirmation email.
+// Used by markBookingPaid; safe to call standalone for resends.
+async function sendBookingConfirmationEmail(bookingId) {
+  const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) return;
+  const session = get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
+  const items = all('SELECT * FROM booking_items WHERE booking_id = ? ORDER BY id', [bookingId]);
+  const addons = all(`
+    SELECT ba.*
+    FROM booking_addons ba
+    JOIN booking_items bi ON bi.id = ba.booking_item_id
+    WHERE bi.booking_id = ?
+  `, [bookingId]);
+
+  const attendees = items.map(it => ({
+    firstName: it.first_name,
+    lastName: it.last_name,
+    seatId: it.seat_id,
+    addons: addons.filter(a => a.booking_item_id === it.id).map(a => ({
+      packageId: a.package_id,
+      quantity: a.quantity,
+    })),
+  }));
+
+  const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ?', [booking.session_id]);
+  const useSessionPkgs = sessionPkgs.length > 0;
+  const packages = useSessionPkgs ? sessionPkgs : all('SELECT * FROM packages WHERE is_active = 1');
+
+  const seats = items.map(it => {
+    const s = get('SELECT id, table_number, chair_number FROM seats WHERE id = ?', [it.seat_id]);
+    return s || { id: it.seat_id, table_number: '?', chair_number: '?' };
+  });
+
+  return sendBookingConfirmation({
+    to: booking.email,
+    booking: {
+      referenceNumber: booking.reference_number,
+      itemReferences: items.map(it => it.reference_number),
+      totalAmount: booking.total_amount,
+      totalFormatted: '$' + formatPrice(booking.total_amount),
+    },
+    session,
+    attendees,
+    seats,
+    packages,
+  });
 }
 
 // ============ API ROUTES ============
@@ -230,219 +661,28 @@ app.post('/api/seats/:seatId/unlock', (req, res) => {
 });
 
 // --- Create Booking ---
+// ============ BOOKINGS — CUSTOMER PATHS ============
+
+// Legacy/admin path: creates a booking and marks it 'paid' IMMEDIATELY without
+// a real payment processor. Originally the only path; now reserved for admin
+// comp/staff bookings or any flow where money was collected elsewhere.
+// Customer-facing UI should hit POST /api/bookings/initiate instead.
 app.post('/api/bookings', (req, res) => {
-  const { sessionId, holderId, attendees, email } = req.body;
+  const validation = validateBookingRequest(req.body);
+  if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
+  const { sessionId, attendees, trimmedEmail, useSessionPkgs, sessionPkgs, requiredPkg } = validation.data;
 
-  if (!sessionId || !holderId || !attendees?.length) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-
-  // Email is required so we can send the confirmation. Permissive regex —
-  // we just want to catch typos like "foo@bar" before saving.
-  const trimmedEmail = (email || '').trim();
-  if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-    return res.status(400).json({ error: 'A valid email address is required for the booking confirmation.' });
-  }
-
-  const session = get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-
-  // Check for session-specific packages first, then fall back to global
-  const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [sessionId]);
-  const useSessionPkgs = sessionPkgs.length > 0;
-  const requiredPkg = useSessionPkgs
-    ? sessionPkgs.find(p => p.type === 'required')
-    : get("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 LIMIT 1");
-  if (!requiredPkg) return res.status(500).json({ error: 'No required package configured' });
-
-  // Validate all seats
-  for (const att of attendees) {
-    const seat = get('SELECT * FROM seats WHERE id = ?', [att.seatId]);
-    if (!seat || seat.status !== 'held' || seat.held_by !== holderId) {
-      return res.status(409).json({ error: `Seat not held by you` });
-    }
-  }
-
-  // --- PHD inventory validation ---
-  const phdSettingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
-  const phdConfig = phdSettingsRow ? JSON.parse(phdSettingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
-
-  // Identify which packages are PHD in this booking context
-  const phdPkgIds = new Set();
-  if (useSessionPkgs) {
-    sessionPkgs.filter(p => p.is_phd).forEach(p => phdPkgIds.add(p.id));
-  } else {
-    all('SELECT id FROM packages WHERE is_phd = 1 AND is_active = 1').forEach(p => phdPkgIds.add(p.id));
-  }
-
-  if (phdPkgIds.size > 0) {
-    // Check per-player PHD limit
-    for (const att of attendees) {
-      if (!att.addons) continue;
-      let playerPhdQty = 0;
-      for (const addon of att.addons) {
-        if (phdPkgIds.has(addon.packageId)) playerPhdQty += addon.quantity;
-      }
-      if (playerPhdQty > phdConfig.perPlayerLimit) {
-        return res.status(400).json({ error: `Each player can only add up to ${phdConfig.perPlayerLimit} handheld devices.` });
-      }
-    }
-
-    // Check total PHD inventory
-    let totalPhdInBooking = 0;
-    for (const att of attendees) {
-      if (!att.addons) continue;
-      for (const addon of att.addons) {
-        if (phdPkgIds.has(addon.packageId)) totalPhdInBooking += addon.quantity;
-      }
-    }
-
-    if (totalPhdInBooking > 0) {
-      const usedRow = get(`
-        SELECT COALESCE(SUM(ba.quantity), 0) as total_used
-        FROM booking_addons ba
-        JOIN booking_items bi ON bi.id = ba.booking_item_id
-        JOIN bookings b ON b.id = bi.booking_id
-        WHERE b.payment_status = 'paid'
-          AND (
-            ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-            OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-          )
-      `);
-      const totalUsed = usedRow?.total_used || 0;
-      const remaining = phdConfig.totalStock - totalUsed;
-
-      if (totalPhdInBooking > remaining) {
-        return res.status(400).json({
-          error: `Only ${remaining} handheld device${remaining !== 1 ? 's' : ''} remaining in stock. You requested ${totalPhdInBooking}.`
-        });
-      }
-    }
-  }
+  const phdCheck = validatePhdInventory(attendees, useSessionPkgs, sessionPkgs);
+  if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
   try {
-    let totalAmount = 0;
-    const bookingId = uuid();
-    const refNumber = generateRef();
-    const itemRefs = [];
-
-    for (const att of attendees) {
-      const itemId = uuid();
-      const itemRef = generateRef();
-      itemRefs.push(itemRef);
-      totalAmount += requiredPkg.price;
-
-      run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [itemId, bookingId, att.firstName, att.lastName, att.seatId, requiredPkg.id, requiredPkg.price, itemRef]);
-
-      run(`UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`, [att.seatId]);
-
-      if (att.addons) {
-        for (const addon of att.addons) {
-          const pkg = useSessionPkgs
-            ? sessionPkgs.find(p => p.id === addon.packageId)
-            : get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
-          if (pkg) {
-            const addonPrice = pkg.price * addon.quantity;
-            totalAmount += addonPrice;
-            run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)',
-              [uuid(), itemId, addon.packageId, addon.quantity, addonPrice]);
-          }
-        }
-      }
-    }
-
-    run('INSERT INTO bookings (id, session_id, reference_number, total_amount, payment_status, created_at, email) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [bookingId, sessionId, refNumber, totalAmount, 'paid', new Date().toISOString(), trimmedEmail]);
-
-    for (const att of attendees) {
-      io.to(`session:${sessionId}`).emit('seat:sold', { seatId: att.seatId, sessionId });
-    }
-
-    // Emit receipt data for auto-print on admin dashboard
-    const receiptItems = all(`
-      SELECT bi.id, bi.first_name, bi.last_name, bi.price, bi.reference_number,
-             seats.table_number, seats.chair_number,
-             COALESCE(p.name, sp.name) as package_name,
-             COALESCE(p.price, sp.price) as package_price
-      FROM booking_items bi
-      JOIN seats ON seats.id = bi.seat_id
-      LEFT JOIN packages p ON p.id = bi.package_id
-      LEFT JOIN session_packages sp ON sp.id = bi.package_id
-      WHERE bi.booking_id = ?
-      ORDER BY bi.id
-    `, [bookingId]);
-    const receiptAddons = all(`
-      SELECT ba.booking_item_id, ba.quantity, ba.price,
-             COALESCE(p.name, sp.name) as package_name
-      FROM booking_addons ba
-      LEFT JOIN packages p ON p.id = ba.package_id
-      LEFT JOIN session_packages sp ON sp.id = ba.package_id
-      JOIN booking_items bi ON bi.id = ba.booking_item_id
-      WHERE bi.booking_id = ?
-    `, [bookingId]);
-    const receiptData = {
-      referenceNumber: refNumber,
-      sessionDate: session.date,
-      sessionTime: session.time,
-      totalAmount,
-      totalFormatted: '$' + formatPrice(totalAmount),
-      createdAt: new Date().toISOString(),
-      items: receiptItems.map(item => ({
-        firstName: item.first_name,
-        lastName: item.last_name,
-        tableNumber: item.table_number,
-        chairNumber: item.chair_number,
-        referenceNumber: item.reference_number,
-        packageName: item.package_name,
-        packagePrice: item.package_price,
-        packagePriceFormatted: '$' + formatPrice(item.package_price),
-        addons: receiptAddons
-          .filter(a => a.booking_item_id === item.id)
-          .map(a => ({ packageName: a.package_name, quantity: a.quantity, price: a.price, priceFormatted: '$' + formatPrice(a.price) }))
-      }))
-    };
-    io.to('admin:receipts').emit('booking:new', receiptData);
-
-    // If this booking included PHD add-ons, emit updated inventory so admin dashboards refresh
-    if (phdPkgIds.size > 0) {
-      let totalPhdInThisBooking = 0;
-      for (const att of attendees) {
-        if (!att.addons) continue;
-        for (const addon of att.addons) {
-          if (phdPkgIds.has(addon.packageId)) totalPhdInThisBooking += addon.quantity;
-        }
-      }
-      if (totalPhdInThisBooking > 0) {
-        const phdUsedNow = get(`
-          SELECT COALESCE(SUM(ba.quantity), 0) as total_used
-          FROM booking_addons ba
-          JOIN booking_items bi ON bi.id = ba.booking_item_id
-          JOIN bookings b ON b.id = bi.booking_id
-          WHERE b.payment_status = 'paid'
-            AND (ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-                 OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1))
-        `);
-        const phdCfg = phdConfig;
-        const phdUsed = phdUsedNow?.total_used || 0;
-        io.to('admin:receipts').emit('phd:updated', {
-          totalStock: phdCfg.totalStock,
-          totalUsed: phdUsed,
-          remaining: Math.max(0, phdCfg.totalStock - phdUsed),
-          perPlayerLimit: phdCfg.perPlayerLimit
-        });
-      }
-    }
-
-    // Flush to disk immediately — booking is a critical write
-    saveDb();
-
-    logAudit('booking_created', 'booking', bookingId, {
-      referenceNumber: refNumber,
-      sessionId,
-      totalAmount,
-      attendees: attendees.map(a => ({ firstName: a.firstName, lastName: a.lastName, seatId: a.seatId }))
+    const { bookingId, refNumber, totalAmount, itemRefs } = insertBookingRecord({
+      sessionId, attendees, requiredPkg, sessionPkgs, useSessionPkgs, email: trimmedEmail
     });
+
+    // No payment processor in this path — flip directly to 'paid'.
+    // markBookingPaid handles seat flips, sockets, audit, and email.
+    markBookingPaid({ bookingId, source: 'instant_legacy' });
 
     res.json({
       bookingId,
@@ -452,40 +692,268 @@ app.post('/api/bookings', (req, res) => {
       totalFormatted: '$' + formatPrice(totalAmount),
       email: trimmedEmail
     });
-
-    // Fire the confirmation email AFTER responding so the customer never
-    // waits on Resend. Failure here must not affect the booking — we already
-    // wrote it to disk and returned 200. Any send error is logged inside
-    // sendBookingConfirmation and shows up in Render's logs.
-    //
-    // We use the same package list source the booking actually used (session
-    // override or global) so addon names render correctly in the email.
-    setImmediate(() => {
-      const emailPackages = useSessionPkgs
-        ? sessionPkgs
-        : all('SELECT * FROM packages WHERE is_active = 1');
-      sendBookingConfirmation({
-        to: trimmedEmail,
-        booking: {
-          referenceNumber: refNumber,
-          itemReferences: itemRefs,
-          totalAmount,
-          totalFormatted: '$' + formatPrice(totalAmount),
-        },
-        session,
-        attendees,
-        seats: attendees.map(a => {
-          const s = get('SELECT id, table_number, chair_number FROM seats WHERE id = ?', [a.seatId]);
-          return s || { id: a.seatId, table_number: '?', chair_number: '?' };
-        }),
-        packages: emailPackages,
-      }).catch(err => console.error('[email] unexpected error:', err));
-    });
   } catch (err) {
     console.error('Booking error:', err);
     res.status(500).json({ error: 'Booking failed' });
   }
 });
+
+// Customer-facing path: creates a 'pending' booking, calls Authorize.Net for a
+// hosted-payment-page token, returns it to the client. The client then POSTs
+// the token to redirectUrl (Authorize.Net's hosted page domain), the customer
+// enters their card, Authorize.Net redirects back to /payment/return, and
+// /payment/return (or the webhook) calls markBookingPaid().
+//
+// Seats are NOT flipped to 'sold' here — they remain 'held' with a refreshed
+// held_until so they survive the time the customer spends on the hosted page.
+app.post('/api/bookings/initiate', async (req, res) => {
+  const validation = validateBookingRequest(req.body);
+  if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
+  const { sessionId, attendees, trimmedEmail, useSessionPkgs, sessionPkgs, requiredPkg } = validation.data;
+
+  const phdCheck = validatePhdInventory(attendees, useSessionPkgs, sessionPkgs);
+  if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
+
+  let bookingId, refNumber, totalAmount, itemRefs;
+  try {
+    ({ bookingId, refNumber, totalAmount, itemRefs } = insertBookingRecord({
+      sessionId, attendees, requiredPkg, sessionPkgs, useSessionPkgs, email: trimmedEmail
+    }));
+
+    // Refresh held_until so seats survive the hosted-page detour.
+    // HOLD_MINUTES is generous (60min) so this gives the customer a full hour
+    // from clicking Confirm — comfortable even for slow / elderly users.
+    const newHoldUntil = new Date(Date.now() + HOLD_MINUTES * 60 * 1000).toISOString();
+    for (const att of attendees) {
+      run('UPDATE seats SET held_until = ? WHERE id = ?', [newHoldUntil, att.seatId]);
+    }
+    run('UPDATE bookings SET payment_attempted_at = ? WHERE id = ?',
+      [new Date().toISOString(), bookingId]);
+
+    saveDb();
+    logPaymentEvent(bookingId, 'initiated', 'server', { totalAmount, refNumber });
+  } catch (err) {
+    console.error('Initiate booking insert error:', err);
+    return res.status(500).json({ error: 'Booking initiation failed' });
+  }
+
+  // Get hosted-page token from Authorize.Net.
+  const result = await createHostedPaymentPage({
+    bookingId,
+    amountCents: totalAmount,
+    email: trimmedEmail,
+    refNumber,
+  });
+
+  if (!result.ok) {
+    markBookingFailed({ bookingId, reason: result.error, source: 'server' });
+    console.error(`[bookings] /initiate failed to get hosted page token: ${result.error}`);
+    return res.status(502).json({ error: 'Could not start payment. Please try again.' });
+  }
+
+  run('UPDATE bookings SET hosted_token = ? WHERE id = ?', [result.token, bookingId]);
+  saveDb();
+
+  res.json({
+    bookingId,
+    referenceNumber: refNumber,
+    itemReferences: itemRefs,
+    totalAmount,
+    totalFormatted: '$' + formatPrice(totalAmount),
+    email: trimmedEmail,
+    redirectUrl: result.redirectUrl,
+    token: result.token,
+  });
+});
+
+// Status polling — used by the client processing page to check booking state
+// while waiting for /payment/return or the webhook to flip it to paid/failed.
+app.get('/api/bookings/:id/status', (req, res) => {
+  const booking = get(
+    'SELECT id, reference_number, payment_status, total_amount, payment_failure_reason, transaction_id, auth_code FROM bookings WHERE id = ?',
+    [req.params.id]
+  );
+  if (!booking) return res.status(404).json({ error: 'Booking not found' });
+  res.json({
+    bookingId: booking.id,
+    referenceNumber: booking.reference_number,
+    status: booking.payment_status,
+    totalAmount: booking.total_amount,
+    totalFormatted: '$' + formatPrice(booking.total_amount),
+    failureReason: booking.payment_failure_reason,
+    transactionId: booking.transaction_id,
+  });
+});
+
+// ============ PAYMENT RETURN / CANCEL ============
+//
+// Authorize.Net redirects the customer's browser to one of these URLs after
+// the hosted payment page finishes. Depending on the showReceipt setting,
+// Authorize.Net uses either GET (showReceipt:true → user clicked Continue on
+// their receipt page) or POST (showReceipt:false → browser submits form data
+// with transaction details). We handle both with app.all.
+//
+// NEITHER of these endpoints marks the booking 'paid'. That's done by the
+// webhook (Stage 5) which is signed and authoritative. These just redirect
+// the customer to a client-side processing/cancelled page.
+//
+// Why split it this way:
+//   - Customers close tabs after paying. The webhook fires regardless.
+//   - Browser redirects can be spoofed (no HMAC). The webhook is signed.
+//   - Authorize.Net's redirect doesn't reliably include transId.
+
+app.all('/payment/return', (req, res) => {
+  const bookingId = req.query.bookingId || req.body?.bookingId;
+  if (!bookingId) {
+    console.warn('[payments] /payment/return called without bookingId');
+    return res.redirect('/');
+  }
+  logPaymentEvent(bookingId, 'returned', 'authorize_net_browser', {
+    method: req.method,
+  });
+  // Client-side route — polls /api/bookings/:id/status until the webhook
+  // flips it to 'paid' or 'failed'. If the customer's browser dies before
+  // arriving here, the webhook still completes the booking out of band.
+  return res.redirect(`/booking/${encodeURIComponent(bookingId)}/processing`);
+});
+
+app.all('/payment/cancel', (req, res) => {
+  const bookingId = req.query.bookingId || req.body?.bookingId;
+  if (bookingId) {
+    markBookingCancelled({ bookingId, source: 'customer' });
+  }
+  // Client-side route — shows "Payment cancelled" with a "Try Again" button.
+  // Seats remain 'held' so the customer can retry without losing them.
+  return res.redirect(`/booking/${encodeURIComponent(bookingId || '')}/cancelled`);
+});
+
+// ============ AUTHORIZE.NET WEBHOOK ============
+//
+// Authorize.Net posts payment lifecycle events to this URL. This is the
+// AUTHORITATIVE source of truth for marking a booking 'paid' — not the
+// browser redirect at /payment/return. The webhook fires regardless of
+// what the customer's browser does and is signed with HMAC-SHA512.
+//
+// CRITICAL: this route uses express.raw() (not express.json()) because
+// signature verification requires the unmodified body bytes. Once verified,
+// we parse JSON ourselves.
+//
+// Webhook URL to register in Authorize.Net dashboard (Stage 9 task):
+//   Sandbox:     https://bingo-jk2h.onrender.com/api/webhooks/authorize-net  (with sandbox creds in Render env)
+//   Production:  same URL once ANET_ENV=production in Render env
+//
+// Events to subscribe in dashboard:
+//   net.authorize.payment.authcapture.created   — payment captured (success)
+//   net.authorize.payment.refund.created        — refund processed
+//   net.authorize.payment.void.created          — pre-settlement void
+//   net.authorize.payment.fraud.declined        — Authorize.Net's fraud rule rejected
+//   net.authorize.payment.fraud.held            — held for manual fraud review
+app.post('/api/webhooks/authorize-net',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    const rawBody = req.body; // Buffer because of express.raw()
+    const sigHeader = req.get('X-ANET-Signature');
+
+    // Verify signature FIRST. Anything past this point assumes the payload
+    // is authentic. Returning 401 without logging prevents an attacker from
+    // flooding our log table by guessing booking IDs.
+    if (!verifyWebhookSignature(rawBody, sigHeader)) {
+      console.warn(`[webhooks] signature invalid (sig header preview: ${String(sigHeader || '').slice(0, 20)}...)`);
+      return res.status(401).end();
+    }
+
+    // Parse the payload
+    let event;
+    try {
+      event = JSON.parse(rawBody.toString('utf8'));
+    } catch (err) {
+      console.error('[webhooks] malformed JSON:', err?.message || err);
+      return res.status(400).end();
+    }
+
+    const { eventType, payload, notificationId } = event || {};
+    const transId = payload?.id;
+    const invoiceNumber = payload?.merchantReferenceId || payload?.invoiceNumber;
+
+    if (!invoiceNumber) {
+      console.warn(`[webhooks] event has no invoiceNumber: ${eventType}`);
+      return res.status(200).end(); // ack so Authorize.Net stops retrying
+    }
+
+    // We set Authorize.Net's invoiceNumber to our reference_number when
+    // creating the hosted page, so we can look up the booking from it.
+    const booking = get('SELECT * FROM bookings WHERE reference_number = ?', [invoiceNumber]);
+    if (!booking) {
+      console.warn(`[webhooks] booking not found for invoiceNumber=${invoiceNumber} eventType=${eventType}`);
+      return res.status(200).end(); // ack so Authorize.Net stops retrying
+    }
+
+    // Always log the inbound event for audit / debugging
+    logPaymentEvent(booking.id, 'webhook', 'authorize_net_webhook', {
+      eventType, notificationId, transId, invoiceNumber,
+    });
+
+    console.log(`[webhooks] ${eventType} booking=${booking.id} ref=${invoiceNumber} transId=${transId}`);
+
+    try {
+      if (eventType === 'net.authorize.payment.authcapture.created') {
+        // Idempotent — second webhook for the same booking is a no-op
+        if (booking.payment_status === 'paid') {
+          return res.status(200).end();
+        }
+        // Verify the transaction with Authorize.Net before flipping. Defence
+        // in depth: the signature proves the payload is from Authorize.Net,
+        // but a redundant API lookup also confirms the transaction approved.
+        const verify = await verifyTransaction(transId);
+        if (verify.ok && verify.approved) {
+          markBookingPaid({
+            bookingId: booking.id,
+            transactionId: transId,
+            authCode: verify.authCode,
+            source: 'authorize_net_webhook',
+          });
+        } else {
+          markBookingFailed({
+            bookingId: booking.id,
+            reason: verify.error || 'transaction not approved at verify step',
+            source: 'authorize_net_webhook',
+          });
+        }
+      } else if (eventType === 'net.authorize.payment.refund.created') {
+        markBookingRefunded({
+          bookingId: booking.id,
+          transactionId: transId,
+          source: 'authorize_net_webhook',
+        });
+      } else if (eventType === 'net.authorize.payment.void.created') {
+        markBookingVoided({
+          bookingId: booking.id,
+          transactionId: transId,
+          source: 'authorize_net_webhook',
+        });
+      } else if (eventType === 'net.authorize.payment.fraud.declined') {
+        markBookingFailed({
+          bookingId: booking.id,
+          reason: 'fraud_declined',
+          source: 'authorize_net_webhook',
+        });
+      } else if (eventType === 'net.authorize.payment.fraud.held') {
+        // Authorize.Net is holding this for manual fraud review. Don't flip
+        // anything yet — wait for the follow-up event (approved or declined).
+        console.log(`[webhooks] booking ${booking.id} held by Authorize.Net for fraud review`);
+      } else {
+        console.log(`[webhooks] unhandled eventType: ${eventType}`);
+      }
+    } catch (err) {
+      // We caught the error so Authorize.Net doesn't retry indefinitely on
+      // our internal bugs. The error is logged and we return 200; you'll see
+      // it in the logs and the payment_events table.
+      console.error(`[webhooks] handler error for ${eventType}:`, err?.message || err);
+    }
+
+    return res.status(200).end();
+  }
+);
 
 // ============ ADMIN ============
 
@@ -1199,6 +1667,92 @@ app.post('/api/admin/bookings/:id/cancel', adminAuth, (req, res) => {
 
   io.to(`session:${booking.session_id}`).emit('seats:refresh');
   res.json({ success: true });
+});
+
+// Refund a paid booking through Authorize.Net. Automatically decides between
+// VOID (pre-settlement) and REFUND (post-settlement) based on the transaction's
+// current status. Always releases seats back to 'vacant'.
+//
+// Note: this is distinct from /cancel above. /cancel is an admin override that
+// only updates the booking record and releases seats — no money moves.
+// /refund actually moves money via Authorize.Net.
+app.post('/api/admin/bookings/:id/refund', adminAuth, async (req, res) => {
+  const booking = get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
+  if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+  if (booking.payment_status !== 'paid') {
+    return res.status(400).json({ error: `Cannot refund a booking with status '${booking.payment_status}'. Only 'paid' bookings can be refunded.` });
+  }
+  if (!booking.transaction_id) {
+    return res.status(400).json({
+      error: 'This booking has no transaction_id (likely created via the legacy /api/bookings endpoint before payment integration). Use Cancel instead.'
+    });
+  }
+
+  // Look up the transaction's current settlement status so we know whether to
+  // void or refund.
+  const verify = await verifyTransaction(booking.transaction_id);
+  if (!verify.ok) {
+    return res.status(502).json({ error: `Could not verify transaction state: ${verify.error}` });
+  }
+
+  const txStatus = String(verify.status || '');
+  let action;
+  let result;
+
+  if (txStatus === 'capturedPendingSettlement' || txStatus === 'authorizedPendingCapture') {
+    // Pre-settlement → VOID. Faster + no settlement fees.
+    action = 'void';
+    result = await voidTransaction(booking.transaction_id);
+    if (result.ok) {
+      markBookingVoided({
+        bookingId: booking.id,
+        transactionId: booking.transaction_id,
+        source: 'admin',
+      });
+    }
+  } else if (txStatus === 'settledSuccessfully' || txStatus === 'settlementError') {
+    // Post-settlement → REFUND. Needs card last4.
+    action = 'refund';
+    if (!verify.last4) {
+      return res.status(502).json({ error: 'Could not determine card last 4 for refund — Authorize.Net API did not return card details.' });
+    }
+    result = await refundTransaction({
+      transId: booking.transaction_id,
+      amountCents: booking.total_amount,
+      last4: verify.last4,
+    });
+    if (result.ok) {
+      markBookingRefunded({
+        bookingId: booking.id,
+        transactionId: booking.transaction_id,
+        source: 'admin',
+      });
+    }
+  } else {
+    return res.status(400).json({
+      error: `Cannot refund: transaction is in status '${txStatus}'. It may already be refunded or voided.`
+    });
+  }
+
+  if (!result.ok) {
+    return res.status(502).json({ error: `${action} failed: ${result.error}` });
+  }
+
+  // Release seats back to vacant so other customers can book them.
+  const items = all('SELECT seat_id FROM booking_items WHERE booking_id = ?', [booking.id]);
+  for (const it of items) {
+    run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
+  }
+  saveDb();
+  io.to(`session:${booking.session_id}`).emit('seats:refresh');
+
+  res.json({
+    ok: true,
+    action,                                              // 'void' or 'refund'
+    refundTransId: result.refundTransId || result.voidTransId,
+    seatsReleased: items.length,
+  });
 });
 
 // ============ ADMIN: DELETED SESSIONS & AUDIT LOG ============

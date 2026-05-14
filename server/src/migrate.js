@@ -241,6 +241,38 @@ async function migrate() {
     }
   }
 
+  // --- Authorize.Net Payment Integration migration ---
+  console.log('Running Authorize.Net payment integration migration...');
+
+  // New columns on bookings - track payment lifecycle through Authorize.Net
+  try { exec("ALTER TABLE bookings ADD COLUMN payment_provider TEXT DEFAULT 'authorize_net'"); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN transaction_id TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN auth_code TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN payment_attempted_at TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN payment_completed_at TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN payment_failure_reason TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN hosted_token TEXT'); } catch(e) {}
+
+  // Audit log for payment events - full lifecycle traceability
+  // event_type:  'initiated' | 'redirected' | 'returned' | 'webhook' | 'approved' | 'declined' | 'refunded' | 'voided'
+  // source:      'server' | 'authorize_net_webhook' | 'admin'
+  exec(`
+    CREATE TABLE IF NOT EXISTS payment_events (
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      source TEXT NOT NULL,
+      raw_payload TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (booking_id) REFERENCES bookings(id)
+    )
+  `);
+
+  try { exec('CREATE INDEX idx_bookings_transaction_id ON bookings(transaction_id)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_bookings_payment_status ON bookings(payment_status)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_payment_events_booking ON payment_events(booking_id)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_payment_events_type ON payment_events(event_type)'); } catch(e) {}
+
   console.log('Migrations complete.');
 }
 

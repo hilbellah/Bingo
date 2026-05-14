@@ -5,6 +5,7 @@ export default function SalesDrilldownModal() {
   const {
     bookings,
     handlePrintBookingReceipt,
+    handleRefundBooking,
     salesDrilldown,
     setSalesDrilldown,
     handlePrintSalesDrilldown,
@@ -55,6 +56,15 @@ export default function SalesDrilldownModal() {
                         >
                           Receipt
                         </button>
+                        {b.paymentStatus === 'paid' && handleRefundBooking && (
+                          <button
+                            onClick={() => handleRefundBooking(b.id, b.referenceNumber)}
+                            className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                            title="Refund this booking via Authorize.Net"
+                          >
+                            Refund
+                          </button>
+                        )}
                       </div>
                     </div>
                     {/* Customer email — shown so admins can resend tickets or follow up.

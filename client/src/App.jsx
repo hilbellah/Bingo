@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  createBooking,
+  initiateBooking,
   fetchPhdInventory,
   fetchSeats,
   fetchSessionPackages,
@@ -11,11 +11,28 @@ import {
 } from './api';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import BookingPanel from './components/BookingPanel';
+import BookingProcessing from './components/BookingProcessing';
 import Confirmation from './components/Confirmation';
 import CountdownTimer from './components/CountdownTimer';
 import FloorPlan from './components/FloorPlan';
 import SessionWeekPicker from './components/SessionWeekPicker';
 import { useSocket } from './useSocket';
+
+// Detect payment-related URLs at app mount. Returns null for the normal
+// booking flow, or { bookingId } when the customer has just returned from
+// Authorize.Net's hosted page via the server's /payment/return or
+// /payment/cancel redirect.
+function detectPaymentRoute() {
+  if (typeof window === 'undefined') return null;
+  const path = window.location.pathname;
+  // /booking/<id>/processing  — happy-path return from Authorize.Net
+  // /booking/<id>/cancelled   — customer clicked Cancel on hosted page
+  // Both render the BookingProcessing component, which polls /api/bookings/:id/status
+  // and renders the right UI based on the actual booking state.
+  const m = path.match(/^\/booking\/([^/]+)\/(processing|cancelled)\/?$/);
+  if (m) return { bookingId: decodeURIComponent(m[1]) };
+  return null;
+}
 
 function generateHolderId() {
   const stored = sessionStorage.getItem('bingo_holder_id');
@@ -28,6 +45,16 @@ function generateHolderId() {
 const emptyAttendee = () => ({ firstName: '', lastName: '', addons: [] });
 
 export default function App() {
+  // Payment-return short-circuit: if the customer just came back from
+  // Authorize.Net, skip the entire booking flow and render the processing
+  // page (which polls for the booking status set by the webhook).
+  // Detected ONCE at mount via useState initializer — the URL doesn't change
+  // mid-session, so re-detection isn't needed.
+  const [paymentRoute] = useState(detectPaymentRoute);
+  if (paymentRoute) {
+    return <BookingProcessing bookingId={paymentRoute.bookingId} />;
+  }
+
   const holderId = useRef(generateHolderId()).current;
   const socketRef = useSocket();
 
@@ -210,11 +237,41 @@ export default function App() {
       addons: (attendee.addons || []).filter(addon => addon.quantity > 0)
     }));
 
-    const result = await createBooking(selectedSession.id, holderId, bookingAttendees, email);
-    setLoading(false);
+    // /api/bookings/initiate creates the booking as 'pending' and returns a
+    // short-lived Authorize.Net hosted-page token + redirect URL.
+    const result = await initiateBooking(selectedSession.id, holderId, bookingAttendees, email);
 
-    if (result.bookingId) setBooking(result);
-    else setError(result.error || 'Booking failed');
+    if (!result || !result.bookingId || !result.token || !result.redirectUrl) {
+      setLoading(false);
+      setError(result?.error || 'Could not start payment. Please try again.');
+      return;
+    }
+
+    // Build a hidden, self-submitting form. Posting the token to redirectUrl
+    // sends the customer to Authorize.Net's hosted card-entry page on their
+    // domain. We never see PAN/CVV — Authorize.Net does.
+    //
+    // We deliberately don't setLoading(false) — the browser is about to
+    // navigate away. Keep the spinner up until then to avoid flicker.
+    try {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = result.redirectUrl;
+      form.style.display = 'none';
+
+      const tokenInput = document.createElement('input');
+      tokenInput.type = 'hidden';
+      tokenInput.name = 'token';
+      tokenInput.value = result.token;
+      form.appendChild(tokenInput);
+
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      console.error('Self-submit form failed:', err);
+      setLoading(false);
+      setError('Could not redirect to payment. Please try again.');
+    }
   };
 
   const requiredPkg = packages.find(pkg => pkg.type === 'required');

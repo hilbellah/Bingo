@@ -17,6 +17,29 @@ services:
       - key: DATABASE_URL
         value: ./bingo.db
       - key: SESSION_HOLD_MINUTES
-        value: "10"
+        value: "60"             # Generous timeout for elderly audience while still releasing abandoned carts
+      # === Authorize.Net Payment Integration ===
+      # Start in sandbox; flip to 'production' only after end-to-end testing.
+      - key: ANET_ENV
+        value: sandbox
+      # Secrets - actual values pasted in Render dashboard, NOT committed here.
+      - key: ANET_API_LOGIN_ID
+        sync: false
+      - key: ANET_TRANSACTION_KEY
+        sync: false
+      - key: ANET_SIGNATURE_KEY
+        sync: false
+      - key: ANET_PUBLIC_CLIENT_KEY
+        sync: false
+      # Public URLs for redirects/webhooks - update when moving to a custom domain.
+      - key: PUBLIC_BASE_URL
+        value: https://bingo-jk2h.onrender.com
+      - key: ANET_RETURN_URL
+        value: https://bingo-jk2h.onrender.com/payment/return
+      - key: ANET_CANCEL_URL
+        value: https://bingo-jk2h.onrender.com/payment/cancel
+      # Currency - CAD for production (Saint Mary's is in NB).
+      - key: ANET_CURRENCY
+        value: CAD
     autoDeploy: true
     healthCheckPath: /api/sessions
