@@ -14,8 +14,10 @@ services:
     # Seeds do not run on deploy because seed.js drops tables.
     buildCommand: "cd client && npm install --include=dev && npm run build && cd ../server && npm install"
     # server/src/index.js runs idempotent migrations on startup, after the
-    # runtime disk has mounted.
-    startCommand: "cd server && node src/index.js"
+    # runtime disk has mounted. The 'mkdir -p /var/data' is defensive: if
+    # there's a timing issue where the disk isn't quite mounted yet, this
+    # ensures the directory exists so the SQLite file write doesn't fail.
+    startCommand: "mkdir -p /var/data && cd server && node src/index.js"
     envVars:
       - key: NODE_ENV
         value: production
