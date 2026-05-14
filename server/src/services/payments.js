@@ -158,6 +158,12 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, r
       cancelUrlText: 'Cancel',
     });
     pushSetting('hostedPaymentButtonOptions', { text: 'Pay Now' });
+    // Background color of the hosted page (frames the white form box).
+    // Brand-blue-dark from the site theme settings. The form box itself stays
+    // white for readability — only the page background takes this color.
+    // For richer branding (logo, header text, color theming), use the
+    // Authorize.Net merchant dashboard's "Hosted Payment Form" settings.
+    pushSetting('hostedPaymentStyleOptions', { bgColor: '#0a1628' });
     // NOTE: Authorize.Net's merchantName parser rejects apostrophes (and likely
     // other non-alphanumeric punctuation). Keep this string letters/numbers/spaces only.
     // Customer sees this text on the hosted card-entry page next to the order summary.
