@@ -39,6 +39,12 @@
 //                        to test the redirect path).
 //   ANET_CANCEL_URL      Where Authorize.Net sends the customer if they
 //                        click Cancel on the hosted page.
+//   ANET_MERCHANT_NAME   Optional display name on the hosted payment page.
+//   ANET_PAYMENT_BG_COLOR Optional hosted page background color. Default
+//                        matches the site brand blue.
+//   ANET_PAY_BUTTON_TEXT Optional hosted payment submit button label.
+//   ANET_RETURN_BUTTON_TEXT Optional receipt/return button label.
+//   ANET_CANCEL_BUTTON_TEXT Optional cancel button label.
 //
 // Endpoints used:
 //   API:           https://apitest.authorize.net/xml/v1/request.api (sandbox)
@@ -86,6 +92,17 @@ function centsToDollarString(cents) {
     throw new Error(`payments: invalid amountCents value: ${cents}`);
   }
   return (n / 100).toFixed(2);
+}
+
+function hostedPaymentTheme() {
+  const merchantName = process.env.ANET_MERCHANT_NAME || 'Saint Marys Entertainment Centre';
+  return {
+    bgColor: process.env.ANET_PAYMENT_BG_COLOR || '#1a3a5c',
+    payButtonText: process.env.ANET_PAY_BUTTON_TEXT || 'Pay Securely',
+    returnButtonText: process.env.ANET_RETURN_BUTTON_TEXT || 'Return to Booking',
+    cancelButtonText: process.env.ANET_CANCEL_BUTTON_TEXT || 'Cancel Payment',
+    merchantName: merchantName.replace(/[^\w\s]/g, '').slice(0, 60).trim() || 'Wolastoq Bingo',
+  };
 }
 
 // ---------- 1) Create hosted payment page (get redirect token) ----------
@@ -150,25 +167,28 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, r
     };
     const returnUrl = process.env.ANET_RETURN_URL || '';
     const cancelUrl = process.env.ANET_CANCEL_URL || '';
+    const theme = hostedPaymentTheme();
     pushSetting('hostedPaymentReturnOptions', {
       showReceipt: false,
       url: `${returnUrl}${returnUrl.includes('?') ? '&' : '?'}bookingId=${encodeURIComponent(bookingId)}`,
-      urlText: 'Continue',
+      urlText: theme.returnButtonText,
       cancelUrl: `${cancelUrl}${cancelUrl.includes('?') ? '&' : '?'}bookingId=${encodeURIComponent(bookingId)}`,
-      cancelUrlText: 'Cancel',
+      cancelUrlText: theme.cancelButtonText,
     });
-    pushSetting('hostedPaymentButtonOptions', { text: 'Pay Now' });
+    pushSetting('hostedPaymentButtonOptions', { text: theme.payButtonText });
     // Background color of the hosted page (frames the white form box).
     // Brand-blue-dark from the site theme settings. The form box itself stays
     // white for readability — only the page background takes this color.
     // For richer branding (logo, header text, color theming), use the
     // Authorize.Net merchant dashboard's "Hosted Payment Form" settings.
-    pushSetting('hostedPaymentStyleOptions', { bgColor: '#0a1628' });
+    pushSetting('hostedPaymentStyleOptions', { bgColor: theme.bgColor });
     // NOTE: Authorize.Net's merchantName parser rejects apostrophes (and likely
     // other non-alphanumeric punctuation). Keep this string letters/numbers/spaces only.
     // Customer sees this text on the hosted card-entry page next to the order summary.
-    pushSetting('hostedPaymentOrderOptions', { show: true, merchantName: 'Wolastoq Bingo' });
-    pushSetting('hostedPaymentPaymentOptions', { cardCodeRequired: true, showCreditCard: true });
+    pushSetting('hostedPaymentOrderOptions', { show: true, merchantName: theme.merchantName });
+    pushSetting('hostedPaymentPaymentOptions', { cardCodeRequired: true, showCreditCard: true, showBankAccount: false });
+    pushSetting('hostedPaymentSecurityOptions', { captcha: false });
+    pushSetting('hostedPaymentShippingAddressOptions', { show: false, required: false });
     // UX: hide the billing address form on the hosted page. The customer already
     // entered their info on our booking form (name, email), so re-collecting it
     // would feel redundant. They only need to enter card number / exp / CVV on
