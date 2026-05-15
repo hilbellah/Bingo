@@ -18,7 +18,7 @@ import { releaseExpiredHolds } from './services/holds.js';
 import { cleanupOldData, ensureFutureSessions, getScheduleSummary, openWeeklySessions } from './services/scheduler.js';
 import { createUploadMiddleware } from './uploads.js';
 import { formatLocalDate, formatPrice, generateRef } from './utils/format.js';
-import { sendBookingConfirmation, sendEmailVerificationCode } from './services/email.js';
+import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode } from './services/email.js';
 import { createHostedPaymentPage, verifyTransaction, verifyWebhookSignature, refundTransaction, voidTransaction } from './services/payments.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -654,12 +654,71 @@ function markBookingCancelled({ bookingId, source = 'customer' }) {
   return { ok: true };
 }
 
+function releaseBookingSeats({ bookingId, sessionId }) {
+  const items = all('SELECT seat_id FROM booking_items WHERE booking_id = ?', [bookingId]);
+  for (const it of items) {
+    run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
+    io.to(`session:${sessionId}`).emit('seat:unlocked', { seatId: it.seat_id, sessionId });
+  }
+  io.to(`session:${sessionId}`).emit('seats:refresh', { sessionId });
+  return items.length;
+}
+
+function reconcileReversedBookingSeats() {
+  const seatsToRelease = all(`
+    SELECT DISTINCT s.id, s.session_id
+    FROM seats s
+    JOIN booking_items reversed_item ON reversed_item.seat_id = s.id
+    JOIN bookings reversed_booking ON reversed_booking.id = reversed_item.booking_id
+    WHERE s.status = 'sold'
+      AND reversed_booking.payment_status IN ('refunded', 'voided')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM booking_items paid_item
+        JOIN bookings paid_booking ON paid_booking.id = paid_item.booking_id
+        WHERE paid_item.seat_id = s.id
+          AND paid_booking.payment_status = 'paid'
+      )
+  `);
+
+  for (const seat of seatsToRelease) {
+    run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [seat.id]);
+  }
+
+  if (seatsToRelease.length > 0) {
+    saveDb();
+    logger.info('Released seats from reversed bookings', { count: seatsToRelease.length });
+  }
+
+  return seatsToRelease.length;
+}
+
+function sendRefundNotificationAsync({ bookingId, action, refundTransactionId }) {
+  setImmediate(() => {
+    try {
+      const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+      if (!booking) return;
+      const session = get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
+      sendBookingRefundNotification({
+        to: booking.email,
+        booking,
+        session,
+        action,
+        refundTransactionId,
+      }).catch(err => {
+        console.error('[email] refund notification unexpected error:', err);
+      });
+    } catch (err) {
+      console.error('[email] refund notification setup failed:', err?.message || err);
+    }
+  });
+}
+
 // Idempotently mark a 'paid' booking as 'refunded' (post-settlement reversal).
-// Does NOT release seats — admin makes that decision in the refund UI based on
-// whether the session has already occurred. Emits a socket event so admin
-// dashboards refresh.
-function markBookingRefunded({ bookingId, transactionId = null, source = 'admin' }) {
-  const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+// Releases seats, refreshes public seat maps, and emails the customer plus
+// EMAIL_BCC recipients.
+function markBookingRefunded({ bookingId, transactionId = null, refundTransactionId = null, source = 'admin' }) {
+  const booking = get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (booking.payment_status === 'refunded') return { ok: true, alreadyRefunded: true };
   if (booking.payment_status !== 'paid') {
@@ -667,19 +726,21 @@ function markBookingRefunded({ bookingId, transactionId = null, source = 'admin'
   }
 
   run(`UPDATE bookings SET payment_status = 'refunded' WHERE id = ?`, [bookingId]);
+  const releasedSeats = releaseBookingSeats({ bookingId, sessionId: booking.session_id });
   saveDb();
 
   logPaymentEvent(bookingId, 'refunded', source, { transactionId });
-  logAudit('booking_refunded', 'booking', bookingId, { transactionId, source });
-  io.to('admin:receipts').emit('booking:refunded', { bookingId, transactionId });
-  return { ok: true };
+  logAudit('booking_refunded', 'booking', bookingId, { transactionId, source, releasedSeats });
+  io.to('admin:receipts').emit('booking:refunded', { bookingId, transactionId, releasedSeats });
+  sendRefundNotificationAsync({ bookingId, action: 'refund', refundTransactionId: refundTransactionId || transactionId });
+  return { ok: true, releasedSeats };
 }
 
 // Idempotently mark a 'paid' booking as 'voided' (pre-settlement reversal).
 // Same semantics as markBookingRefunded but distinguished in audit logs so
 // admins can tell which type of reversal happened.
-function markBookingVoided({ bookingId, transactionId = null, source = 'admin' }) {
-  const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+function markBookingVoided({ bookingId, transactionId = null, voidTransactionId = null, source = 'admin' }) {
+  const booking = get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (booking.payment_status === 'voided') return { ok: true, alreadyVoided: true };
   if (booking.payment_status !== 'paid') {
@@ -687,12 +748,14 @@ function markBookingVoided({ bookingId, transactionId = null, source = 'admin' }
   }
 
   run(`UPDATE bookings SET payment_status = 'voided' WHERE id = ?`, [bookingId]);
+  const releasedSeats = releaseBookingSeats({ bookingId, sessionId: booking.session_id });
   saveDb();
 
   logPaymentEvent(bookingId, 'voided', source, { transactionId });
-  logAudit('booking_voided', 'booking', bookingId, { transactionId, source });
-  io.to('admin:receipts').emit('booking:voided', { bookingId, transactionId });
-  return { ok: true };
+  logAudit('booking_voided', 'booking', bookingId, { transactionId, source, releasedSeats });
+  io.to('admin:receipts').emit('booking:voided', { bookingId, transactionId, releasedSeats });
+  sendRefundNotificationAsync({ bookingId, action: 'void', refundTransactionId: voidTransactionId || transactionId });
+  return { ok: true, releasedSeats };
 }
 
 // Loads a booking + related rows and fires the confirmation email.
@@ -842,8 +905,12 @@ app.get('/api/sessions/:sessionId/seats', (req, res) => {
     SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled, s.held_by, s.held_until,
            bi.first_name as booked_name
     FROM seats s
-    LEFT JOIN booking_items bi ON bi.seat_id = s.id
-    LEFT JOIN bookings b ON b.id = bi.booking_id AND b.payment_status = 'paid'
+    LEFT JOIN (
+      SELECT bi.seat_id, bi.first_name
+      FROM booking_items bi
+      JOIN bookings b ON b.id = bi.booking_id
+      WHERE b.payment_status = 'paid'
+    ) bi ON bi.seat_id = s.id
     WHERE s.session_id = ?
     ORDER BY s.table_number ASC, s.chair_number ASC
   `, [req.params.sessionId]);
@@ -2454,15 +2521,17 @@ app.post('/api/admin/bookings/:id/refund', adminAuth, async (req, res) => {
   const txStatus = String(verify.status || '');
   let action;
   let result;
+  let markResult;
 
   if (txStatus === 'capturedPendingSettlement' || txStatus === 'authorizedPendingCapture') {
     // Pre-settlement → VOID. Faster + no settlement fees.
     action = 'void';
     result = await voidTransaction(booking.transaction_id);
     if (result.ok) {
-      markBookingVoided({
+      markResult = markBookingVoided({
         bookingId: booking.id,
         transactionId: booking.transaction_id,
+        voidTransactionId: result.voidTransId,
         source: 'admin',
       });
     }
@@ -2478,9 +2547,10 @@ app.post('/api/admin/bookings/:id/refund', adminAuth, async (req, res) => {
       last4: verify.last4,
     });
     if (result.ok) {
-      markBookingRefunded({
+      markResult = markBookingRefunded({
         bookingId: booking.id,
         transactionId: booking.transaction_id,
+        refundTransactionId: result.refundTransId,
         source: 'admin',
       });
     }
@@ -2494,19 +2564,11 @@ app.post('/api/admin/bookings/:id/refund', adminAuth, async (req, res) => {
     return res.status(502).json({ error: `${action} failed: ${result.error}` });
   }
 
-  // Release seats back to vacant so other customers can book them.
-  const items = all('SELECT seat_id FROM booking_items WHERE booking_id = ?', [booking.id]);
-  for (const it of items) {
-    run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
-  }
-  saveDb();
-  io.to(`session:${booking.session_id}`).emit('seats:refresh');
-
   res.json({
     ok: true,
     action,                                              // 'void' or 'refund'
     refundTransId: result.refundTransId || result.voidTransId,
-    seatsReleased: items.length,
+    seatsReleased: markResult?.releasedSeats || 0,
   });
 });
 
@@ -2937,6 +2999,7 @@ async function start() {
   // Release expired holds every 30 seconds
   setInterval(() => releaseExpiredHolds(io), 30000);
   releaseExpiredHolds(io);
+  reconcileReversedBookingSeats();
 
   server.listen(PORT, () => {
     logger.info('Server started', { port: PORT, url: `http://localhost:${PORT}` });

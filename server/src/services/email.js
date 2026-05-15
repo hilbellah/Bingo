@@ -33,7 +33,8 @@
 //                         e.g. "Wolastoq Bingo <demo@gmail.com>". For Gmail,
 //                         the address part SHOULD match GMAIL_USER (Gmail
 //                         rewrites mismatched From addresses anyway).
-//   EMAIL_BCC             Comma-separated addresses to BCC on every send.
+//   EMAIL_BCC             Comma-separated addresses to BCC on every booking
+//                         confirmation/refund email.
 //                         Customer doesn't see these. Admin notification.
 //
 // All export functions are async and return { ok, status, error? }. They
@@ -302,6 +303,107 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
   }
 
   console.warn('[email] No email provider configured. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY on Render. Booking continues without email.');
+  return { ok: false, status: 0, error: 'no_provider_configured' };
+}
+
+function renderRefundHtml({ booking, session, actionLabel, refundTransactionId }) {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Your Bingo Booking Refund</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+        <tr><td style="background:linear-gradient(135deg,#0a1628 0%,#1a3a5c 100%);padding:28px 32px;color:#ffffff;text-align:center;">
+          <div style="font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:#c5a55a;font-weight:700;">Wolastoq Bingo</div>
+          <div style="margin-top:6px;font-size:22px;font-weight:700;">Booking ${escapeHtml(actionLabel)}</div>
+          <div style="margin-top:4px;font-size:14px;color:#cbd5e1;">Your seats have been released</div>
+        </td></tr>
+
+        <tr><td style="padding:24px 32px 8px;">
+          <div style="background:#fff7e6;border:2px solid #c5a55a;border-radius:12px;padding:16px;text-align:center;">
+            <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.1em;">Booking Reference</div>
+            <div style="margin-top:6px;font-family:monospace;font-size:22px;font-weight:700;color:#1a3a5c;letter-spacing:.08em;">
+              ${escapeHtml(booking.reference_number)}
+            </div>
+          </div>
+        </td></tr>
+
+        <tr><td style="padding:8px 32px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border-radius:10px;padding:14px 16px;">
+            <tr>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">Session</td>
+              <td style="padding:6px 0;font-size:14px;color:#1a3a5c;font-weight:600;text-align:right;">${escapeHtml(formatDateLong(session?.date))}</td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">Time</td>
+              <td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(formatTime12h(session?.time))}</td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">Amount</td>
+              <td style="padding:6px 0;font-size:18px;font-weight:700;color:#c5a55a;text-align:right;">${escapeHtml(formatPriceDollars(booking.total_amount))}</td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:12px 32px 24px;">
+          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:13px 14px;font-size:14px;color:#991b1b;line-height:1.5;">
+            Your booking has been ${escapeHtml(actionLabel.toLowerCase())}. Your seats have been released and may become available for other customers.
+            ${refundTransactionId ? `<br><span style="font-size:12px;color:#7f1d1d;">Transaction reference: ${escapeHtml(refundTransactionId)}</span>` : ''}
+          </div>
+        </td></tr>
+
+        <tr><td style="padding:16px 32px;background:#f9fafb;text-align:center;font-size:11px;color:#9ca3af;line-height:1.5;">
+          This email was sent because a Wolastoq Bingo booking payment was reversed.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+function renderRefundText({ booking, session, actionLabel, refundTransactionId }) {
+  return [
+    `Your Wolastoq Bingo booking has been ${actionLabel.toLowerCase()}.`,
+    '',
+    `Booking reference: ${booking.reference_number}`,
+    `Session: ${formatDateLong(session?.date)} at ${formatTime12h(session?.time)}`,
+    `Amount: ${formatPriceDollars(booking.total_amount)}`,
+    refundTransactionId ? `Transaction reference: ${refundTransactionId}` : '',
+    '',
+    'Your seats have been released and may become available for other customers.',
+    '',
+    'Wolastoq Bingo',
+  ].filter(Boolean).join('\n');
+}
+
+export async function sendBookingRefundNotification({ to, booking, session, action = 'refund', refundTransactionId = '' }) {
+  const bccRaw = process.env.EMAIL_BCC || '';
+  const bcc = bccRaw
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
+
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    console.warn('[email] refund notification has no valid recipient; skipping. ref=' + booking?.reference_number);
+    return { ok: false, status: 0, error: 'no_recipient' };
+  }
+
+  const actionLabel = action === 'void' ? 'Voided' : 'Refunded';
+  const html = renderRefundHtml({ booking, session, actionLabel, refundTransactionId });
+  const text = renderRefundText({ booking, session, actionLabel, refundTransactionId });
+  const subject = `Your Bingo Booking Was ${actionLabel} - ${booking.reference_number}`;
+
+  const transporter = getGmailTransporter();
+  if (transporter) {
+    return sendViaGmail({ transporter, to, bcc, subject, html, text, booking: { referenceNumber: booking.reference_number } });
+  }
+
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) {
+    return sendViaResend({ apiKey, to, bcc, subject, html, text, booking: { referenceNumber: booking.reference_number } });
+  }
+
+  console.warn('[email] No email provider configured. Refund notification cannot be sent.');
   return { ok: false, status: 0, error: 'no_provider_configured' };
 }
 
