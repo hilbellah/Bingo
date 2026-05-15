@@ -1036,14 +1036,6 @@ app.post('/api/webhooks/authorize-net',
       return res.status(400).end();
     }
 
-    // Verify signature FIRST. Anything past this point assumes the payload
-    // is authentic. Returning 401 without logging prevents an attacker from
-    // flooding our log table by guessing booking IDs.
-    if (!verifyWebhookSignature(rawBody, sigHeader)) {
-      console.warn(`[webhooks] signature invalid (sig header preview: ${String(sigHeader || '').slice(0, 20)}...)`);
-      return res.status(401).end();
-    }
-
     // Parse the payload
     let event;
     try {
@@ -1056,6 +1048,7 @@ app.post('/api/webhooks/authorize-net',
     const { eventType, payload, notificationId } = event || {};
     const transId = payload?.id;
     const invoiceNumber = payload?.merchantReferenceId || payload?.invoiceNumber;
+    const signatureValid = verifyWebhookSignature(rawBody, sigHeader);
 
     if (!invoiceNumber) {
       console.warn(`[webhooks] event has no invoiceNumber: ${eventType}`);
@@ -1068,6 +1061,71 @@ app.post('/api/webhooks/authorize-net',
     if (!booking) {
       console.warn(`[webhooks] booking not found for invoiceNumber=${invoiceNumber} eventType=${eventType}`);
       return res.status(200).end(); // ack so Authorize.Net stops retrying
+    }
+
+    if (!signatureValid) {
+      console.warn(`[webhooks] signature invalid for booking=${booking.id} ref=${invoiceNumber} eventType=${eventType}`);
+      logPaymentEvent(booking.id, 'webhook_signature_invalid', 'authorize_net_webhook', {
+        eventType,
+        notificationId,
+        transId,
+        invoiceNumber,
+      });
+
+      if (eventType !== 'net.authorize.payment.authcapture.created' || !transId) {
+        return res.status(401).end();
+      }
+
+      try {
+        if (booking.payment_status === 'paid' && booking.transaction_id === transId) {
+          return res.status(200).end();
+        }
+
+        const verify = await verifyTransaction(transId);
+        const verifiedMatch = verify.ok &&
+          verify.approved &&
+          verify.invoiceNumber === booking.reference_number &&
+          verify.amountCents === booking.total_amount;
+
+        if (!verifiedMatch) {
+          logPaymentEvent(booking.id, 'webhook_signature_invalid_rejected', 'authorize_net_webhook', {
+            eventType,
+            notificationId,
+            transId,
+            invoiceNumber,
+            verifyOk: !!verify.ok,
+            verifyApproved: !!verify.approved,
+            verifyInvoiceNumber: verify.invoiceNumber || null,
+            verifyAmountCents: verify.amountCents ?? null,
+            error: verify.error || null,
+          });
+          return res.status(401).end();
+        }
+
+        logPaymentEvent(booking.id, 'webhook_signature_invalid_verified', 'authorize_net_webhook', {
+          eventType,
+          notificationId,
+          transId,
+          invoiceNumber,
+        });
+        markBookingPaid({
+          bookingId: booking.id,
+          transactionId: transId,
+          authCode: verify.authCode,
+          source: 'authorize_net_webhook_verified_transaction',
+        });
+        return res.status(200).end();
+      } catch (err) {
+        console.error(`[webhooks] invalid-signature fallback failed for ${eventType}:`, err?.message || err);
+        logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
+          eventType,
+          notificationId,
+          transId,
+          invoiceNumber,
+          error: err?.message || String(err),
+        });
+        return res.status(500).end();
+      }
     }
 
     // Always log the inbound event for audit / debugging
