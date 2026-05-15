@@ -158,6 +158,18 @@ async function seed() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE customers (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      first_name TEXT,
+      last_name TEXT,
+      email_verified_at TEXT,
+      first_booking_at TEXT,
+      last_booking_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE payment_events (
       id TEXT PRIMARY KEY,
       booking_id TEXT NOT NULL,
@@ -176,6 +188,8 @@ async function seed() {
     CREATE INDEX idx_bookings_payment_status ON bookings(payment_status);
     CREATE INDEX idx_booking_items_booking ON booking_items(booking_id);
     CREATE INDEX idx_email_verifications_email ON email_verifications(email);
+    CREATE INDEX idx_customers_email ON customers(email);
+    CREATE INDEX idx_customers_last_booking ON customers(last_booking_at);
     CREATE INDEX idx_payment_events_booking ON payment_events(booking_id);
     CREATE INDEX idx_session_packages_session ON session_packages(session_id);
     CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);
@@ -256,6 +270,12 @@ async function seed() {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [b1, fs, ref(), 5000, 'paid', new Date(Date.now() - 86400000).toISOString(), 'john.smith@example.com', 'John', 'Smith', new Date(Date.now() - 86400000).toISOString()]
     );
+    db.run(
+      `INSERT INTO customers
+        (id, email, first_name, last_name, email_verified_at, first_booking_at, last_booking_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [uuid(), 'john.smith@example.com', 'John', 'Smith', new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString()]
+    );
     db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi1, b1, 'John', 'Smith', s[1][1], requiredPkg, 1800, ref()]);
     db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi1, opt1, 1, 1400]);
     db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][1]]);
@@ -270,6 +290,12 @@ async function seed() {
          customer_first_name, customer_last_name, email_verified_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [b2, fs, ref(), 5400, 'paid', new Date(Date.now() - 43200000).toISOString(), 'mike.johnson@example.com', 'Mike', 'Johnson', new Date(Date.now() - 43200000).toISOString()]
+    );
+    db.run(
+      `INSERT INTO customers
+        (id, email, first_name, last_name, email_verified_at, first_booking_at, last_booking_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [uuid(), 'mike.johnson@example.com', 'Mike', 'Johnson', new Date(Date.now() - 43200000).toISOString(), new Date(Date.now() - 43200000).toISOString(), new Date(Date.now() - 43200000).toISOString(), new Date(Date.now() - 43200000).toISOString(), new Date(Date.now() - 43200000).toISOString()]
     );
     const names = [['Mike', 'Johnson'], ['Sarah', 'Johnson'], ['Tom', 'Johnson']];
     for (let i = 0; i < 3; i++) {
@@ -286,6 +312,12 @@ async function seed() {
          customer_first_name, customer_last_name, email_verified_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [b3, fs, ref(), 3200, 'paid', new Date(Date.now() - 7200000).toISOString(), 'alice.williams@example.com', 'Alice', 'Williams', new Date(Date.now() - 7200000).toISOString()]
+    );
+    db.run(
+      `INSERT INTO customers
+        (id, email, first_name, last_name, email_verified_at, first_booking_at, last_booking_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [uuid(), 'alice.williams@example.com', 'Alice', 'Williams', new Date(Date.now() - 7200000).toISOString(), new Date(Date.now() - 7200000).toISOString(), new Date(Date.now() - 7200000).toISOString(), new Date(Date.now() - 7200000).toISOString(), new Date(Date.now() - 7200000).toISOString()]
     );
     db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi6, b3, 'Alice', 'Williams', s[42][1], requiredPkg, 1800, ref()]);
     db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi6, opt1, 1, 1400]);

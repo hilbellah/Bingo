@@ -224,6 +224,21 @@ export async function fetchBookingSales(token) {
   return res.json();
 }
 
+export async function fetchAdminCustomers(token, search) {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API}/admin/customers${qs}`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
+export function getCustomersExportUrl(search) {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return `${API}/admin/customers/export${qs}`;
+}
+
 export async function fetchSettings(token, key) {
   const res = await fetch(`${API}/admin/settings/${key}`, { headers: adminHeaders(token) });
   const data = await res.json();

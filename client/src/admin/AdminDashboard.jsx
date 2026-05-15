@@ -10,6 +10,7 @@ import {
   fetchAdminBulkTickets,
   fetchDeletedSessions, restoreSession, fetchSessionBookings, fetchAuditLog,
   fetchBookingSales, fetchDailySales,
+  fetchAdminCustomers, getCustomersExportUrl,
   fetchSettings, saveSettings,
   uploadImage,
   fetchAdminPhdInventory, updateAdminPhdInventory,
@@ -54,6 +55,8 @@ export default function AdminDashboard() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [bookingSearch, setBookingSearch] = useState('');
   const [bookingSales, setBookingSales] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [customerSearch, setCustomerSearch] = useState('');
   const [salesDrilldown, setSalesDrilldown] = useState(null); // { session, bookings }
   const [dailySales, setDailySales] = useState(null);
   const [dailySalesDate, setDailySalesDate] = useState(new Date().toISOString().split('T')[0]);
@@ -116,11 +119,13 @@ export default function AdminDashboard() {
   const loadAuditLogs = () => fetchAuditLog(token, { limit: 50 }).then(setAuditLogs);
   const loadBookingSales = () => fetchBookingSales(token).then(setBookingSales);
   const loadDailySales = (date, search) => fetchDailySales(token, date, search).then(setDailySales);
+  const loadCustomers = (search) => fetchAdminCustomers(token, search ?? customerSearch).then(setCustomers);
 
   useEffect(() => {
     if (tab === 'sessions') loadSessions();
     if (tab === 'packages') loadPackages();
     if (tab === 'bookings') { loadBookingSales(); loadDailySales(dailySalesDate); }
+    if (tab === 'customers') loadCustomers();
     if (tab === 'dashboard') loadDashboard();
     if (tab === 'announcements') loadAnnouncements();
     if (tab === 'archive') { loadDeletedSessions(); loadAuditLogs(); }
@@ -719,6 +724,19 @@ export default function AdminDashboard() {
       });
   };
 
+  const handleExportCustomers = () => {
+    fetch(getCustomersExportUrl(customerSearch), { headers: adminHeaders(token) })
+      .then(r => r.blob())
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'customers-report.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+  };
+
   const handleDashboardDateFromChange = (e) => {
     const newDate = e.target.value;
     setDashboardDateFrom(newDate);
@@ -808,6 +826,11 @@ export default function AdminDashboard() {
     handleToggleAnnouncement,
     handleDeleteAnnouncement,
     bookingSales,
+    customers,
+    customerSearch,
+    setCustomerSearch,
+    loadCustomers,
+    handleExportCustomers,
     handleSalesDrilldown,
     dailySalesSearch,
     setDailySalesSearch,

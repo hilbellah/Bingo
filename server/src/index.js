@@ -144,6 +144,10 @@ function logAudit(action, entityType, entityId, details) {
     [uuid(), action, entityType, entityId, typeof details === 'string' ? details : JSON.stringify(details), new Date().toISOString()]);
 }
 
+function csvCell(value) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
 // ============ BOOKING + PAYMENT HELPERS ============
 //
 // Shared building blocks for:
@@ -228,6 +232,40 @@ function verifyBookingEmail({ email, verificationId, requireVerification }) {
   }
 
   return { ok: true, trusted: true, verifiedAt: verification.verified_at };
+}
+
+function upsertCustomerFromBooking(booking) {
+  const email = normalizeEmail(booking?.email);
+  if (!email || !isValidEmail(email)) return;
+
+  const now = new Date().toISOString();
+  const firstName = normalizeCustomerName(booking.customer_first_name) || null;
+  const lastName = normalizeCustomerName(booking.customer_last_name) || null;
+  const bookingAt = booking.payment_completed_at || now;
+
+  run(
+    `INSERT INTO customers
+      (id, email, first_name, last_name, email_verified_at, first_booking_at, last_booking_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(email) DO UPDATE SET
+       first_name = COALESCE(excluded.first_name, customers.first_name),
+       last_name = COALESCE(excluded.last_name, customers.last_name),
+       email_verified_at = COALESCE(customers.email_verified_at, excluded.email_verified_at),
+       first_booking_at = COALESCE(customers.first_booking_at, excluded.first_booking_at),
+       last_booking_at = excluded.last_booking_at,
+       updated_at = excluded.updated_at`,
+    [
+      uuid(),
+      email,
+      firstName,
+      lastName,
+      booking.email_verified_at || now,
+      booking.created_at || bookingAt,
+      bookingAt,
+      now,
+      now,
+    ]
+  );
 }
 
 // Validate the shape and integrity of a booking request body.
@@ -473,6 +511,14 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
     payment_completed_at = ?
     WHERE id = ?`,
     [transactionId, authCode, new Date().toISOString(), bookingId]);
+
+  upsertCustomerFromBooking({
+    ...booking,
+    payment_status: 'paid',
+    transaction_id: transactionId,
+    auth_code: authCode,
+    payment_completed_at: new Date().toISOString(),
+  });
 
   // Flip seats to sold + emit per-seat for live seat-map updates
   for (const it of items) {
@@ -1876,6 +1922,95 @@ app.get('/api/admin/booking-sales', adminAuth, (req, res) => {
   })));
 });
 
+function getCustomerRows(search = '') {
+  const normalizedSearch = String(search || '').trim().toLowerCase();
+  const params = [];
+  let whereClause = '';
+  if (normalizedSearch) {
+    whereClause = `
+      WHERE LOWER(c.email) LIKE ?
+         OR LOWER(COALESCE(c.first_name, '')) LIKE ?
+         OR LOWER(COALESCE(c.last_name, '')) LIKE ?
+    `;
+    const like = `%${normalizedSearch}%`;
+    params.push(like, like, like);
+  }
+
+  return all(`
+    SELECT
+      c.id,
+      c.email,
+      c.first_name,
+      c.last_name,
+      c.email_verified_at,
+      c.first_booking_at,
+      c.last_booking_at,
+      c.created_at,
+      c.updated_at,
+      COUNT(b.id) as booking_count,
+      SUM(CASE WHEN b.payment_status = 'paid' THEN 1 ELSE 0 END) as paid_booking_count,
+      COALESCE(SUM(CASE WHEN b.payment_status = 'paid' THEN b.total_amount ELSE 0 END), 0) as total_spent
+    FROM customers c
+    LEFT JOIN bookings b ON LOWER(b.email) = c.email
+    ${whereClause}
+    GROUP BY c.id
+    ORDER BY COALESCE(c.last_booking_at, c.updated_at, c.created_at) DESC
+  `, params);
+}
+
+app.get('/api/admin/customers', adminAuth, (req, res) => {
+  const rows = getCustomerRows(req.query.search);
+  res.json(rows.map(row => ({
+    id: row.id,
+    email: row.email,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    fullName: [row.first_name, row.last_name].filter(Boolean).join(' ') || '(no name)',
+    emailVerifiedAt: row.email_verified_at,
+    firstBookingAt: row.first_booking_at,
+    lastBookingAt: row.last_booking_at,
+    bookingCount: row.booking_count || 0,
+    paidBookingCount: row.paid_booking_count || 0,
+    totalSpent: row.total_spent || 0,
+    totalSpentFormatted: '$' + formatPrice(row.total_spent || 0),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  })));
+});
+
+app.get('/api/admin/customers/export', adminAuth, (req, res) => {
+  const rows = getCustomerRows(req.query.search);
+  const header = [
+    'First Name',
+    'Last Name',
+    'Email',
+    'Paid Bookings',
+    'All Bookings',
+    'Total Spent',
+    'First Booking',
+    'Last Booking',
+    'Email Verified At',
+  ];
+  const lines = [header.map(csvCell).join(',')];
+  for (const row of rows) {
+    lines.push([
+      row.first_name || '',
+      row.last_name || '',
+      row.email || '',
+      row.paid_booking_count || 0,
+      row.booking_count || 0,
+      '$' + formatPrice(row.total_spent || 0),
+      row.first_booking_at || '',
+      row.last_booking_at || '',
+      row.email_verified_at || '',
+    ].map(csvCell).join(','));
+  }
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=customers-report.csv');
+  res.send(lines.join('\n'));
+});
+
 app.get('/api/admin/sessions', adminAuth, (req, res) => {
   const includeDeleted = req.query.includeDeleted === 'true';
   const where = includeDeleted ? '' : 'WHERE deleted_at IS NULL';
@@ -2226,6 +2361,7 @@ app.post('/api/admin/bookings/clear-test-data', adminAuth, (req, res) => {
 
   run('DELETE FROM payment_events');
   run('DELETE FROM email_verifications');
+  run('DELETE FROM customers');
   run('DELETE FROM booking_addons');
   run('DELETE FROM booking_items');
   run('DELETE FROM bookings');

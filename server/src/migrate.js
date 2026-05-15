@@ -1,4 +1,5 @@
 import { getDb, exec, all, run } from './database.js';
+import { v4 as uuid } from 'uuid';
 
 const BASELINE_PACKAGES = [
   ['pkg-required-12up-toonie', '12up / Toonie', 1800, 'required', 1, 1, 0, 0],
@@ -265,6 +266,65 @@ async function migrate() {
   `);
   try { exec('CREATE INDEX idx_email_verifications_email ON email_verifications(email)'); } catch(e) {}
   try { exec('CREATE INDEX idx_email_verifications_expires ON email_verifications(expires_at)'); } catch(e) {}
+
+  exec(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      first_name TEXT,
+      last_name TEXT,
+      email_verified_at TEXT,
+      first_booking_at TEXT,
+      last_booking_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { exec('CREATE INDEX idx_customers_email ON customers(email)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_customers_last_booking ON customers(last_booking_at)'); } catch(e) {}
+
+  const customerRows = all(`
+    SELECT
+      LOWER(TRIM(b.email)) as email,
+      COALESCE(NULLIF(TRIM(b.customer_first_name), ''), NULLIF(TRIM(bi.first_name), '')) as first_name,
+      COALESCE(NULLIF(TRIM(b.customer_last_name), ''), NULLIF(TRIM(bi.last_name), '')) as last_name,
+      MIN(COALESCE(b.email_verified_at, b.created_at)) as email_verified_at,
+      MIN(b.created_at) as first_booking_at,
+      MAX(b.created_at) as last_booking_at
+    FROM bookings b
+    LEFT JOIN booking_items bi ON bi.booking_id = b.id
+    WHERE b.email IS NOT NULL
+      AND TRIM(b.email) <> ''
+      AND b.payment_status IN ('paid', 'refunded', 'voided')
+    GROUP BY LOWER(TRIM(b.email))
+  `);
+  for (const customer of customerRows) {
+    try {
+      run(
+        `INSERT INTO customers
+          (id, email, first_name, last_name, email_verified_at, first_booking_at, last_booking_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(email) DO UPDATE SET
+           first_name = COALESCE(excluded.first_name, customers.first_name),
+           last_name = COALESCE(excluded.last_name, customers.last_name),
+           email_verified_at = COALESCE(customers.email_verified_at, excluded.email_verified_at),
+           first_booking_at = COALESCE(customers.first_booking_at, excluded.first_booking_at),
+           last_booking_at = COALESCE(excluded.last_booking_at, customers.last_booking_at),
+           updated_at = excluded.updated_at`,
+        [
+          uuid(),
+          customer.email,
+          customer.first_name || null,
+          customer.last_name || null,
+          customer.email_verified_at || null,
+          customer.first_booking_at || null,
+          customer.last_booking_at || null,
+          new Date().toISOString(),
+          new Date().toISOString(),
+        ]
+      );
+    } catch(e) {}
+  }
 
   // --- Admin Users migration ---
   console.log('Running admin users migration...');
