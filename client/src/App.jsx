@@ -14,6 +14,7 @@ import BookingPanel from './components/BookingPanel';
 import BookingProcessing from './components/BookingProcessing';
 import Confirmation from './components/Confirmation';
 import CountdownTimer from './components/CountdownTimer';
+import EmbeddedAuthorizeNetPayment from './components/EmbeddedAuthorizeNetPayment';
 import FloorPlan from './components/FloorPlan';
 import SessionWeekPicker from './components/SessionWeekPicker';
 import { useSocket } from './useSocket';
@@ -70,6 +71,7 @@ export default function App() {
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [paymentSession, setPaymentSession] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [openTable, setOpenTable] = useState(null);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -247,31 +249,10 @@ export default function App() {
       return;
     }
 
-    // Build a hidden, self-submitting form. Posting the token to redirectUrl
-    // sends the customer to Authorize.Net's hosted card-entry page on their
-    // domain. We never see PAN/CVV — Authorize.Net does.
-    //
-    // We deliberately don't setLoading(false) — the browser is about to
-    // navigate away. Keep the spinner up until then to avoid flicker.
-    try {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = result.redirectUrl;
-      form.style.display = 'none';
-
-      const tokenInput = document.createElement('input');
-      tokenInput.type = 'hidden';
-      tokenInput.name = 'token';
-      tokenInput.value = result.token;
-      form.appendChild(tokenInput);
-
-      document.body.appendChild(form);
-      form.submit();
-    } catch (err) {
-      console.error('Self-submit form failed:', err);
-      setLoading(false);
-      setError('Could not redirect to payment. Please try again.');
-    }
+    // Render Authorize.Net's hosted card-entry form inside our branded checkout page.
+    // Authorize.Net still owns the card iframe, so we never see PAN/CVV.
+    setPaymentSession(result);
+    setLoading(false);
   };
 
   const requiredPkg = packages.find(pkg => pkg.type === 'required');
@@ -285,6 +266,17 @@ export default function App() {
       setNamesFilledBeforeChairs(false);
     }
   }, [namesFilledBeforeChairs, allSeatsSelected, allNamesValid, panelOpen]);
+
+  if (paymentSession) {
+    return (
+      <EmbeddedAuthorizeNetPayment
+        payment={paymentSession}
+        onCancel={() => {
+          window.location.href = `/payment/cancel?bookingId=${encodeURIComponent(paymentSession.bookingId)}`;
+        }}
+      />
+    );
+  }
 
   if (booking) {
     return (

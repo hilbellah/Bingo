@@ -45,6 +45,11 @@
 //   ANET_PAY_BUTTON_TEXT Optional hosted payment submit button label.
 //   ANET_RETURN_BUTTON_TEXT Optional receipt/return button label.
 //   ANET_CANCEL_BUTTON_TEXT Optional cancel button label.
+//   ANET_IFRAME_COMMUNICATOR_URL Optional HTTPS URL for the small static
+//                        callback page required when Accept Hosted is embedded
+//                        in our branded payment screen. Defaults to
+//                        PUBLIC_BASE_URL/IFrameCommunicator.html, or the same
+//                        origin as ANET_RETURN_URL.
 //
 // Endpoints used:
 //   API:           https://apitest.authorize.net/xml/v1/request.api (sandbox)
@@ -103,6 +108,22 @@ function hostedPaymentTheme() {
     cancelButtonText: process.env.ANET_CANCEL_BUTTON_TEXT || 'Cancel Payment',
     merchantName: merchantName.replace(/[^\w\s]/g, '').slice(0, 60).trim() || 'Wolastoq Bingo',
   };
+}
+
+function getIframeCommunicatorUrl() {
+  if (process.env.ANET_IFRAME_COMMUNICATOR_URL) {
+    return process.env.ANET_IFRAME_COMMUNICATOR_URL;
+  }
+
+  const baseUrl = process.env.PUBLIC_BASE_URL || process.env.ANET_RETURN_URL;
+  if (!baseUrl) return '';
+
+  try {
+    const url = new URL(baseUrl);
+    return `${url.origin}/IFrameCommunicator.html`;
+  } catch {
+    return '';
+  }
 }
 
 // ---------- 1) Create hosted payment page (get redirect token) ----------
@@ -208,6 +229,10 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, f
     // above) and NOT required — customer can glance at it to confirm without
     // having to type it again.
     pushSetting('hostedPaymentCustomerOptions', { showEmail: true, requiredEmail: false, addPaymentProfile: false });
+    const iframeCommunicatorUrl = getIframeCommunicatorUrl();
+    if (iframeCommunicatorUrl) {
+      pushSetting('hostedPaymentIFrameCommunicatorUrl', { url: iframeCommunicatorUrl });
+    }
 
     const arrayOfSettings = new APIContracts.ArrayOfSetting();
     arrayOfSettings.setSetting(settings);
