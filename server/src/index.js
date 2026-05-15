@@ -1860,6 +1860,60 @@ app.post('/api/admin/bookings/:id/cancel', adminAuth, (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/admin/bookings/clear-test-data', adminAuth, (req, res) => {
+  if (process.env.ANET_ENV === 'production' || process.env.NODE_ENV !== 'production') {
+    return res.status(403).json({
+      error: 'clear_test_data_disabled',
+      message: 'Bulk booking cleanup is only enabled on deployed sandbox services.',
+    });
+  }
+
+  const summary = get(`
+    SELECT
+      COUNT(*) as booking_count,
+      COALESCE(SUM(total_amount), 0) as total_amount
+    FROM bookings
+  `);
+  const statuses = all(`
+    SELECT payment_status, COUNT(*) as count
+    FROM bookings
+    GROUP BY payment_status
+    ORDER BY payment_status
+  `);
+  const items = all('SELECT seat_id FROM booking_items');
+  const sessionRows = all('SELECT DISTINCT session_id FROM bookings');
+
+  for (const item of items) {
+    run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [item.seat_id]);
+  }
+
+  logAudit('booking_test_data_cleared', 'booking', 'sandbox_clear', {
+    bookingCount: summary?.booking_count || 0,
+    releasedSeats: items.length,
+    totalAmount: summary?.total_amount || 0,
+    statuses,
+    clearedBy: req.adminUser?.email || null,
+  });
+
+  run('DELETE FROM payment_events');
+  run('DELETE FROM booking_addons');
+  run('DELETE FROM booking_items');
+  run('DELETE FROM bookings');
+
+  for (const row of sessionRows) {
+    io.to(`session:${row.session_id}`).emit('seats:refresh');
+  }
+  io.to('admin:receipts').emit('bookings:cleared');
+  saveDb();
+
+  res.json({
+    ok: true,
+    deletedBookings: summary?.booking_count || 0,
+    releasedSeats: items.length,
+    clearedAmountFormatted: '$' + formatPrice(summary?.total_amount || 0),
+  });
+});
+
 app.delete('/api/admin/bookings/:id', adminAuth, (req, res) => {
   const identifier = req.params.id;
   const booking = get(

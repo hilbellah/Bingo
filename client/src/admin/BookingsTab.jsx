@@ -15,6 +15,7 @@ export default function BookingsTab() {
     setDailySalesDate,
     dailySales,
     handlePrintDailySalesReceipt,
+    handleClearTestBookings,
     bookings,
   } = useAdminDashboard();
 
@@ -24,7 +25,16 @@ export default function BookingsTab() {
         {tab === 'bookings' && (
           <div>
             <div className="bg-white rounded-xl p-5 shadow-sm">
-              <h3 className="font-semibold text-brand-blue mb-4">Booking Sales</h3>
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h3 className="font-semibold text-brand-blue">Booking Sales</h3>
+                <button
+                  type="button"
+                  onClick={handleClearTestBookings}
+                  className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Clear Test Bookings
+                </button>
+              </div>
               {bookingSales.length === 0 ? (
                 <p className="text-gray-400 text-center py-8">No sessions found</p>
               ) : (

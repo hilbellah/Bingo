@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, cancelAdminBooking, refundAdminBooking, getExportUrl, adminHeaders,
+  fetchAdminBookings, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -658,6 +658,31 @@ export default function AdminDashboard() {
     loadBookings(reportSession);
   };
 
+  const handleClearTestBookings = async () => {
+    const proceed = window.confirm(
+      'Clear ALL sandbox booking test data?\n\n' +
+      'This deletes booking records, ticket rows, add-ons, and payment event logs, then releases all seats. ' +
+      'It keeps sessions, packages, admin users, settings, theme, announcements, and PHD inventory.\n\n' +
+      'This action is blocked once Authorize.Net is set to production. Continue?'
+    );
+    if (!proceed) return;
+
+    const result = await clearAdminTestBookings(token);
+    if (!result.ok) {
+      window.alert(result.message || result.error || 'Could not clear test bookings.');
+      return;
+    }
+
+    window.alert(
+      `Cleared ${result.deletedBookings || 0} booking(s), released ${result.releasedSeats || 0} seat(s).`
+    );
+    loadBookingSales();
+    loadDailySales(dailySalesDate, dailySalesSearch);
+    loadBookings(reportSession);
+    loadDashboard(dashboardDateFrom, dashboardDateTo);
+    loadPhdInventory();
+  };
+
   // Refund a paid booking through Authorize.Net. Server auto-decides void vs
   // refund and releases seats. /cancel is for legacy/admin bookings with no
   // payment processor; /refund is for real Authorize.Net transactions.
@@ -798,6 +823,7 @@ export default function AdminDashboard() {
     bookings,
     loadBookings,
     handleCancelBooking,
+    handleClearTestBookings,
     handleRefundBooking,
     handleExport,
     bulkDateFrom,
