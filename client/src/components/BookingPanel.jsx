@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { formatDateShort, formatTime, formatPrice } from '../utils/formatters';
+import { sendEmailVerification, verifyEmailCode } from '../api';
 
 // NOTE: All credit-card collection happens on Authorize.Net's hosted payment
 // page (Accept Hosted integration). This file does NOT and MUST NOT collect
 // card data — doing so would violate our PCI scope (SAQ A) and require
-// SAQ A-EP or SAQ D. The booking form only collects: attendee names, email,
-// seat selection, and optional add-ons. The customer is redirected to
+// SAQ A-EP or SAQ D. The booking form only collects: attendee names,
+// customer name/email, seat selection, and optional add-ons. The customer is redirected to
 // Authorize.Net to enter card details.
 
 export default function BookingPanel({
@@ -21,11 +22,20 @@ export default function BookingPanel({
   // Confirmation email — required so the customer receives the booking by email
   // instead of needing to print on the spot. Pre-filled into Authorize.Net's
   // hosted page (we pass it via the customer record on the transaction request).
+  const [customerFirstName, setCustomerFirstName] = useState('');
+  const [customerLastName, setCustomerLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [verificationId, setVerificationId] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [verificationSending, setVerificationSending] = useState(false);
+  const [verificationChecking, setVerificationChecking] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
+  const [verificationMessage, setVerificationMessage] = useState('');
 
   // Track which fields the user has interacted with so we don't yell at them
   // about empty fields the moment the panel opens.
-  const [touched, setTouched] = useState({ email: false });
+  const [touched, setTouched] = useState({ customerFirstName: false, customerLastName: false, email: false, verificationCode: false });
   const markTouched = (field) => setTouched(t => ({ ...t, [field]: true }));
 
   // Permissive but useful email check — must contain a non-empty local part,
@@ -33,16 +43,96 @@ export default function BookingPanel({
   // ("foo@bar", "foo@bar.") without rejecting unusual but valid addresses.
   const trimmedEmail = (email || '').trim();
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
+  const trimmedCustomerFirstName = (customerFirstName || '').trim();
+  const trimmedCustomerLastName = (customerLastName || '').trim();
+  const isCustomerFirstNameValid = trimmedCustomerFirstName.length > 0;
+  const isCustomerLastNameValid = trimmedCustomerLastName.length > 0;
 
-  // Submission validity now only requires a valid email. All card data is
-  // collected on Authorize.Net's hosted page after redirect.
-  const isPaymentValid = isEmailValid;
+  // Card data is collected on Authorize.Net's hosted page after redirect.
+  const isPaymentValid = isEmailValid && isCustomerFirstNameValid && isCustomerLastNameValid && emailVerified;
+
+  const resetVerification = () => {
+    setVerificationId('');
+    setVerificationCode('');
+    setEmailVerified(false);
+    setVerificationError('');
+    setVerificationMessage('');
+  };
+
+  const handleSendVerification = async () => {
+    setTouched(t => ({ ...t, customerFirstName: true, customerLastName: true, email: true }));
+    setVerificationError('');
+    setVerificationMessage('');
+    if (!isEmailValid || !isCustomerFirstNameValid || !isCustomerLastNameValid) return;
+
+    setVerificationSending(true);
+    let result;
+    try {
+      result = await sendEmailVerification(trimmedEmail, trimmedCustomerFirstName, trimmedCustomerLastName);
+    } catch (err) {
+      result = { error: 'Could not send a verification code. Please try again.' };
+    }
+    setVerificationSending(false);
+
+    if (result?.alreadyVerified) {
+      setEmailVerified(true);
+      setVerificationId('');
+      setVerificationCode('');
+      setVerificationMessage('Email already verified from a previous paid booking.');
+      return;
+    }
+
+    if (!result?.ok || !result?.verificationId) {
+      setVerificationError(result?.error || 'Could not send a verification code. Please try again.');
+      return;
+    }
+
+    setVerificationId(result.verificationId);
+    setVerificationCode('');
+    setVerificationMessage('Verification code sent. Check your email.');
+  };
+
+  const handleVerifyCode = async () => {
+    setTouched(t => ({ ...t, verificationCode: true }));
+    setVerificationError('');
+    setVerificationMessage('');
+    if (!verificationId || !/^\d{6}$/.test(verificationCode.trim())) {
+      setVerificationError('Enter the 6-digit code from your email.');
+      return;
+    }
+
+    setVerificationChecking(true);
+    let result;
+    try {
+      result = await verifyEmailCode(trimmedEmail, verificationId, verificationCode.trim());
+    } catch (err) {
+      result = { error: 'That code could not be verified.' };
+    }
+    setVerificationChecking(false);
+
+    if (!result?.ok) {
+      setVerificationError(result?.error || 'That code could not be verified.');
+      return;
+    }
+
+    setEmailVerified(true);
+    setVerificationMessage('Email verified.');
+  };
 
   const handlePaySubmit = () => {
-    setTouched({ email: true });
+    setTouched({ customerFirstName: true, customerLastName: true, email: true, verificationCode: true });
     if (!isPaymentValid) return;
-    onSubmit(trimmedEmail);
+    onSubmit({
+      email: trimmedEmail,
+      customerFirstName: trimmedCustomerFirstName,
+      customerLastName: trimmedCustomerLastName,
+      emailVerificationId: verificationId,
+    });
   };
+
+  useEffect(() => {
+    resetVerification();
+  }, [trimmedEmail]);
 
   // Auto-advance: when panel opens and all names valid + all seats selected, go to step 1
   useEffect(() => {
@@ -537,8 +627,47 @@ export default function BookingPanel({
               {/* Email — required so we can send the confirmation/receipt and
                   so Authorize.Net's hosted page pre-fills it for the customer. */}
               <div className="mb-5">
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">
+                      First name
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="given-name"
+                      value={customerFirstName}
+                      onChange={e => setCustomerFirstName(e.target.value)}
+                      onBlur={() => markTouched('customerFirstName')}
+                      className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
+                        touched.customerFirstName && !isCustomerFirstNameValid
+                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
+                          : 'border-gray-200 focus:border-brand-gold'
+                      }`}
+                      placeholder="First"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">
+                      Last name
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="family-name"
+                      value={customerLastName}
+                      onChange={e => setCustomerLastName(e.target.value)}
+                      onBlur={() => markTouched('customerLastName')}
+                      className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
+                        touched.customerLastName && !isCustomerLastNameValid
+                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
+                          : 'border-gray-200 focus:border-brand-gold'
+                      }`}
+                      placeholder="Last"
+                    />
+                  </div>
+                </div>
+
                 <label className="text-xs font-medium text-gray-500 mb-1 block">
-                  Email (for booking confirmation)
+                  Email
                 </label>
                 <input
                   type="email"
@@ -557,8 +686,67 @@ export default function BookingPanel({
                 {touched.email && !isEmailValid ? (
                   <p className="text-xs text-red-500 mt-1">Enter a valid email so we can send your tickets.</p>
                 ) : (
-                  <p className="text-xs text-gray-400 mt-1">We'll send your booking confirmation here.</p>
+                  <p className="text-xs text-gray-400 mt-1">We'll send a code here before payment.</p>
                 )}
+
+                <div className={`mt-3 rounded-xl border px-3 py-3 ${
+                  emailVerified ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className={`text-sm font-semibold ${emailVerified ? 'text-green-700' : 'text-brand-blue'}`}>
+                        {emailVerified ? 'Email verified' : 'Verify your email'}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {emailVerified ? 'You can continue to secure payment.' : 'Required before payment for first-time emails.'}
+                      </p>
+                    </div>
+                    {!emailVerified && (
+                      <button
+                        type="button"
+                        onClick={handleSendVerification}
+                        disabled={verificationSending || !isEmailValid || !isCustomerFirstNameValid || !isCustomerLastNameValid}
+                        className="shrink-0 bg-brand-blue text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-brand-blue/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {verificationSending ? 'Sending...' : verificationId ? 'Resend Code' : 'Send Code'}
+                      </button>
+                    )}
+                  </div>
+
+                  {!emailVerified && verificationId && (
+                    <div className="mt-3 flex gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        value={verificationCode}
+                        onChange={e => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        onBlur={() => markTouched('verificationCode')}
+                        className={`flex-1 min-w-0 px-3 py-2.5 border-2 rounded-xl text-base tracking-[0.2em] focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
+                          touched.verificationCode && !/^\d{6}$/.test(verificationCode)
+                            ? 'border-red-300 bg-red-50/40 focus:border-red-400'
+                            : 'border-gray-200 focus:border-brand-gold'
+                        }`}
+                        placeholder="000000"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleVerifyCode}
+                        disabled={verificationChecking || verificationCode.length !== 6}
+                        className="shrink-0 bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-gold-light disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {verificationChecking ? 'Checking...' : 'Verify'}
+                      </button>
+                    </div>
+                  )}
+
+                  {verificationError ? (
+                    <p className="text-xs text-red-500 mt-2">{verificationError}</p>
+                  ) : verificationMessage ? (
+                    <p className={`text-xs mt-2 ${emailVerified ? 'text-green-700' : 'text-brand-blue'}`}>{verificationMessage}</p>
+                  ) : null}
+                </div>
               </div>
 
               {/* Authorize.Net redirect notice — replaces the old in-page card form.
@@ -592,7 +780,7 @@ export default function BookingPanel({
               </button>
               {!isPaymentValid && (
                 <p className="text-center text-xs text-gray-400 mt-2">
-                  Enter a valid email to continue
+                  Enter your name, verify your email, then continue
                 </p>
               )}
             </div>

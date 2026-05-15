@@ -85,6 +85,17 @@ async function seed() {
       reference_number TEXT NOT NULL UNIQUE, total_amount INTEGER NOT NULL,
       payment_status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      email TEXT,
+      customer_first_name TEXT,
+      customer_last_name TEXT,
+      email_verified_at TEXT,
+      payment_provider TEXT DEFAULT 'authorize_net',
+      transaction_id TEXT,
+      auth_code TEXT,
+      payment_attempted_at TEXT,
+      payment_completed_at TEXT,
+      payment_failure_reason TEXT,
+      hosted_token TEXT,
       FOREIGN KEY (session_id) REFERENCES sessions(id)
     );
     CREATE TABLE booking_items (
@@ -135,11 +146,37 @@ async function seed() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE email_verifications (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      customer_first_name TEXT,
+      customer_last_name TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT NOT NULL,
+      verified_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE payment_events (
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      source TEXT NOT NULL,
+      raw_payload TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (booking_id) REFERENCES bookings(id)
+    );
+
     CREATE INDEX idx_seats_session ON seats(session_id);
     CREATE INDEX idx_seats_table ON seats(session_id, table_number);
     CREATE INDEX idx_seats_status ON seats(session_id, status);
     CREATE INDEX idx_bookings_session ON bookings(session_id);
+    CREATE INDEX idx_bookings_email ON bookings(email);
+    CREATE INDEX idx_bookings_payment_status ON bookings(payment_status);
     CREATE INDEX idx_booking_items_booking ON booking_items(booking_id);
+    CREATE INDEX idx_email_verifications_email ON email_verifications(email);
+    CREATE INDEX idx_payment_events_booking ON payment_events(booking_id);
     CREATE INDEX idx_session_packages_session ON session_packages(session_id);
     CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);
     CREATE INDEX idx_audit_log_action ON audit_log(action);
@@ -212,7 +249,13 @@ async function seed() {
 
     // Booking 1: Party of 2 at Table 1 (chairs 1 & 2)
     const b1 = uuid(), bi1 = uuid(), bi2 = uuid();
-    db.run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b1, fs, ref(), 5000, 'paid', new Date(Date.now() - 86400000).toISOString()]);
+    db.run(
+      `INSERT INTO bookings
+        (id, session_id, reference_number, total_amount, payment_status, created_at, email,
+         customer_first_name, customer_last_name, email_verified_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [b1, fs, ref(), 5000, 'paid', new Date(Date.now() - 86400000).toISOString(), 'john.smith@example.com', 'John', 'Smith', new Date(Date.now() - 86400000).toISOString()]
+    );
     db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi1, b1, 'John', 'Smith', s[1][1], requiredPkg, 1800, ref()]);
     db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi1, opt1, 1, 1400]);
     db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][1]]);
@@ -221,7 +264,13 @@ async function seed() {
 
     // Booking 2: Party of 3 at Table 5 (chairs 1, 2, 3)
     const b2 = uuid();
-    db.run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b2, fs, ref(), 5400, 'paid', new Date(Date.now() - 43200000).toISOString()]);
+    db.run(
+      `INSERT INTO bookings
+        (id, session_id, reference_number, total_amount, payment_status, created_at, email,
+         customer_first_name, customer_last_name, email_verified_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [b2, fs, ref(), 5400, 'paid', new Date(Date.now() - 43200000).toISOString(), 'mike.johnson@example.com', 'Mike', 'Johnson', new Date(Date.now() - 43200000).toISOString()]
+    );
     const names = [['Mike', 'Johnson'], ['Sarah', 'Johnson'], ['Tom', 'Johnson']];
     for (let i = 0; i < 3; i++) {
       db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -231,7 +280,13 @@ async function seed() {
 
     // Booking 3: Single at Table 42 (chair 1)
     const b3 = uuid(), bi6 = uuid();
-    db.run('INSERT INTO bookings VALUES (?, ?, ?, ?, ?, ?)', [b3, fs, ref(), 3200, 'paid', new Date(Date.now() - 7200000).toISOString()]);
+    db.run(
+      `INSERT INTO bookings
+        (id, session_id, reference_number, total_amount, payment_status, created_at, email,
+         customer_first_name, customer_last_name, email_verified_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [b3, fs, ref(), 3200, 'paid', new Date(Date.now() - 7200000).toISOString(), 'alice.williams@example.com', 'Alice', 'Williams', new Date(Date.now() - 7200000).toISOString()]
+    );
     db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi6, b3, 'Alice', 'Williams', s[42][1], requiredPkg, 1800, ref()]);
     db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi6, opt1, 1, 1400]);
     db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[42][1]]);

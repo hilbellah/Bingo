@@ -291,6 +291,68 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
   return { ok: false, status: 0, error: 'no_provider_configured' };
 }
 
+function renderVerificationHtml({ code, firstName }) {
+  const greeting = firstName ? `Hi ${escapeHtml(firstName)},` : 'Hi,';
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Your Verification Code</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+        <tr><td style="background:linear-gradient(135deg,#0a1628 0%,#1a3a5c 100%);padding:24px 28px;color:#ffffff;text-align:center;">
+          <div style="font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:#c5a55a;font-weight:700;">Wolastoq Bingo</div>
+          <div style="margin-top:6px;font-size:21px;font-weight:700;">Verify Your Email</div>
+        </td></tr>
+        <tr><td style="padding:26px 28px;color:#374151;font-size:15px;line-height:1.6;">
+          <p style="margin:0 0 16px;">${greeting}</p>
+          <p style="margin:0 0 18px;">Enter this code on the booking page to continue to payment:</p>
+          <div style="background:#fff7e6;border:2px solid #c5a55a;border-radius:12px;padding:16px;text-align:center;">
+            <div style="font-family:monospace;font-size:30px;font-weight:800;color:#1a3a5c;letter-spacing:.18em;">${escapeHtml(code)}</div>
+          </div>
+          <p style="margin:18px 0 0;color:#6b7280;font-size:13px;">This code expires in 10 minutes. If you didn't request it, you can ignore this email.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+function renderVerificationText({ code, firstName }) {
+  return [
+    firstName ? `Hi ${firstName},` : 'Hi,',
+    '',
+    'Enter this Wolastoq Bingo verification code on the booking page:',
+    '',
+    code,
+    '',
+    'This code expires in 10 minutes. If you did not request it, you can ignore this email.',
+  ].join('\n');
+}
+
+export async function sendEmailVerificationCode({ to, code, firstName }) {
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || !/^\d{6}$/.test(String(code || ''))) {
+    return { ok: false, status: 0, error: 'invalid_verification_email_request' };
+  }
+
+  const subject = 'Your Wolastoq Bingo verification code';
+  const html = renderVerificationHtml({ code, firstName });
+  const text = renderVerificationText({ code, firstName });
+  const booking = { referenceNumber: 'email verification' };
+
+  const transporter = getGmailTransporter();
+  if (transporter) {
+    return sendViaGmail({ transporter, to, bcc: [], subject, html, text, booking });
+  }
+
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) {
+    return sendViaResend({ apiKey, to, bcc: [], subject, html, text, booking });
+  }
+
+  console.warn('[email] No email provider configured. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY on Render. Verification email cannot be sent.');
+  return { ok: false, status: 0, error: 'no_provider_configured' };
+}
+
 // ---------- Provider: Gmail SMTP ----------
 async function sendViaGmail({ transporter, to, bcc, subject, html, text, booking }) {
   const fromUser = process.env.GMAIL_USER;
@@ -310,7 +372,7 @@ async function sendViaGmail({ transporter, to, bcc, subject, html, text, booking
       text,
     });
     const bccNote = bcc.length > 0 ? ` bcc=${bcc.join(',')}` : '';
-    console.log(`[email] sent confirmation for ${booking.referenceNumber} to ${to}${bccNote} via Gmail (messageId=${info.messageId})`);
+    console.log(`[email] sent ${booking.referenceNumber} to ${to}${bccNote} via Gmail (messageId=${info.messageId})`);
     return { ok: true, status: 200, id: info.messageId };
   } catch (err) {
     // Common Gmail errors: 535 invalid creds, 534 app password required.
@@ -342,7 +404,7 @@ async function sendViaResend({ apiKey, to, bcc, subject, html, text, booking }) 
     }
     const body = await res.json().catch(() => ({}));
     const bccNote = bcc.length > 0 ? ` bcc=${bcc.join(',')}` : '';
-    console.log(`[email] sent confirmation for ${booking.referenceNumber} to ${to}${bccNote} via Resend (id=${body?.id || 'unknown'})`);
+    console.log(`[email] sent ${booking.referenceNumber} to ${to}${bccNote} via Resend (id=${body?.id || 'unknown'})`);
     return { ok: true, status: res.status, id: body?.id };
   } catch (err) {
     console.error('[email] Resend send failed:', err?.message || err);

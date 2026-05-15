@@ -226,7 +226,7 @@ export default function App() {
     }
   };
 
-  const handleSubmit = async (email) => {
+  const handleSubmit = async (customer) => {
     setLoading(true);
     setError('');
 
@@ -239,7 +239,7 @@ export default function App() {
 
     // /api/bookings/initiate creates the booking as 'pending' and returns a
     // short-lived Authorize.Net hosted-page token + redirect URL.
-    const result = await initiateBooking(selectedSession.id, holderId, bookingAttendees, email);
+    const result = await initiateBooking(selectedSession.id, holderId, bookingAttendees, customer);
 
     if (!result || !result.bookingId || !result.token || !result.redirectUrl) {
       setLoading(false);

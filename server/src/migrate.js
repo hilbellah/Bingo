@@ -243,6 +243,28 @@ async function migrate() {
   // --- Customer email on bookings (for confirmation emails) ---
   console.log('Running booking email migration...');
   try { exec('ALTER TABLE bookings ADD COLUMN email TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN customer_first_name TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN customer_last_name TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN email_verified_at TEXT'); } catch(e) {}
+  try { exec('CREATE INDEX idx_bookings_email ON bookings(email)'); } catch(e) {}
+
+  // Email verification codes for first-time customer emails. Codes are stored
+  // as bcrypt hashes only; the plaintext code is never persisted.
+  exec(`
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      customer_first_name TEXT,
+      customer_last_name TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT NOT NULL,
+      verified_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  try { exec('CREATE INDEX idx_email_verifications_email ON email_verifications(email)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_email_verifications_expires ON email_verifications(expires_at)'); } catch(e) {}
 
   // --- Admin Users migration ---
   console.log('Running admin users migration...');

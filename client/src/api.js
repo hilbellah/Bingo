@@ -60,11 +60,33 @@ export async function unlockSeat(seatId, holderId) {
   return res.json();
 }
 
-export async function createBooking(sessionId, holderId, attendees, email) {
+export async function createBooking(sessionId, holderId, attendees, customer) {
+  const email = typeof customer === 'string' ? customer : customer?.email;
+  const customerFirstName = typeof customer === 'object' ? customer?.customerFirstName : undefined;
+  const customerLastName = typeof customer === 'object' ? customer?.customerLastName : undefined;
+  const emailVerificationId = typeof customer === 'object' ? customer?.emailVerificationId : undefined;
   const res = await fetch(`${API}/bookings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, holderId, attendees, email })
+    body: JSON.stringify({ sessionId, holderId, attendees, email, customerFirstName, customerLastName, emailVerificationId })
+  });
+  return res.json();
+}
+
+export async function sendEmailVerification(email, customerFirstName, customerLastName) {
+  const res = await fetch(`${API}/email-verifications/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, customerFirstName, customerLastName })
+  });
+  return res.json();
+}
+
+export async function verifyEmailCode(email, verificationId, code) {
+  const res = await fetch(`${API}/email-verifications/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, verificationId, code })
   });
   return res.json();
 }
@@ -74,11 +96,15 @@ export async function createBooking(sessionId, holderId, attendees, email) {
 // on success, or { error } on validation failure / server error.
 // The caller is expected to build a self-submitting form that POSTs `token`
 // to `redirectUrl` to send the customer to Authorize.Net's hosted card page.
-export async function initiateBooking(sessionId, holderId, attendees, email) {
+export async function initiateBooking(sessionId, holderId, attendees, customer) {
+  const email = typeof customer === 'string' ? customer : customer?.email;
+  const customerFirstName = typeof customer === 'object' ? customer?.customerFirstName : undefined;
+  const customerLastName = typeof customer === 'object' ? customer?.customerLastName : undefined;
+  const emailVerificationId = typeof customer === 'object' ? customer?.emailVerificationId : undefined;
   const res = await fetch(`${API}/bookings/initiate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, holderId, attendees, email })
+    body: JSON.stringify({ sessionId, holderId, attendees, email, customerFirstName, customerLastName, emailVerificationId })
   });
   return res.json();
 }

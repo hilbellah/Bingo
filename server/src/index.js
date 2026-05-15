@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { getDb, all, get, run, saveDb } from './database.js';
 import { migrate } from './migrate.js';
 import { logger } from './logger.js';
@@ -17,7 +18,7 @@ import { releaseExpiredHolds } from './services/holds.js';
 import { cleanupOldData, ensureFutureSessions, getScheduleSummary, openWeeklySessions } from './services/scheduler.js';
 import { createUploadMiddleware } from './uploads.js';
 import { formatLocalDate, formatPrice, generateRef } from './utils/format.js';
-import { sendBookingConfirmation } from './services/email.js';
+import { sendBookingConfirmation, sendEmailVerificationCode } from './services/email.js';
 import { createHostedPaymentPage, verifyTransaction, verifyWebhookSignature, refundTransaction, voidTransaction } from './services/payments.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -165,12 +166,76 @@ function logPaymentEvent(bookingId, eventType, source, payload) {
   }
 }
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+}
+
+function normalizeCustomerName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function isValidCustomerName(value) {
+  const name = normalizeCustomerName(value);
+  return name.length >= 1 && name.length <= 80;
+}
+
+function hasPriorPaidBooking(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  const row = get(
+    `SELECT id FROM bookings
+     WHERE LOWER(email) = ?
+       AND payment_status IN ('paid', 'refunded', 'voided')
+     LIMIT 1`,
+    [normalized]
+  );
+  return !!row;
+}
+
+function verifyBookingEmail({ email, verificationId, requireVerification }) {
+  const normalized = normalizeEmail(email);
+  const now = new Date().toISOString();
+
+  if (!requireVerification) {
+    return { ok: true, trusted: false, verifiedAt: null };
+  }
+
+  if (hasPriorPaidBooking(normalized)) {
+    return { ok: true, trusted: true, verifiedAt: now, alreadyVerified: true };
+  }
+
+  if (!verificationId) {
+    return { ok: false, statusCode: 403, error: 'Please verify your email before continuing to payment.' };
+  }
+
+  const verification = get(
+    `SELECT * FROM email_verifications
+     WHERE id = ? AND LOWER(email) = ?
+     LIMIT 1`,
+    [verificationId, normalized]
+  );
+
+  if (!verification || !verification.verified_at) {
+    return { ok: false, statusCode: 403, error: 'Please verify your email before continuing to payment.' };
+  }
+
+  if (verification.expires_at <= now) {
+    return { ok: false, statusCode: 403, error: 'That verification code expired. Please send a new code.' };
+  }
+
+  return { ok: true, trusted: true, verifiedAt: verification.verified_at };
+}
+
 // Validate the shape and integrity of a booking request body.
 // Returns { ok, data: { sessionId, holderId, attendees, trimmedEmail, session,
 //   useSessionPkgs, sessionPkgs, requiredPkg } } on success, or
 // { ok: false, statusCode, error } on failure.
-function validateBookingRequest(body) {
-  const { sessionId, holderId, attendees, email } = body || {};
+function validateBookingRequest(body, { requireEmailVerification = true, requireCustomerDetails = true } = {}) {
+  const { sessionId, holderId, attendees, email, customerFirstName, customerLastName, emailVerificationId } = body || {};
 
   if (!sessionId || !holderId || !attendees?.length) {
     return { ok: false, statusCode: 400, error: 'Missing required fields' };
@@ -178,9 +243,27 @@ function validateBookingRequest(body) {
 
   // Email required for confirmation. Permissive regex — just catches typos.
   const trimmedEmail = (email || '').trim();
-  if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+  if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
     return { ok: false, statusCode: 400, error: 'A valid email address is required for the booking confirmation.' };
   }
+  const normalizedEmail = normalizeEmail(trimmedEmail);
+
+  let trimmedCustomerFirstName = normalizeCustomerName(customerFirstName);
+  let trimmedCustomerLastName = normalizeCustomerName(customerLastName);
+  if (!requireCustomerDetails) {
+    trimmedCustomerFirstName ||= normalizeCustomerName(attendees?.[0]?.firstName);
+    trimmedCustomerLastName ||= normalizeCustomerName(attendees?.[0]?.lastName);
+  }
+  if (requireCustomerDetails && (!isValidCustomerName(trimmedCustomerFirstName) || !isValidCustomerName(trimmedCustomerLastName))) {
+    return { ok: false, statusCode: 400, error: 'Customer first and last name are required.' };
+  }
+
+  const emailCheck = verifyBookingEmail({
+    email: normalizedEmail,
+    verificationId: emailVerificationId,
+    requireVerification: requireEmailVerification,
+  });
+  if (!emailCheck.ok) return emailCheck;
 
   const session = get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
   if (!session) return { ok: false, statusCode: 404, error: 'Session not found' };
@@ -204,7 +287,19 @@ function validateBookingRequest(body) {
 
   return {
     ok: true,
-    data: { sessionId, holderId, attendees, trimmedEmail, session, useSessionPkgs, sessionPkgs, requiredPkg }
+    data: {
+      sessionId,
+      holderId,
+      attendees,
+      trimmedEmail: normalizedEmail,
+      customerFirstName: trimmedCustomerFirstName,
+      customerLastName: trimmedCustomerLastName,
+      emailVerifiedAt: emailCheck.verifiedAt || null,
+      session,
+      useSessionPkgs,
+      sessionPkgs,
+      requiredPkg
+    }
   };
 }
 
@@ -270,7 +365,17 @@ function validatePhdInventory(attendees, useSessionPkgs, sessionPkgs) {
 // Insert a booking + its items + addons. Always 'pending' status.
 // Does NOT flip seats and does NOT emit any sockets — that happens in markBookingPaid.
 // Returns { bookingId, refNumber, totalAmount, itemRefs }. Throws on DB error.
-function insertBookingRecord({ sessionId, attendees, requiredPkg, sessionPkgs, useSessionPkgs, email }) {
+function insertBookingRecord({
+  sessionId,
+  attendees,
+  requiredPkg,
+  sessionPkgs,
+  useSessionPkgs,
+  email,
+  customerFirstName,
+  customerLastName,
+  emailVerifiedAt
+}) {
   let totalAmount = 0;
   const bookingId = uuid();
   const refNumber = generateRef();
@@ -300,8 +405,24 @@ function insertBookingRecord({ sessionId, attendees, requiredPkg, sessionPkgs, u
     }
   }
 
-  run('INSERT INTO bookings (id, session_id, reference_number, total_amount, payment_status, created_at, email) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [bookingId, sessionId, refNumber, totalAmount, 'pending', new Date().toISOString(), email]);
+  run(
+    `INSERT INTO bookings
+      (id, session_id, reference_number, total_amount, payment_status, created_at, email,
+       customer_first_name, customer_last_name, email_verified_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      bookingId,
+      sessionId,
+      refNumber,
+      totalAmount,
+      'pending',
+      new Date().toISOString(),
+      email,
+      customerFirstName,
+      customerLastName,
+      emailVerifiedAt,
+    ]
+  );
 
   // Preserve the original 'booking_created' audit event so any admin filters
   // / dashboards watching for it keep working after the refactor.
@@ -309,6 +430,9 @@ function insertBookingRecord({ sessionId, attendees, requiredPkg, sessionPkgs, u
     referenceNumber: refNumber,
     sessionId,
     totalAmount,
+    customerFirstName,
+    customerLastName,
+    email,
     attendees: attendees.map(a => ({ firstName: a.firstName, lastName: a.lastName, seatId: a.seatId }))
   });
 
@@ -731,6 +855,106 @@ app.post('/api/seats/:seatId/unlock', (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/email-verifications/send', bookingLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const customerFirstName = normalizeCustomerName(req.body?.customerFirstName);
+  const customerLastName = normalizeCustomerName(req.body?.customerLastName);
+
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: 'A valid email address is required.' });
+  }
+  if (!isValidCustomerName(customerFirstName) || !isValidCustomerName(customerLastName)) {
+    return res.status(400).json({ error: 'Customer first and last name are required.' });
+  }
+
+  if (hasPriorPaidBooking(email)) {
+    return res.json({
+      ok: true,
+      alreadyVerified: true,
+      message: 'This email has already completed a paid booking.',
+    });
+  }
+
+  try {
+    run('DELETE FROM email_verifications WHERE expires_at < ?', [new Date().toISOString()]);
+
+    const code = String(crypto.randomInt(100000, 1000000));
+    const codeHash = await bcrypt.hash(code, 10);
+    const verificationId = uuid();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    run(
+      `INSERT INTO email_verifications
+        (id, email, code_hash, customer_first_name, customer_last_name, attempts, expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+      [verificationId, email, codeHash, customerFirstName, customerLastName, expiresAt, new Date().toISOString()]
+    );
+    saveDb();
+
+    const emailResult = await sendEmailVerificationCode({
+      to: email,
+      code,
+      firstName: customerFirstName,
+    });
+
+    if (!emailResult.ok) {
+      console.error('[email-verification] send failed:', emailResult.error || emailResult.status);
+      return res.status(502).json({ error: 'Could not send verification code. Please try again.' });
+    }
+
+    res.json({
+      ok: true,
+      verificationId,
+      expiresInMinutes: 10,
+      message: 'Verification code sent.',
+    });
+  } catch (err) {
+    console.error('[email-verification] send error:', err);
+    res.status(500).json({ error: 'Could not send verification code. Please try again.' });
+  }
+});
+
+app.post('/api/email-verifications/verify', bookingLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const verificationId = String(req.body?.verificationId || '').trim();
+  const code = String(req.body?.code || '').trim();
+
+  if (!isValidEmail(email) || !verificationId || !/^\d{6}$/.test(code)) {
+    return res.status(400).json({ error: 'Enter the 6-digit verification code.' });
+  }
+
+  const verification = get(
+    `SELECT * FROM email_verifications
+     WHERE id = ? AND LOWER(email) = ?
+     LIMIT 1`,
+    [verificationId, email]
+  );
+
+  if (!verification) {
+    return res.status(404).json({ error: 'Verification code not found. Please send a new code.' });
+  }
+  if (verification.verified_at) {
+    return res.json({ ok: true, verificationId });
+  }
+  if (verification.expires_at <= new Date().toISOString()) {
+    return res.status(400).json({ error: 'That verification code expired. Please send a new code.' });
+  }
+  if ((verification.attempts || 0) >= 5) {
+    return res.status(429).json({ error: 'Too many incorrect attempts. Please send a new code.' });
+  }
+
+  const matches = await bcrypt.compare(code, verification.code_hash);
+  if (!matches) {
+    run('UPDATE email_verifications SET attempts = attempts + 1 WHERE id = ?', [verificationId]);
+    saveDb();
+    return res.status(400).json({ error: 'That code is not correct.' });
+  }
+
+  run('UPDATE email_verifications SET verified_at = ? WHERE id = ?', [new Date().toISOString(), verificationId]);
+  saveDb();
+  res.json({ ok: true, verificationId });
+});
+
 // --- Create Booking ---
 // ============ BOOKINGS — CUSTOMER PATHS ============
 
@@ -739,16 +963,34 @@ app.post('/api/seats/:seatId/unlock', (req, res) => {
 // comp/staff bookings or any flow where money was collected elsewhere.
 // Customer-facing UI should hit POST /api/bookings/initiate instead.
 app.post('/api/bookings', adminAuth, (req, res) => {
-  const validation = validateBookingRequest(req.body);
+  const validation = validateBookingRequest(req.body, { requireEmailVerification: false, requireCustomerDetails: false });
   if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
-  const { sessionId, attendees, trimmedEmail, useSessionPkgs, sessionPkgs, requiredPkg } = validation.data;
+  const {
+    sessionId,
+    attendees,
+    trimmedEmail,
+    customerFirstName,
+    customerLastName,
+    emailVerifiedAt,
+    useSessionPkgs,
+    sessionPkgs,
+    requiredPkg
+  } = validation.data;
 
   const phdCheck = validatePhdInventory(attendees, useSessionPkgs, sessionPkgs);
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
   try {
     const { bookingId, refNumber, totalAmount, itemRefs } = insertBookingRecord({
-      sessionId, attendees, requiredPkg, sessionPkgs, useSessionPkgs, email: trimmedEmail
+      sessionId,
+      attendees,
+      requiredPkg,
+      sessionPkgs,
+      useSessionPkgs,
+      email: trimmedEmail,
+      customerFirstName,
+      customerLastName,
+      emailVerifiedAt
     });
 
     // No payment processor in this path — flip directly to 'paid'.
@@ -761,7 +1003,9 @@ app.post('/api/bookings', adminAuth, (req, res) => {
       itemReferences: itemRefs,
       totalAmount,
       totalFormatted: '$' + formatPrice(totalAmount),
-      email: trimmedEmail
+      email: trimmedEmail,
+      customerFirstName,
+      customerLastName
     });
   } catch (err) {
     console.error('Booking error:', err);
@@ -780,7 +1024,17 @@ app.post('/api/bookings', adminAuth, (req, res) => {
 app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
   const validation = validateBookingRequest(req.body);
   if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
-  const { sessionId, attendees, trimmedEmail, useSessionPkgs, sessionPkgs, requiredPkg } = validation.data;
+  const {
+    sessionId,
+    attendees,
+    trimmedEmail,
+    customerFirstName,
+    customerLastName,
+    emailVerifiedAt,
+    useSessionPkgs,
+    sessionPkgs,
+    requiredPkg
+  } = validation.data;
 
   const phdCheck = validatePhdInventory(attendees, useSessionPkgs, sessionPkgs);
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
@@ -788,7 +1042,15 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
   let bookingId, refNumber, totalAmount, itemRefs;
   try {
     ({ bookingId, refNumber, totalAmount, itemRefs } = insertBookingRecord({
-      sessionId, attendees, requiredPkg, sessionPkgs, useSessionPkgs, email: trimmedEmail
+      sessionId,
+      attendees,
+      requiredPkg,
+      sessionPkgs,
+      useSessionPkgs,
+      email: trimmedEmail,
+      customerFirstName,
+      customerLastName,
+      emailVerifiedAt
     }));
 
     // Refresh held_until so seats survive the hosted-page detour.
@@ -813,6 +1075,8 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     bookingId,
     amountCents: totalAmount,
     email: trimmedEmail,
+    firstName: customerFirstName,
+    lastName: customerLastName,
     refNumber,
   });
 
@@ -832,6 +1096,8 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     totalAmount,
     totalFormatted: '$' + formatPrice(totalAmount),
     email: trimmedEmail,
+    customerFirstName,
+    customerLastName,
     redirectUrl: result.redirectUrl,
     token: result.token,
   });
@@ -1488,6 +1754,7 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
   const search = (req.query.search || '').trim().toLowerCase();
   const rows = all(`
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
+           b.email, b.customer_first_name, b.customer_last_name,
            s.date as session_date, s.time as session_time,
            s.is_special_event, s.event_title,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
@@ -1802,6 +2069,7 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
 
   const rows = all(`
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at, b.email,
+           b.customer_first_name, b.customer_last_name,
            s.date as session_date, s.time as session_time,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
            bi.reference_number as item_reference_number,
@@ -1828,6 +2096,8 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
         paymentStatus: row.payment_status,
         createdAt: row.created_at,
         email: row.email,
+        customerFirstName: row.customer_first_name,
+        customerLastName: row.customer_last_name,
         sessionDate: row.session_date,
         sessionTime: row.session_time,
         items: []
@@ -1868,6 +2138,7 @@ app.get('/api/admin/bookings/export', adminAuth, (req, res) => {
 
   const rows = all(`
     SELECT COALESCE(bi.reference_number, b.reference_number) as ticket_reference, b.total_amount, b.payment_status, b.created_at,
+           b.email, b.customer_first_name, b.customer_last_name,
            s.date as session_date, s.time as session_time,
            bi.first_name, bi.last_name,
            seats.table_number, seats.chair_number,
@@ -1882,9 +2153,9 @@ app.get('/api/admin/bookings/export', adminAuth, (req, res) => {
     ORDER BY b.created_at DESC
   `, params);
 
-  let csv = 'Reference,Session Date,Session Time,First Name,Last Name,Table,Chair,Package,Package Price,Total Amount,Payment Status,Booked At\n';
+  let csv = 'Reference,Session Date,Session Time,Customer First Name,Customer Last Name,Email,First Name,Last Name,Table,Chair,Package,Package Price,Total Amount,Payment Status,Booked At\n';
   for (const row of rows) {
-    csv += `${row.ticket_reference},${row.session_date},${row.session_time},${row.first_name},${row.last_name},${row.table_number},${row.chair_number},${row.package_name},$${formatPrice(row.package_price)},$${formatPrice(row.total_amount)},${row.payment_status},${row.created_at}\n`;
+    csv += `${row.ticket_reference},${row.session_date},${row.session_time},${row.customer_first_name || ''},${row.customer_last_name || ''},${row.email || ''},${row.first_name},${row.last_name},${row.table_number},${row.chair_number},${row.package_name},$${formatPrice(row.package_price)},$${formatPrice(row.total_amount)},${row.payment_status},${row.created_at}\n`;
   }
 
   res.setHeader('Content-Type', 'text/csv');
@@ -1954,6 +2225,7 @@ app.post('/api/admin/bookings/clear-test-data', adminAuth, (req, res) => {
   });
 
   run('DELETE FROM payment_events');
+  run('DELETE FROM email_verifications');
   run('DELETE FROM booking_addons');
   run('DELETE FROM booking_items');
   run('DELETE FROM bookings');
@@ -2119,6 +2391,7 @@ app.get('/api/admin/sessions/deleted', adminAuth, (req, res) => {
 app.get('/api/admin/sessions/:id/bookings', adminAuth, (req, res) => {
   const rows = all(`
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
+           b.email, b.customer_first_name, b.customer_last_name,
            bi.first_name, bi.last_name, bi.price as item_price,
            bi.reference_number as item_reference_number,
            seats.table_number, seats.chair_number,
@@ -2142,6 +2415,9 @@ app.get('/api/admin/sessions/:id/bookings', adminAuth, (req, res) => {
         totalFormatted: '$' + formatPrice(row.total_amount),
         paymentStatus: row.payment_status,
         createdAt: row.created_at,
+        email: row.email,
+        customerFirstName: row.customer_first_name,
+        customerLastName: row.customer_last_name,
         attendees: []
       };
     }
@@ -2424,6 +2700,9 @@ app.get('/api/bookings/:ref/tickets', (req, res) => {
     totalAmount: booking.total_amount,
     totalFormatted: '$' + formatPrice(booking.total_amount),
     paymentStatus: booking.payment_status,
+    email: booking.email,
+    customerFirstName: booking.customer_first_name,
+    customerLastName: booking.customer_last_name,
     tickets: items.map(item => ({
       firstName: item.first_name,
       lastName: item.last_name,

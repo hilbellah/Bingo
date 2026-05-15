@@ -126,7 +126,7 @@ function hostedPaymentTheme() {
  *                                      so we can later look up by either.
  * @returns {Promise<{ok: boolean, token?: string, redirectUrl?: string, error?: string}>}
  */
-export async function createHostedPaymentPage({ bookingId, amountCents, email, refNumber }) {
+export async function createHostedPaymentPage({ bookingId, amountCents, email, firstName, lastName, refNumber }) {
   if (!bookingId || !refNumber) {
     return { ok: false, error: 'createHostedPaymentPage: bookingId and refNumber required' };
   }
@@ -155,6 +155,13 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, r
       const customer = new APIContracts.CustomerDataType();
       customer.setEmail(email);
       tx.setCustomer(customer);
+    }
+
+    if (firstName || lastName) {
+      const billTo = new APIContracts.CustomerAddressType();
+      if (firstName) billTo.setFirstName(String(firstName).slice(0, 50));
+      if (lastName) billTo.setLastName(String(lastName).slice(0, 50));
+      tx.setBillTo(billTo);
     }
 
     // Hosted-page settings — controls what the customer sees on Authorize.Net's domain.
