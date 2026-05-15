@@ -352,6 +352,12 @@ function renderRefundHtml({ booking, session, actionLabel, refundTransactionId }
           </div>
         </td></tr>
 
+        <tr><td style="padding:0 32px 24px;">
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:13px 14px;font-size:13px;color:#1e40af;line-height:1.5;">
+            The payment reversal has been submitted through Authorize.Net. Refund timing depends on Authorize.Net processing and your card issuer or bank; it may take several business days before the credit appears on your statement.
+          </div>
+        </td></tr>
+
         <tr><td style="padding:16px 32px;background:#f9fafb;text-align:center;font-size:11px;color:#9ca3af;line-height:1.5;">
           This email was sent because a Wolastoq Bingo booking payment was reversed.
         </td></tr>
@@ -371,6 +377,7 @@ function renderRefundText({ booking, session, actionLabel, refundTransactionId }
     refundTransactionId ? `Transaction reference: ${refundTransactionId}` : '',
     '',
     'Your seats have been released and may become available for other customers.',
+    'The payment reversal has been submitted through Authorize.Net. Refund timing depends on Authorize.Net processing and your card issuer or bank; it may take several business days before the credit appears on your statement.',
     '',
     'Wolastoq Bingo',
   ].filter(Boolean).join('\n');
