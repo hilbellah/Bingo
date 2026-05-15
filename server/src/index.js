@@ -69,7 +69,7 @@ app.use(cors(corsOptions));
 app.use(express.json({
   limit: '1mb',
   verify: (req, res, buf) => {
-    if (req.originalUrl === '/api/webhooks/authorize-net') {
+    if ((req.originalUrl || '').split('?')[0] === '/api/webhooks/authorize-net') {
       req.rawBody = Buffer.from(buf);
     }
   }

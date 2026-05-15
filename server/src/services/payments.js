@@ -304,12 +304,19 @@ export async function verifyTransaction(transId) {
  * @returns {boolean}                 True if signature is valid.
  */
 export function verifyWebhookSignature(rawBody, signatureHeader) {
-  const signatureKey = process.env.ANET_SIGNATURE_KEY;
-  if (!signatureKey || !signatureHeader) return false;
+  const signatureKey = normalizeSignatureHex(process.env.ANET_SIGNATURE_KEY);
+  const provided = normalizeSignatureHex(signatureHeader);
+  if (!signatureKey || !provided) return false;
 
-  // Header format: "sha512=ABCDEF..." (strip prefix if present)
-  const provided = String(signatureHeader).replace(/^sha512=/i, '').toUpperCase();
-  if (!/^[A-F0-9]{128}$/.test(provided)) return false;
+  if (!/^[A-F0-9]{128}$/.test(provided)) {
+    console.error(`[payments] webhook: X-ANET-Signature format invalid (hex length=${provided.length})`);
+    return false;
+  }
+
+  if (!/^[A-F0-9]{128}$/.test(signatureKey)) {
+    console.error(`[payments] webhook: ANET_SIGNATURE_KEY format invalid (hex length=${signatureKey.length})`);
+    return false;
+  }
 
   let keyBuffer;
   try {
@@ -330,6 +337,14 @@ export function verifyWebhookSignature(rawBody, signatureHeader) {
   const providedBuf = Buffer.from(provided);
   if (expectedBuf.length !== providedBuf.length) return false;
   return crypto.timingSafeEqual(expectedBuf, providedBuf);
+}
+
+function normalizeSignatureHex(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^sha512=/i, '')
+    .replace(/\s+/g, '')
+    .toUpperCase();
 }
 
 // ---------- 4) Refund (post-settlement) ----------
