@@ -109,6 +109,7 @@ function formatTime12h(timeStr) {
 function renderBookingHtml({ booking, session, attendees, seats, packages, siteUrl }) {
   const seatById = new Map(seats.map(s => [s.id, s]));
   const pkgById = new Map(packages.map(p => [p.id, p]));
+  const thankYouMessage = 'Thank you for booking with us. We look forward to seeing you there!';
 
   const attendeeBlocks = attendees.map((att, idx) => {
     const seat = seatById.get(att.seatId) || {};
@@ -182,6 +183,13 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
           </table>
         </td></tr>
 
+        <!-- Thank you message -->
+        <tr><td style="padding:8px 32px;">
+          <div style="background:#f0f7fb;border:1px solid #d7e8f1;border-radius:10px;padding:13px 14px;text-align:center;font-size:14px;font-weight:700;color:#1a3a5c;line-height:1.45;">
+            ${escapeHtml(thankYouMessage)}
+          </div>
+        </td></tr>
+
         <!-- Tickets -->
         <tr><td style="padding:16px 32px 8px;">
           <div style="font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;">Your Tickets</div>
@@ -234,6 +242,8 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   lines.push(`Booking reference: ${booking.referenceNumber}`);
   lines.push(`Session: ${formatDateLong(session?.date)} at ${formatTime12h(session?.time)}`);
   lines.push(`Total paid: ${booking.totalFormatted || formatPriceDollars(booking.totalAmount)}`);
+  lines.push('');
+  lines.push('Thank you for booking with us. We look forward to seeing you there!');
   lines.push('');
   lines.push('Tickets:');
   attendees.forEach((att, idx) => {

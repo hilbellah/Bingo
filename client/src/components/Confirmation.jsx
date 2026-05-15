@@ -1,6 +1,8 @@
 import React from 'react';
 import { formatDateLong, formatTime, formatPrice } from '../utils/formatters';
 
+const BOOKING_THANK_YOU_MESSAGE = 'Thank you for booking with us. We look forward to seeing you there!';
+
 export default function Confirmation({ booking, session, attendees, seats, selectedSeats, requiredPkg, optionalPkgs = [] }) {
 
   const getSeatInfo = (seatId) => {
@@ -42,6 +44,10 @@ export default function Confirmation({ booking, session, attendees, seats, selec
             <span className="text-gray-500 font-medium">Total Paid</span>
             <span className="font-bold text-xl text-brand-gold">{booking.totalFormatted}</span>
           </div>
+        </div>
+
+        <div className="bg-brand-blue/5 border border-brand-blue/10 rounded-2xl px-5 py-4 mb-6 text-center">
+          <p className="text-sm font-semibold text-brand-blue">{BOOKING_THANK_YOU_MESSAGE}</p>
         </div>
 
         {/* Seats */}

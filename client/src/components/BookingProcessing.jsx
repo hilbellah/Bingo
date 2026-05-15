@@ -19,6 +19,7 @@ import { formatDateLong, formatTime } from '../utils/formatters';
 
 const POLL_INTERVAL_MS = 2000;
 const SLOW_MODE_AFTER_POLLS = 30; // 30 polls * 2s = 60 seconds
+const BOOKING_THANK_YOU_MESSAGE = 'Thank you for booking with us. We look forward to seeing you there!';
 
 export default function BookingProcessing({ bookingId }) {
   const [phase, setPhase] = useState('polling'); // 'polling' | 'paid' | 'paid_no_details' | 'failed' | 'cancelled'
@@ -120,6 +121,10 @@ export default function BookingProcessing({ bookingId }) {
             </div>
           </div>
 
+          <div className="bg-brand-blue/5 border border-brand-blue/10 rounded-2xl px-5 py-4 mb-6 text-center">
+            <p className="text-sm font-semibold text-brand-blue">{BOOKING_THANK_YOU_MESSAGE}</p>
+          </div>
+
           <div className="mb-6">
             <h3 className="font-bold text-brand-blue mb-3 text-lg">Your Tickets</h3>
             <div className="space-y-2">
@@ -178,6 +183,9 @@ export default function BookingProcessing({ bookingId }) {
             </p>
           </div>
         )}
+        <div className="bg-brand-blue/5 border border-brand-blue/10 rounded-2xl px-5 py-4 my-6 text-center">
+          <p className="text-sm font-semibold text-brand-blue">{BOOKING_THANK_YOU_MESSAGE}</p>
+        </div>
         <button
           onClick={goHome}
           className="w-full bg-brand-blue text-white py-3 px-6 rounded-xl font-semibold hover:bg-brand-blue-dark transition-colors"
