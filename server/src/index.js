@@ -343,9 +343,71 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
 
 // Enforce PHD (Personal Handheld Device) per-player limit and total stock.
 // Returns { ok: true, phdPkgIds, phdConfig } or { ok: false, error }.
-function validatePhdInventory(attendees, useSessionPkgs, sessionPkgs) {
+function getPhdConfig() {
   const phdSettingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
-  const phdConfig = phdSettingsRow ? JSON.parse(phdSettingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
+  return phdSettingsRow ? JSON.parse(phdSettingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
+}
+
+function getPhdUsedForSession(sessionId) {
+  if (!sessionId) return 0;
+  const usedRow = get(`
+    SELECT COALESCE(SUM(ba.quantity), 0) as total_used
+    FROM booking_addons ba
+    JOIN booking_items bi ON bi.id = ba.booking_item_id
+    JOIN bookings b ON b.id = bi.booking_id
+    WHERE b.payment_status = 'paid'
+      AND b.session_id = ?
+      AND (
+        ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+        OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+      )
+  `, [sessionId]);
+  return usedRow?.total_used || 0;
+}
+
+function getPhdInventoryForSession(sessionId) {
+  const config = getPhdConfig();
+  const totalUsed = getPhdUsedForSession(sessionId);
+  return {
+    sessionId: sessionId || null,
+    totalStock: config.totalStock,
+    totalUsed,
+    remaining: Math.max(0, config.totalStock - totalUsed),
+    perPlayerLimit: config.perPlayerLimit,
+  };
+}
+
+function getPhdUsageBySession() {
+  return all(`
+    SELECT s.id, s.date, s.time, s.event_title, s.is_special_event,
+      COALESCE(SUM(ba.quantity), 0) as phd_count
+    FROM sessions s
+    JOIN bookings b ON b.session_id = s.id AND b.payment_status = 'paid'
+    JOIN booking_items bi ON bi.booking_id = b.id
+    JOIN booking_addons ba ON ba.booking_item_id = bi.id
+    WHERE (
+      ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+      OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+    ) AND s.deleted_at IS NULL
+    GROUP BY s.id
+    ORDER BY s.date DESC
+  `);
+}
+
+function getNextPhdSessionId() {
+  const today = formatLocalDate(new Date());
+  const row = get(
+    `SELECT id FROM sessions
+     WHERE date >= ? AND is_available = 1 AND deleted_at IS NULL
+     ORDER BY date ASC, time ASC
+     LIMIT 1`,
+    [today]
+  );
+  return row?.id || null;
+}
+
+function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs) {
+  const phdConfig = getPhdConfig();
 
   const phdPkgIds = new Set();
   if (useSessionPkgs) {
@@ -368,7 +430,8 @@ function validatePhdInventory(attendees, useSessionPkgs, sessionPkgs) {
     }
   }
 
-  // Total inventory across all paid bookings vs total stock
+  // PHD stock resets per session. Example: a 5/15 session has its own 200,
+  // and the 5/16 session also has its own 200.
   let totalPhdInBooking = 0;
   for (const att of attendees) {
     if (!att.addons) continue;
@@ -378,18 +441,7 @@ function validatePhdInventory(attendees, useSessionPkgs, sessionPkgs) {
   }
 
   if (totalPhdInBooking > 0) {
-    const usedRow = get(`
-      SELECT COALESCE(SUM(ba.quantity), 0) as total_used
-      FROM booking_addons ba
-      JOIN booking_items bi ON bi.id = ba.booking_item_id
-      JOIN bookings b ON b.id = bi.booking_id
-      WHERE b.payment_status = 'paid'
-        AND (
-          ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-          OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-        )
-    `);
-    const totalUsed = usedRow?.total_used || 0;
+    const totalUsed = getPhdUsedForSession(sessionId);
     const remaining = phdConfig.totalStock - totalUsed;
 
     if (totalPhdInBooking > remaining) {
@@ -580,23 +632,10 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
            OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1))
   `, [bookingId]);
   if (phdInBooking && phdInBooking.cnt > 0) {
-    const phdSettingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
-    const phdConfig = phdSettingsRow ? JSON.parse(phdSettingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
-    const phdUsedNow = get(`
-      SELECT COALESCE(SUM(ba.quantity), 0) as total_used
-      FROM booking_addons ba
-      JOIN booking_items bi ON bi.id = ba.booking_item_id
-      JOIN bookings b ON b.id = bi.booking_id
-      WHERE b.payment_status = 'paid'
-        AND (ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-             OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1))
-    `);
-    const phdUsed = phdUsedNow?.total_used || 0;
+    const phdInventory = getPhdInventoryForSession(booking.session_id);
     io.to('admin:receipts').emit('phd:updated', {
-      totalStock: phdConfig.totalStock,
-      totalUsed: phdUsed,
-      remaining: Math.max(0, phdConfig.totalStock - phdUsed),
-      perPlayerLimit: phdConfig.perPlayerLimit
+      ...phdInventory,
+      perSession: getPhdUsageBySession(),
     });
   }
 
@@ -732,6 +771,10 @@ function markBookingRefunded({ bookingId, transactionId = null, refundTransactio
   logPaymentEvent(bookingId, 'refunded', source, { transactionId });
   logAudit('booking_refunded', 'booking', bookingId, { transactionId, source, releasedSeats });
   io.to('admin:receipts').emit('booking:refunded', { bookingId, transactionId, releasedSeats });
+  io.to('admin:receipts').emit('phd:updated', {
+    ...getPhdInventoryForSession(booking.session_id),
+    perSession: getPhdUsageBySession(),
+  });
   sendRefundNotificationAsync({ bookingId, action: 'refund', refundTransactionId: refundTransactionId || transactionId });
   return { ok: true, releasedSeats };
 }
@@ -754,6 +797,10 @@ function markBookingVoided({ bookingId, transactionId = null, voidTransactionId 
   logPaymentEvent(bookingId, 'voided', source, { transactionId });
   logAudit('booking_voided', 'booking', bookingId, { transactionId, source, releasedSeats });
   io.to('admin:receipts').emit('booking:voided', { bookingId, transactionId, releasedSeats });
+  io.to('admin:receipts').emit('phd:updated', {
+    ...getPhdInventoryForSession(booking.session_id),
+    perSession: getPhdUsageBySession(),
+  });
   sendRefundNotificationAsync({ bookingId, action: 'void', refundTransactionId: voidTransactionId || transactionId });
   return { ok: true, releasedSeats };
 }
@@ -833,43 +880,17 @@ app.get('/api/sessions/:sessionId/packages', (req, res) => {
   if (sessionPkgs.length > 0) {
     return res.json(sessionPkgs);
   }
-  // Otherwise fall back to the global active package list — including PHD packages.
-  // PHD availability is enforced by the global PHD inventory (see /api/phd-inventory
-  // and the validator in POST /api/bookings), not by session type, so PHD packages
-  // are offered on every session that uses the global list. To hide a PHD package
-  // from a specific session, give that session its own override list via the admin
-  // Sessions tab, or disable the PHD package globally.
+  // Otherwise fall back to the global active package list, including PHD packages.
+  // PHD availability is enforced per session by /api/phd-inventory?sessionId=...
+  // and the booking validator, so every session gets its own stock pool.
   const globalPkgs = all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC');
   res.json(globalPkgs);
 });
 
 // --- PHD Inventory status (public) ---
 app.get('/api/phd-inventory', (req, res) => {
-  const settingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
-  const config = settingsRow ? JSON.parse(settingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
-
-  // Count all PHD units sold across all active (paid) bookings
-  const usedRow = get(`
-    SELECT COALESCE(SUM(ba.quantity), 0) as total_used
-    FROM booking_addons ba
-    JOIN booking_items bi ON bi.id = ba.booking_item_id
-    JOIN bookings b ON b.id = bi.booking_id
-    WHERE b.payment_status = 'paid'
-      AND (
-        ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-        OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-      )
-  `);
-
-  const totalUsed = usedRow?.total_used || 0;
-  const remaining = Math.max(0, config.totalStock - totalUsed);
-
-  res.json({
-    totalStock: config.totalStock,
-    totalUsed,
-    remaining,
-    perPlayerLimit: config.perPlayerLimit
-  });
+  const sessionId = String(req.query.sessionId || '').trim();
+  res.json(getPhdInventoryForSession(sessionId));
 });
 
 // --- Theme settings (public) ---
@@ -1090,7 +1111,7 @@ app.post('/api/bookings', adminAuth, (req, res) => {
     requiredPkg
   } = validation.data;
 
-  const phdCheck = validatePhdInventory(attendees, useSessionPkgs, sessionPkgs);
+  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs);
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
   try {
@@ -1149,7 +1170,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     requiredPkg
   } = validation.data;
 
-  const phdCheck = validatePhdInventory(attendees, useSessionPkgs, sessionPkgs);
+  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs);
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
   let bookingId, refNumber, totalAmount, itemRefs;
@@ -1707,46 +1728,9 @@ app.put('/api/admin/settings/:key', adminAuth, (req, res) => {
 // ============ PHD INVENTORY (Admin) ============
 
 app.get('/api/admin/phd-inventory', adminAuth, (req, res) => {
-  const settingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
-  const config = settingsRow ? JSON.parse(settingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
-
-  const usedRow = get(`
-    SELECT COALESCE(SUM(ba.quantity), 0) as total_used
-    FROM booking_addons ba
-    JOIN booking_items bi ON bi.id = ba.booking_item_id
-    JOIN bookings b ON b.id = bi.booking_id
-    WHERE b.payment_status = 'paid'
-      AND (
-        ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-        OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-      )
-  `);
-
-  const totalUsed = usedRow?.total_used || 0;
-  const remaining = Math.max(0, config.totalStock - totalUsed);
-
-  // Per-session breakdown
-  const perSession = all(`
-    SELECT s.id, s.date, s.time, s.event_title, s.is_special_event,
-      COALESCE(SUM(ba.quantity), 0) as phd_count
-    FROM sessions s
-    JOIN bookings b ON b.session_id = s.id AND b.payment_status = 'paid'
-    JOIN booking_items bi ON bi.booking_id = b.id
-    JOIN booking_addons ba ON ba.booking_item_id = bi.id
-    WHERE (
-      ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-      OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-    ) AND s.deleted_at IS NULL
-    GROUP BY s.id
-    ORDER BY s.date DESC
-  `);
-
   res.json({
-    totalStock: config.totalStock,
-    totalUsed,
-    remaining,
-    perPlayerLimit: config.perPlayerLimit,
-    perSession
+    ...getPhdInventoryForSession(String(req.query.sessionId || getNextPhdSessionId() || '').trim()),
+    perSession: getPhdUsageBySession()
   });
 });
 
@@ -1845,19 +1829,14 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
     fullTables,
     totalPersons: personsCount?.count || 0,
     phdInventory: (() => {
-      const phdRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
-      const phdCfg = phdRow ? JSON.parse(phdRow.value) : { totalStock: 200, perPlayerLimit: 2 };
-      const phdUsed = get(`
-        SELECT COALESCE(SUM(ba.quantity), 0) as total_used
-        FROM booking_addons ba
-        JOIN booking_items bi ON bi.id = ba.booking_item_id
-        JOIN bookings b ON b.id = bi.booking_id
-        WHERE b.payment_status = 'paid'
-          AND (ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-               OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1))
-      `);
-      const used = phdUsed?.total_used || 0;
-      return { totalStock: phdCfg.totalStock, totalUsed: used, remaining: Math.max(0, phdCfg.totalStock - used), perPlayerLimit: phdCfg.perPlayerLimit };
+      const sessionRow = get(
+        `SELECT id FROM sessions
+         WHERE date >= ? AND is_available = 1 AND deleted_at IS NULL
+         ORDER BY date ASC, time ASC
+         LIMIT 1`,
+        [dateFrom]
+      );
+      return getPhdInventoryForSession(sessionRow?.id || getNextPhdSessionId());
     })()
   });
 });

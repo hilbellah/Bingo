@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
-import { updateAdminPhdInventory } from '../api';
+import { fetchAdminPhdInventory, updateAdminPhdInventory } from '../api';
 
 export default function InventoryTab() {
   const {
@@ -26,17 +26,17 @@ export default function InventoryTab() {
               <div className={`rounded-xl p-5 shadow-sm text-white`} style={{ background: phdInventory.remaining <= 20 ? '#dc2626' : phdInventory.remaining <= 50 ? '#d97706' : '#16a34a' }}>
                 <p className="text-sm opacity-80">Available</p>
                 <p className="text-4xl font-bold mt-1">{phdInventory.remaining}</p>
-                <p className="text-xs opacity-60 mt-1">ready to assign</p>
+                <p className="text-xs opacity-60 mt-1">for next session</p>
               </div>
               <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#dc2626' }}>
                 <p className="text-sm opacity-80">In Use</p>
                 <p className="text-4xl font-bold mt-1">{phdInventory.totalUsed}</p>
-                <p className="text-xs opacity-60 mt-1">currently booked</p>
+                <p className="text-xs opacity-60 mt-1">next session</p>
               </div>
               <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#2563eb' }}>
                 <p className="text-sm opacity-80">Total Stock</p>
                 <p className="text-4xl font-bold mt-1">{phdInventory.totalStock}</p>
-                <p className="text-xs opacity-60 mt-1">devices owned</p>
+                <p className="text-xs opacity-60 mt-1">per session</p>
               </div>
               <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#7c3aed' }}>
                 <p className="text-sm opacity-80">Per Player Limit</p>
@@ -48,7 +48,7 @@ export default function InventoryTab() {
             {/* Progress bar */}
             <div className="bg-white rounded-xl p-5 shadow-sm mb-6">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-semibold text-gray-600">Stock Utilization</span>
+                <span className="text-sm font-semibold text-gray-600">Next Session Utilization</span>
                 <span className="text-sm font-bold text-gray-800">{Math.round((phdInventory.totalUsed / phdInventory.totalStock) * 100)}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-4">
@@ -67,7 +67,7 @@ export default function InventoryTab() {
               <h4 className="font-semibold text-brand-blue mb-4">Inventory Settings</h4>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">Total Stock</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Stock Per Session</label>
                   <input
                     type="number"
                     min="0"

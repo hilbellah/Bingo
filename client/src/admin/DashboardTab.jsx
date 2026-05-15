@@ -128,7 +128,7 @@ export default function DashboardTab() {
             {dashboard.phdInventory && (
               <div className="bg-white rounded-xl p-5 shadow-sm mb-6">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-brand-blue">PHD Inventory (Handheld Devices)</h3>
+                  <h3 className="font-semibold text-brand-blue">PHD Inventory (Next Session)</h3>
                   <span className={`text-xs font-bold px-3 py-1 rounded-full ${
                     dashboard.phdInventory.remaining <= 20 ? 'bg-red-100 text-red-700' :
                     dashboard.phdInventory.remaining <= 50 ? 'bg-amber-100 text-amber-700' :
@@ -144,11 +144,11 @@ export default function DashboardTab() {
                   </div>
                   <div className="bg-red-50 rounded-lg p-3 text-center">
                     <p className="text-2xl font-bold text-red-600">{dashboard.phdInventory.totalUsed}</p>
-                    <p className="text-xs text-red-500">In Use</p>
+                    <p className="text-xs text-red-500">Booked</p>
                   </div>
                   <div className="bg-blue-50 rounded-lg p-3 text-center">
                     <p className="text-2xl font-bold text-blue-700">{dashboard.phdInventory.totalStock}</p>
-                    <p className="text-xs text-blue-500">Total Stock</p>
+                    <p className="text-xs text-blue-500">Per Session</p>
                   </div>
                   <div className="bg-purple-50 rounded-lg p-3 text-center">
                     <p className="text-2xl font-bold text-purple-600">{dashboard.phdInventory.perPlayerLimit}</p>

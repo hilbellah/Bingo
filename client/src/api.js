@@ -433,8 +433,9 @@ export async function toggleAdminSeat(token, seatId, isDisabled) {
 }
 
 // PHD Inventory
-export async function fetchPhdInventory() {
-  const res = await fetch(`${API}/phd-inventory`);
+export async function fetchPhdInventory(sessionId) {
+  const qs = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+  const res = await fetch(`${API}/phd-inventory${qs}`);
   return res.json();
 }
 

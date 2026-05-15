@@ -108,7 +108,8 @@ export default function App() {
 
     fetchSeats(selectedSession.id).then(setSeats);
     fetchSessionPackages(selectedSession.id).then(setPackages);
-    fetchPhdInventory().then(setPhdInventory);
+    setPhdInventory(null);
+    fetchPhdInventory(selectedSession.id).then(setPhdInventory);
     setOpenTable(null);
 
     const socket = socketRef.current;
