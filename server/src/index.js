@@ -1856,7 +1856,52 @@ app.post('/api/admin/bookings/:id/cancel', adminAuth, (req, res) => {
   });
 
   io.to(`session:${booking.session_id}`).emit('seats:refresh');
+  saveDb();
   res.json({ success: true });
+});
+
+app.delete('/api/admin/bookings/:id', adminAuth, (req, res) => {
+  const identifier = req.params.id;
+  const booking = get(
+    'SELECT * FROM bookings WHERE id = ? OR reference_number = ?',
+    [identifier, identifier]
+  );
+  if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+  const deletableStatuses = new Set(['pending', 'failed', 'cancelled']);
+  if (!deletableStatuses.has(booking.payment_status)) {
+    return res.status(409).json({
+      error: 'booking_not_deletable',
+      message: `Only pending, failed, or cancelled test bookings can be deleted. Booking ${booking.reference_number} is '${booking.payment_status}'. Use refund/void for paid transactions.`,
+    });
+  }
+
+  const items = all('SELECT id, seat_id, first_name, last_name FROM booking_items WHERE booking_id = ?', [booking.id]);
+  for (const item of items) {
+    run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [item.seat_id]);
+  }
+
+  logAudit('booking_deleted', 'booking', booking.id, {
+    referenceNumber: booking.reference_number,
+    sessionId: booking.session_id,
+    paymentStatus: booking.payment_status,
+    totalAmount: booking.total_amount,
+    attendees: items.map(i => ({ firstName: i.first_name, lastName: i.last_name })),
+  });
+
+  run('DELETE FROM payment_events WHERE booking_id = ?', [booking.id]);
+  run('DELETE FROM booking_addons WHERE booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?)', [booking.id]);
+  run('DELETE FROM booking_items WHERE booking_id = ?', [booking.id]);
+  run('DELETE FROM bookings WHERE id = ?', [booking.id]);
+
+  io.to(`session:${booking.session_id}`).emit('seats:refresh');
+  saveDb();
+
+  res.json({
+    ok: true,
+    deleted: booking.reference_number,
+    releasedSeats: items.length,
+  });
 });
 
 // Refund a paid booking through Authorize.Net. Automatically decides between

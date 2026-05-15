@@ -228,6 +228,15 @@ export async function cancelAdminBooking(token, id) {
   return res.json();
 }
 
+export async function deleteAdminBooking(token, id) {
+  const res = await fetch(`${API}/admin/bookings/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: adminHeaders(token)
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
 // Refund a paid booking through Authorize.Net. The server auto-decides
 // between void (pre-settlement) and refund (post-settlement) and always
 // releases seats. Returns { ok, action: 'void'|'refund', seatsReleased,
