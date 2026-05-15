@@ -110,7 +110,7 @@ export default function Confirmation({ booking, session, attendees, seats, selec
                 </p>
               )}
               <p className="text-xs text-green-700 mt-1">
-                Don't see it? Check your spam folder, then keep this booking reference handy as a backup.
+                Don't see it? Check your spam or junk folder, then keep this booking reference handy as a backup.
               </p>
             </div>
           </div>

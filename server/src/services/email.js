@@ -201,6 +201,9 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
              style="display:inline-block;background:#1a3a5c;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;">
             View Tickets Online
           </a>
+          <div style="margin-top:10px;font-size:12px;color:#6b7280;">
+            If this email was in spam or junk, mark it as not spam so future booking emails are easier to find.
+          </div>
           <div style="margin-top:10px;font-size:12px;color:#9ca3af;">
             Or save this email — it's all the proof you need.
           </div>
@@ -246,6 +249,7 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   lines.push('');
   lines.push('Please arrive by 4:30 PM. Doors open one hour before the session.');
   lines.push(`View your tickets online: ${siteUrl}/tickets/${booking.referenceNumber}`);
+  lines.push('If you found this email in spam or junk, mark it as not spam so future booking emails are easier to find.');
   lines.push('');
   lines.push('Wolastoq Bingo');
   return lines.join('\n');
@@ -309,7 +313,7 @@ function renderVerificationHtml({ code, firstName }) {
           <div style="background:#fff7e6;border:2px solid #c5a55a;border-radius:12px;padding:16px;text-align:center;">
             <div style="font-family:monospace;font-size:30px;font-weight:800;color:#1a3a5c;letter-spacing:.18em;">${escapeHtml(code)}</div>
           </div>
-          <p style="margin:18px 0 0;color:#6b7280;font-size:13px;">This code expires in 10 minutes. If you didn't request it, you can ignore this email.</p>
+          <p style="margin:18px 0 0;color:#6b7280;font-size:13px;">This code expires in 10 minutes. If you found this in spam or junk, mark it as not spam.</p>
         </td></tr>
       </table>
     </td></tr>
@@ -325,7 +329,7 @@ function renderVerificationText({ code, firstName }) {
     '',
     code,
     '',
-    'This code expires in 10 minutes. If you did not request it, you can ignore this email.',
+    'This code expires in 10 minutes. If you found this in spam or junk, mark it as not spam.',
   ].join('\n');
 }
 

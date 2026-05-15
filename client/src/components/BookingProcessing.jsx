@@ -147,7 +147,7 @@ export default function BookingProcessing({ bookingId }) {
           </div>
 
           <p className="text-center text-sm text-gray-500 mb-4">
-            A confirmation has been emailed to you. Save this page or the email for your records.
+            A confirmation has been emailed to you. Check spam or junk if you do not see it, and save this page or the email for your records.
           </p>
 
           <button
@@ -168,7 +168,7 @@ export default function BookingProcessing({ bookingId }) {
         <SuccessIcon />
         <h1 className="text-3xl font-bold text-brand-blue text-center">Payment Confirmed!</h1>
         <p className="text-gray-600 text-center mt-2">
-          Your booking is confirmed and a confirmation has been emailed to you.
+          Your booking is confirmed and a confirmation has been emailed to you. Check spam or junk if you do not see it.
         </p>
         {referenceNumber && (
           <div className="bg-brand-gold/10 border-2 border-brand-gold/30 rounded-2xl p-5 my-6 text-center">
@@ -246,7 +246,7 @@ export default function BookingProcessing({ bookingId }) {
       </h1>
       <p className="text-gray-600 text-center mt-3">
         {slowMode
-          ? "Your payment is being processed. We'll email you a confirmation when it completes. You can safely close this window."
+          ? "Your payment is being processed. We'll email you a confirmation when it completes. Check spam or junk if you do not see it. You can safely close this window."
           : 'This usually takes just a few seconds. Please do not close this window.'}
       </p>
     </CenteredCard>

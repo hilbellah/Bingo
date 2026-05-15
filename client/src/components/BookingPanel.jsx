@@ -89,7 +89,7 @@ export default function BookingPanel({
 
     setVerificationId(result.verificationId);
     setVerificationCode('');
-    setVerificationMessage('Verification code sent. Check your email.');
+    setVerificationMessage('Verification code sent. Check your inbox and spam or junk folder.');
   };
 
   const handleVerifyCode = async () => {
@@ -686,7 +686,7 @@ export default function BookingPanel({
                 {touched.email && !isEmailValid ? (
                   <p className="text-xs text-red-500 mt-1">Enter a valid email so we can send your tickets.</p>
                 ) : (
-                  <p className="text-xs text-gray-400 mt-1">We'll send a code here before payment.</p>
+                  <p className="text-xs text-gray-400 mt-1">We'll send a code here before payment. Check spam or junk if you don't see it.</p>
                 )}
 
                 <div className={`mt-3 rounded-xl border px-3 py-3 ${
