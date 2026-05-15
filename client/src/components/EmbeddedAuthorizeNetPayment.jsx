@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { fetchBookingStatus } from '../api';
+
+const STATUS_POLL_INTERVAL_MS = 2000;
 
 function parseGatewayMessage(queryString) {
   const normalized = String(queryString || '').replace(/^[?#]/, '');
@@ -26,6 +29,10 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
 
   const cancelledUrl = useMemo(
     () => `/booking/${encodeURIComponent(payment.bookingId)}/cancelled`,
+    [payment.bookingId]
+  );
+  const processingUrl = useMemo(
+    () => `/booking/${encodeURIComponent(payment.bookingId)}/processing`,
     [payment.bookingId]
   );
 
@@ -62,6 +69,49 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
       delete window.AuthorizeNetIFrame;
     };
   }, [cancelledUrl, payment.bookingId]);
+
+  useEffect(() => {
+    let stopped = false;
+    let timeoutId;
+
+    async function pollStatus() {
+      try {
+        const status = await fetchBookingStatus(payment.bookingId);
+        if (stopped) return;
+
+        if (status?.status === 'paid') {
+          setStatusText('Payment confirmed. Loading your booking confirmation...');
+          window.location.href = processingUrl;
+          return;
+        }
+
+        if (status?.status === 'failed') {
+          setStatusText('Payment declined. Loading next steps...');
+          window.location.href = processingUrl;
+          return;
+        }
+
+        if (status?.status === 'cancelled') {
+          setStatusText('Payment cancelled. Returning to booking status...');
+          window.location.href = cancelledUrl;
+          return;
+        }
+      } catch (err) {
+        console.error('[EmbeddedAuthorizeNetPayment] status poll failed:', err);
+      }
+
+      if (!stopped) {
+        timeoutId = window.setTimeout(pollStatus, STATUS_POLL_INTERVAL_MS);
+      }
+    }
+
+    timeoutId = window.setTimeout(pollStatus, STATUS_POLL_INTERVAL_MS);
+
+    return () => {
+      stopped = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [cancelledUrl, payment.bookingId, processingUrl]);
 
   useEffect(() => {
     if (!formRef.current || submittedRef.current) return;
