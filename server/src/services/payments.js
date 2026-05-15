@@ -99,7 +99,7 @@ function hostedPaymentTheme() {
   return {
     bgColor: process.env.ANET_PAYMENT_BG_COLOR || '#1a3a5c',
     payButtonText: process.env.ANET_PAY_BUTTON_TEXT || 'Pay Securely',
-    returnButtonText: process.env.ANET_RETURN_BUTTON_TEXT || 'Return to Booking',
+    returnButtonText: process.env.ANET_RETURN_BUTTON_TEXT || 'Proceed with Payment',
     cancelButtonText: process.env.ANET_CANCEL_BUTTON_TEXT || 'Cancel Payment',
     merchantName: merchantName.replace(/[^\w\s]/g, '').slice(0, 60).trim() || 'Wolastoq Bingo',
   };
