@@ -54,29 +54,45 @@ export default function SessionWeekPicker({
           const isSelected = selectedSession?.id === session.id;
           const sessionType = session.session_type || (session.is_special_event ? 'special_bingo' : 'regular_bingo');
           const isEvent = sessionType === 'event';
-          const isSpecial = sessionType === 'special_bingo' || isEvent;
+          const isSpecialBingo = sessionType === 'special_bingo';
+          const isFeatured = isSpecialBingo || isEvent;
           const label = isEvent ? 'Event' : 'Special Bingo';
+          const theme = isEvent
+            ? {
+                badge: 'bg-sky-500 text-white',
+                selectedButton: 'bg-sky-950 text-sky-50 shadow-md ring-2 ring-sky-500',
+                button: 'bg-sky-950/35 text-sky-200 hover:bg-sky-950/50 ring-1 ring-sky-500/60',
+                titleSelected: 'text-sky-50',
+                title: 'text-sky-200',
+              }
+            : {
+                badge: 'bg-amber-500 text-white',
+                selectedButton: 'bg-amber-900 text-amber-100 shadow-md ring-2 ring-amber-700',
+                button: 'bg-amber-900/30 text-amber-300 hover:bg-amber-900/40 ring-1 ring-amber-700/50',
+                titleSelected: 'text-amber-100',
+                title: 'text-amber-300',
+              };
 
           return (
             <div key={session.id} className="flex-shrink-0 flex flex-col items-center">
-              {isSpecial && (
-                <div className="bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-t-lg w-full text-center">
+              {isFeatured && (
+                <div className={`${theme.badge} text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-t-lg w-full text-center`}>
                   &#9733; {label}
                 </div>
               )}
               <button
                 onClick={() => onSelectSession(session)}
                 className={`w-full px-3 py-1.5 text-sm font-medium transition-all ${
-                  isSpecial ? 'rounded-b-lg' : 'rounded-lg'
+                  isFeatured ? 'rounded-b-lg' : 'rounded-lg'
                 } ${
                   isSelected
-                    ? isSpecial ? 'bg-amber-900 text-amber-100 shadow-md ring-2 ring-amber-700' : 'bg-brand-gold text-white shadow-md'
-                    : isSpecial ? 'bg-amber-900/30 text-amber-300 hover:bg-amber-900/40 ring-1 ring-amber-700/50' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+                    ? isFeatured ? theme.selectedButton : 'bg-brand-gold text-white shadow-md'
+                    : isFeatured ? theme.button : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
                 }`}
               >
                 {formatDateShort(session.date)} - {formatTime(session.time)}
-                {isSpecial && session.event_title && (
-                  <div className={`text-xs font-semibold ${isSelected ? 'text-amber-100' : 'text-amber-300'}`}>
+                {isFeatured && session.event_title && (
+                  <div className={`text-xs font-semibold ${isSelected ? theme.titleSelected : theme.title}`}>
                     {session.event_title}
                   </div>
                 )}
