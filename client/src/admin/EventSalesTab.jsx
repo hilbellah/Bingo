@@ -100,7 +100,7 @@ export default function EventSalesTab() {
             <input
               type="text"
               inputMode="decimal"
-              value={eventPackage.price ? (eventPackage.price / 100).toFixed(2) : ''}
+              value={eventPackage.price ? String(eventPackage.price / 100) : ''}
               onChange={e => {
                 const val = e.target.value.replace(/[^0-9.]/g, '');
                 updatePackage({ price: Math.round(parseFloat(val || 0) * 100) });
