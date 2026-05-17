@@ -23,6 +23,13 @@ export default function SessionsTab() {
     handleSaveSessionPkgs,
     packages,
   } = useAdminDashboard();
+  const bingoSessions = sessions.filter(s => (s.session_type || (s.is_special_event ? 'special_bingo' : 'regular_bingo')) !== 'event');
+  const currentYear = new Date().getFullYear();
+  const datePickerYears = Array.from({ length: 12 }, (_, i) => currentYear - 1 + i);
+  const daysInSelectedMonth = (dateValue) => {
+    const date = dateValue ? new Date(dateValue + 'T12:00:00') : new Date();
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  };
 
   return (
     <>
@@ -34,12 +41,12 @@ export default function SessionsTab() {
                 <div className="text-2xl">📅</div>
                 <div>
                   <h3 className="font-semibold text-brand-blue text-sm">Auto-Schedule Active</h3>
-                  <p className="text-xs text-gray-600">Regular bingo sessions (Tue–Sun) are generated automatically. Each new week opens Monday morning. Use the form below only for special events.</p>
+                  <p className="text-xs text-gray-600">Regular bingo sessions (Tue-Sun) are generated automatically. Each new week opens Monday morning. Use the form below only for special bingo.</p>
                 </div>
               </div>
             </div>
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-              <h3 className="font-semibold text-brand-blue mb-3">Add Special Event</h3>
+              <h3 className="font-semibold text-brand-blue mb-3">Add Special Bingo</h3>
               <div className="flex flex-wrap gap-3 items-end">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Date</label>
@@ -65,7 +72,7 @@ export default function SessionsTab() {
                       setNewSession({...newSession, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
                     }} className="px-2 py-2 border rounded-lg text-sm">
                       <option value="" disabled>Day</option>
-                      {Array.from({length: 31}, (_, i) => (
+                      {Array.from({length: daysInSelectedMonth(newSession.date)}, (_, i) => (
                         <option key={i+1} value={i+1}>{i+1}</option>
                       ))}
                     </select>
@@ -77,7 +84,7 @@ export default function SessionsTab() {
                       setNewSession({...newSession, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
                     }} className="px-2 py-2 border rounded-lg text-sm">
                       <option value="" disabled>Year</option>
-                      {[2025, 2026, 2027, 2028].map(y => (
+                      {datePickerYears.map(y => (
                         <option key={y} value={y}>{y}</option>
                       ))}
                     </select>
@@ -95,23 +102,23 @@ export default function SessionsTab() {
                 </div>
                 <button onClick={handleCreateSession}
                   className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90">
-                  {newSession.is_special_event ? 'Add Special Event' : 'Add Session'}
+                  {newSession.is_special_event ? 'Add Special Bingo' : 'Add Session'}
                 </button>
               </div>
 
-              {/* Special Event Toggle */}
+              {/* Special Bingo Toggle */}
               <div className="mt-4 border-t pt-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={newSession.is_special_event}
                     onChange={e => setNewSession({...newSession, is_special_event: e.target.checked})}
                     className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-500" />
-                  <span className="text-sm font-medium text-gray-700">Special Event</span>
+                  <span className="text-sm font-medium text-gray-700">Special Bingo</span>
                 </label>
 
                 {newSession.is_special_event && (
                   <div className="mt-3 space-y-3 bg-amber-50 rounded-lg p-4 border border-amber-200">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Event Title</label>
+                      <label className="block text-xs text-gray-500 mb-1">Special Bingo Title</label>
                       <input value={newSession.event_title} onChange={e => setNewSession({...newSession, event_title: e.target.value})}
                         className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. Special Bingo Event 1" />
                     </div>
@@ -122,7 +129,7 @@ export default function SessionsTab() {
                     </div>
 
                     <div>
-                      <label className="block text-xs text-gray-500 mb-2">Event Packages</label>
+                      <label className="block text-xs text-gray-500 mb-2">Special Bingo Packages</label>
                       {newSession.packages.map((pkg, i) => (
                         <div key={i} className="flex gap-2 items-center mb-2">
                           <input value={pkg.name} onChange={e => {
@@ -191,7 +198,7 @@ export default function SessionsTab() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sessions.map(s => (
+                    {bingoSessions.map(s => (
                       <tr key={s.id} className={`border-b border-gray-50 ${s.is_special_event ? 'bg-amber-50/50' : ''}`}>
                         <td className="py-2 font-medium">{s.date}</td>
                         <td className="py-2">{s.time}</td>
@@ -199,7 +206,7 @@ export default function SessionsTab() {
                         <td className="py-2">
                           {s.is_special_event ? (
                             <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 font-medium">
-                              {s.event_title || 'Special Event'}
+                              {s.event_title || 'Special Bingo'}
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-600">Auto</span>
@@ -266,7 +273,7 @@ export default function SessionsTab() {
                             setEditForm({...editForm, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
                           }} className="px-1 py-2 border rounded-lg text-sm">
                             <option value="" disabled>Day</option>
-                            {Array.from({length: 31}, (_, i) => (
+                            {Array.from({length: daysInSelectedMonth(editForm.date)}, (_, i) => (
                               <option key={i+1} value={i+1}>{i+1}</option>
                             ))}
                           </select>
@@ -278,7 +285,7 @@ export default function SessionsTab() {
                             setEditForm({...editForm, date: `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`});
                           }} className="px-1 py-2 border rounded-lg text-sm">
                             <option value="" disabled>Year</option>
-                            {[2025, 2026, 2027, 2028].map(y => (
+                            {datePickerYears.map(y => (
                               <option key={y} value={y}>{y}</option>
                             ))}
                           </select>
@@ -301,7 +308,7 @@ export default function SessionsTab() {
                         <input type="checkbox" checked={editForm.is_special_event}
                           onChange={e => setEditForm({...editForm, is_special_event: e.target.checked})}
                           className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-500" />
-                        <span className="text-sm font-medium text-gray-700">Special Event</span>
+                        <span className="text-sm font-medium text-gray-700">Special Bingo</span>
                       </label>
 
                       {editForm.is_special_event && (

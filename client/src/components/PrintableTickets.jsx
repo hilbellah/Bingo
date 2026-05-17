@@ -85,6 +85,134 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
   );
 }
 
+function EventTicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTitle }) {
+  return (
+    <div className="event-ticket-card">
+      <div className="event-ticket-title">{eventTitle || 'Event'}</div>
+      <div className="event-ticket-name">{ticket.firstName} {ticket.lastName}</div>
+      <div className="event-ticket-row">
+        <span>Table {ticket.tableNumber}</span>
+        <span>Seat {ticket.chairNumber}</span>
+      </div>
+      <div className="event-ticket-meta">{formatDateShort(sessionDate)} - {formatTime(sessionTime)}</div>
+      <div className="event-ticket-ref">{referenceNumber}</div>
+    </div>
+  );
+}
+
+function RegularReceipt({ data }) {
+  return (
+    <>
+      <div className="no-print bg-brand-blue text-white px-4 py-3 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold">Regular Bingo Receipt</h1>
+          <p className="text-xs text-gray-300">Booking {data.referenceNumber} - {data.tickets.length} player(s)</p>
+        </div>
+        <div className="flex gap-3 items-center">
+          <button
+            onClick={() => window.print()}
+            className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-gold-light transition"
+          >
+            Print Receipt
+          </button>
+        </div>
+      </div>
+
+      <main className="regular-receipt">
+        <div className="receipt-header">SMEC BINGO</div>
+        <div className="receipt-subheader">Saint Mary's Entertainment Centre</div>
+        <div className="receipt-line" />
+        <div className="receipt-center receipt-bold">REGULAR BINGO RECEIPT</div>
+        <div className="receipt-center">{formatDateShort(data.sessionDate)} at {formatTime(data.sessionTime)}</div>
+        <div className="receipt-line" />
+        <div className="receipt-row">
+          <span>Ref:</span>
+          <span className="receipt-bold">{data.referenceNumber}</span>
+        </div>
+        <div className="receipt-row">
+          <span>Status:</span>
+          <span>{String(data.paymentStatus || '').toUpperCase()}</span>
+        </div>
+        <div className="receipt-line" />
+        <div className="receipt-bold">Players</div>
+        {data.tickets.map((ticket, idx) => (
+          <div className="receipt-player" key={ticket.referenceNumber || idx}>
+            <div>{ticket.firstName} {ticket.lastName}</div>
+            <div className="receipt-item">
+              <span>T{ticket.tableNumber}/C{ticket.chairNumber} - {ticket.packageName}</span>
+              <span>{ticket.packagePriceFormatted || formatPrice(ticket.packagePrice)}</span>
+            </div>
+            {ticket.referenceNumber && (
+              <div className="receipt-note">Ticket: {ticket.referenceNumber}</div>
+            )}
+            {(ticket.addons || []).map((addon, addonIdx) => (
+              <div className="receipt-item receipt-note" key={addonIdx}>
+                <span>+ {addon.packageName} x{addon.quantity}</span>
+                <span>{addon.priceFormatted}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+        <div className="receipt-double-line" />
+        <div className="receipt-total">
+          <span>TOTAL</span>
+          <span>{data.totalFormatted}</span>
+        </div>
+        <div className="receipt-line" />
+        <div className="receipt-center receipt-note">Regular bingo orders are printed on receipt paper.</div>
+      </main>
+
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          body { margin: 0; padding: 0; background: #fff; }
+          @page { size: 80mm auto; margin: 0; }
+          .regular-receipt { box-shadow: none; margin: 0 auto; }
+        }
+
+        @media screen {
+          body { background: #f3f4f6; }
+          .regular-receipt {
+            margin: 24px auto;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+          }
+        }
+
+        .regular-receipt {
+          width: 72mm;
+          background: #fff;
+          color: #000;
+          padding: 4mm;
+          font-family: 'Courier New', monospace;
+          font-size: 12px;
+          line-height: 1.4;
+          box-sizing: border-box;
+        }
+        .receipt-header { text-align: center; font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+        .receipt-subheader { text-align: center; font-size: 10px; color: #333; margin-bottom: 8px; }
+        .receipt-center { text-align: center; }
+        .receipt-bold { font-weight: 700; }
+        .receipt-line { border-top: 1px dashed #000; margin: 4px 0; }
+        .receipt-double-line { border-top: 2px solid #000; margin: 6px 0; }
+        .receipt-row, .receipt-item, .receipt-total {
+          display: flex;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .receipt-row span:last-child,
+        .receipt-item span:last-child,
+        .receipt-total span:last-child {
+          text-align: right;
+        }
+        .receipt-player { padding: 3px 0; }
+        .receipt-item { font-size: 10px; color: #555; padding-left: 8px; }
+        .receipt-note { font-size: 10px; color: #555; }
+        .receipt-total { font-weight: 700; font-size: 13px; padding: 2px 0; }
+      `}</style>
+    </>
+  );
+}
+
 export default function PrintableTickets() {
   const { ref } = useParams();
   const navigate = useNavigate();
@@ -171,10 +299,16 @@ export default function PrintableTickets() {
     );
   }
 
-  // Split tickets into pages of 3 (3 rows, full width each)
+  if (data.printMode === 'receipt' || !data.isSpecialEvent) {
+    return <RegularReceipt data={data} />;
+  }
+
+  const isEventLayout = data.printLayout === 'event_6up' || data.sessionType === 'event';
+  const ticketsPerPage = isEventLayout ? 6 : 3;
+
   const pages = [];
-  for (let i = 0; i < data.tickets.length; i += 3) {
-    pages.push(data.tickets.slice(i, i + 3));
+  for (let i = 0; i < data.tickets.length; i += ticketsPerPage) {
+    pages.push(data.tickets.slice(i, i + ticketsPerPage));
   }
 
   return (
@@ -214,18 +348,29 @@ export default function PrintableTickets() {
         </div>
       </div>
 
-      {/* Ticket pages: 3 per page, full width */}
+      {/* Ticket pages */}
       {pages.map((pageTickets, pageIdx) => (
-        <div className="ticket-page" key={pageIdx}>
+        <div className={isEventLayout ? 'event-ticket-page' : 'ticket-page'} key={pageIdx}>
           {pageTickets.map((ticket, i) => (
-            <TicketCard
-              key={i}
-              ticket={ticket}
-              sessionDate={data.sessionDate}
-              sessionTime={data.sessionTime}
-              referenceNumber={ticket.referenceNumber || data.referenceNumber}
-              eventTitle={data.isSpecialEvent ? data.eventTitle : null}
-            />
+            isEventLayout ? (
+              <EventTicketCard
+                key={i}
+                ticket={ticket}
+                sessionDate={data.sessionDate}
+                sessionTime={data.sessionTime}
+                referenceNumber={ticket.referenceNumber || data.referenceNumber}
+                eventTitle={data.eventTitle}
+              />
+            ) : (
+              <TicketCard
+                key={i}
+                ticket={ticket}
+                sessionDate={data.sessionDate}
+                sessionTime={data.sessionTime}
+                referenceNumber={ticket.referenceNumber || data.referenceNumber}
+                eventTitle={data.isSpecialEvent ? data.eventTitle : null}
+              />
+            )
           ))}
         </div>
       ))}
@@ -243,13 +388,78 @@ export default function PrintableTickets() {
 
         /* Screen preview */
         @media screen {
-          .ticket-page {
+          .ticket-page, .event-ticket-page {
             max-width: 8.5in;
             margin: 20px auto;
             padding: 0.25in;
             background: white;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           }
+        }
+
+        .event-ticket-page {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          grid-template-rows: repeat(3, 1fr);
+          gap: 0.12in;
+          width: 8in;
+          height: 10.5in;
+          page-break-after: always;
+        }
+
+        .event-ticket-card {
+          border: 1.5px dashed #1a3a5c;
+          border-radius: 6px;
+          box-sizing: border-box;
+          padding: 0.18in;
+          background: #fffdf8;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          text-align: center;
+          color: #1a3a5c;
+          overflow: hidden;
+        }
+
+        .event-ticket-title {
+          font-family: Georgia, serif;
+          font-size: 18px;
+          font-weight: 700;
+          line-height: 1.15;
+          margin-bottom: 0.12in;
+        }
+
+        .event-ticket-name {
+          font-size: 20px;
+          font-weight: 700;
+          line-height: 1.2;
+          word-break: break-word;
+          max-width: 100%;
+          margin-bottom: 0.1in;
+        }
+
+        .event-ticket-row {
+          display: flex;
+          gap: 0.18in;
+          justify-content: center;
+          font-size: 16px;
+          font-weight: 700;
+          margin-bottom: 0.08in;
+        }
+
+        .event-ticket-meta {
+          font-size: 12px;
+          color: #555;
+          font-weight: 600;
+          margin-bottom: 0.08in;
+        }
+
+        .event-ticket-ref {
+          font-family: monospace;
+          font-size: 13px;
+          font-weight: 700;
+          color: #0f2d48;
         }
 
         /* 3 tickets per page, full width, no wasted space */

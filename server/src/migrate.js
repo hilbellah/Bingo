@@ -112,6 +112,8 @@ async function migrate() {
   try { exec('ALTER TABLE sessions ADD COLUMN is_special_event INTEGER DEFAULT 0'); } catch(e) {}
   try { exec('ALTER TABLE sessions ADD COLUMN event_title TEXT'); } catch(e) {}
   try { exec('ALTER TABLE sessions ADD COLUMN event_description TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE sessions ADD COLUMN session_type TEXT DEFAULT "regular_bingo"'); } catch(e) {}
+  try { run("UPDATE sessions SET session_type = CASE WHEN is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END WHERE session_type IS NULL OR session_type = ''"); } catch(e) {}
 
   // Session-specific package overrides
   exec(`
@@ -231,6 +233,15 @@ async function migrate() {
   });
   try { run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [defaultPhdInventory]); } catch(e) {}
 
+  const defaultSpecialBingoConfig = JSON.stringify({
+    admissionName: 'Special Bingo Admission (includes 1 PHD)',
+    admissionPrice: 7500,
+    additionalPhdName: 'Additional PHD Unit',
+    additionalPhdPrice: 5000,
+    additionalPhdMaxQuantity: 1
+  });
+  try { run("INSERT INTO settings (key, value) VALUES ('special_bingo_config', ?)", [defaultSpecialBingoConfig]); } catch(e) {}
+
   // Empty databases can happen on a fresh install or after an accidental data
   // reset. Restore the sellable baseline package list without touching
   // existing/admin-managed package rows.
@@ -239,6 +250,7 @@ async function migrate() {
   // --- Per-attendee ticket reference migration ---
   console.log('Running per-attendee ticket reference migration...');
   try { exec('ALTER TABLE booking_items ADD COLUMN reference_number TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE booking_items ADD COLUMN printed_at TEXT'); } catch(e) {}
   try { exec('CREATE UNIQUE INDEX idx_booking_items_reference ON booking_items(reference_number)'); } catch(e) {}
 
   // --- Customer email on bookings (for confirmation emails) ---

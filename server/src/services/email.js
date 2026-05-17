@@ -111,6 +111,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
   const seatById = new Map(seats.map(s => [s.id, s]));
   const pkgById = new Map(packages.map(p => [p.id, p]));
   const thankYouMessage = 'Thank you for booking with us. We look forward to seeing you there!';
+  const isSpecialEvent = !!session?.is_special_event;
 
   const attendeeBlocks = attendees.map((att, idx) => {
     const seat = seatById.get(att.seatId) || {};
@@ -141,6 +142,11 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
   }).join('');
 
   const ticketUrl = `${siteUrl}/tickets/${encodeURIComponent(booking.referenceNumber)}`;
+  const ctaLabel = isSpecialEvent ? 'View Tickets Online' : 'View Booking Receipt';
+  const proofText = isSpecialEvent
+    ? "Or save this email - it's all the proof you need."
+    : 'Regular bingo orders are printed on receipt paper. Save this email or bring your booking reference as proof.';
+  const sectionLabel = isSpecialEvent ? 'Your Tickets' : 'Regular Bingo Order';
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Your Bingo Booking</title></head>
@@ -193,7 +199,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
 
         <!-- Tickets -->
         <tr><td style="padding:16px 32px 8px;">
-          <div style="font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;">Your Tickets</div>
+          <div style="font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;">${escapeHtml(sectionLabel)}</div>
           <table width="100%" cellpadding="0" cellspacing="0">${attendeeBlocks}</table>
         </td></tr>
 
@@ -208,13 +214,13 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
         <tr><td style="padding:8px 32px 24px;text-align:center;">
           <a href="${escapeHtml(ticketUrl)}"
              style="display:inline-block;background:#1a3a5c;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;">
-            View Tickets Online
+            ${escapeHtml(ctaLabel)}
           </a>
           <div style="margin-top:10px;font-size:12px;color:#6b7280;">
             If this email was in spam or junk, mark it as not spam so future booking emails are easier to find.
           </div>
           <div style="margin-top:10px;font-size:12px;color:#9ca3af;">
-            Or save this email — it's all the proof you need.
+            ${escapeHtml(proofText)}
           </div>
         </td></tr>
 
@@ -236,6 +242,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
 function renderBookingText({ booking, session, attendees, seats, packages, siteUrl }) {
   const seatById = new Map(seats.map(s => [s.id, s]));
   const pkgById = new Map(packages.map(p => [p.id, p]));
+  const isSpecialEvent = !!session?.is_special_event;
   const lines = [];
 
   lines.push("You're all set — your bingo seats are confirmed.");
@@ -259,7 +266,10 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   });
   lines.push('');
   lines.push('Please arrive by 4:30 PM. Doors open one hour before the session.');
-  lines.push(`View your tickets online: ${siteUrl}/tickets/${booking.referenceNumber}`);
+  lines.push(`${isSpecialEvent ? 'View your tickets online' : 'View your booking receipt'}: ${siteUrl}/tickets/${booking.referenceNumber}`);
+  if (!isSpecialEvent) {
+    lines.push('Regular bingo orders are printed on receipt paper. Save this email or bring your booking reference as proof.');
+  }
   lines.push('If you found this email in spam or junk, mark it as not spam so future booking emails are easier to find.');
   lines.push('');
   lines.push('Wolastoq Bingo');

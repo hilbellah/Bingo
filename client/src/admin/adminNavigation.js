@@ -1,6 +1,7 @@
 export const ADMIN_TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: '\uD83D\uDCCA' },
-  { id: 'sessions', label: 'Sessions', icon: '\uD83D\uDCC5' },
+  { id: 'sessions', label: 'Bingo Sessions', icon: '\uD83D\uDCC5' },
+  { id: 'events', label: 'Event Sales', icon: '\uD83C\uDF9F' },
   { id: 'packages', label: 'Packages', icon: '\uD83D\uDCE6' },
   { id: 'announcements', label: 'Announcements', icon: '\uD83D\uDCE2' },
   { id: 'bookings', label: 'Bookings & Reports', icon: '\uD83D\uDCB0' },

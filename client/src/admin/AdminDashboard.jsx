@@ -24,6 +24,28 @@ function formatPrice(cents) {
   return '$' + (cents / 100).toFixed(2);
 }
 
+const DEFAULT_SPECIAL_BINGO_CONFIG = {
+  admissionName: 'Special Bingo Admission (includes 1 PHD)',
+  admissionPrice: 7500,
+  additionalPhdName: 'Additional PHD Unit',
+  additionalPhdPrice: 5000,
+  additionalPhdMaxQuantity: 1,
+};
+
+function defaultSpecialEventPackages(config = DEFAULT_SPECIAL_BINGO_CONFIG) {
+  const resolved = { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...(config || {}) };
+  return [
+    { name: resolved.admissionName, price: resolved.admissionPrice, type: 'required', max_quantity: 1, sort_order: 0, is_phd: true },
+    { name: resolved.additionalPhdName, price: resolved.additionalPhdPrice, type: 'optional', max_quantity: resolved.additionalPhdMaxQuantity, sort_order: 1, is_phd: true },
+  ];
+}
+
+function defaultEventPackages() {
+  return [
+    { name: 'Event Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false },
+  ];
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const token = sessionStorage.getItem('admin_token');
@@ -36,7 +58,9 @@ export default function AdminDashboard() {
   const [packages, setPackages] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [reportSession, setReportSession] = useState('');
-  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: [] });
+  const [specialBingoConfig, setSpecialBingoConfig] = useState(DEFAULT_SPECIAL_BINGO_CONFIG);
+  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages() });
+  const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
   const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false });
@@ -47,6 +71,7 @@ export default function AdminDashboard() {
   const [editForm, setEditForm] = useState({ date: '', time: '', cutoff_time: '', is_special_event: false, event_title: '', event_description: '' });
   const [bulkDateFrom, setBulkDateFrom] = useState('');
   const [bulkDateTo, setBulkDateTo] = useState('');
+  const [bulkDepartment, setBulkDepartment] = useState('special_bingo');
   const [bulkData, setBulkData] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [soldModal, setSoldModal] = useState(null); // { session, bookings } when open
@@ -108,6 +133,15 @@ export default function AdminDashboard() {
         }
       }
     });
+    fetchSettings(token, 'special_bingo_config').then(config => {
+      if (!config) return;
+      const merged = { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...config };
+      setSpecialBingoConfig(merged);
+      setNewSession(prev => ({
+        ...prev,
+        packages: defaultSpecialEventPackages(merged),
+      }));
+    }).catch(() => {});
   }, []);
 
   const loadDashboard = (from, to) => fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard);
@@ -123,6 +157,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (tab === 'sessions') loadSessions();
+    if (tab === 'events') { loadSessions(); loadBookingSales(); }
     if (tab === 'packages') loadPackages();
     if (tab === 'bookings') { loadBookingSales(); loadDailySales(dailySalesDate); }
     if (tab === 'customers') loadCustomers();
@@ -440,7 +475,7 @@ export default function AdminDashboard() {
 
   const handleCreateSession = async () => {
     if (!newSession.date) return;
-    const payload = { ...newSession };
+    const payload = { ...newSession, session_type: newSession.is_special_event ? 'special_bingo' : 'regular_bingo' };
     if (!payload.is_special_event) {
       delete payload.event_title;
       delete payload.event_description;
@@ -448,7 +483,7 @@ export default function AdminDashboard() {
     }
     try {
       await createAdminSession(token, payload);
-      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: [] });
+      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages(specialBingoConfig) });
       loadSessions();
     } catch (err) {
       alert('Failed to create session: ' + (err?.message || 'Unknown error. Please try again.'));
@@ -490,16 +525,25 @@ export default function AdminDashboard() {
   const handleEditSessionPkgs = async (sessionId) => {
     setEditingSessionPkgs(sessionId);
     const pkgs = await fetchAdminSessionPackages(token, sessionId);
+    const session = sessions.find(s => s.id === sessionId);
+    const sessionType = session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
+    const fallbackPkgs = sessionType === 'special_bingo'
+      ? defaultSpecialEventPackages(specialBingoConfig)
+      : [{ name: '', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false }];
     setSessionPkgList(pkgs.length > 0 ? pkgs : [
-      { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false }
+      ...fallbackPkgs
     ]);
   };
 
   const handleSaveSessionPkgs = async () => {
     const valid = sessionPkgList.filter(p => p.name && p.price > 0);
-    await setAdminSessionPackages(token, editingSessionPkgs, valid);
-    setEditingSessionPkgs(null);
-    setSessionPkgList([]);
+    try {
+      await setAdminSessionPackages(token, editingSessionPkgs, valid);
+      setEditingSessionPkgs(null);
+      setSessionPkgList([]);
+    } catch (err) {
+      alert('Failed to save packages: ' + (err?.message || 'Unknown error'));
+    }
   };
 
   const handleLoadBulkTickets = async () => {
@@ -507,7 +551,7 @@ export default function AdminDashboard() {
     setBulkLoading(true);
     setBulkData(null);
     try {
-      const data = await fetchAdminBulkTickets(token, bulkDateFrom, bulkDateTo || bulkDateFrom);
+      const data = await fetchAdminBulkTickets(token, bulkDateFrom, bulkDateTo || bulkDateFrom, bulkDepartment);
       setBulkData(data);
     } catch (err) {
       setBulkData({ error: err.message || 'Failed to load tickets' });
@@ -533,6 +577,7 @@ export default function AdminDashboard() {
       time: session.time || '',
       cutoff_time: session.cutoff_time || '12:00',
       is_special_event: !!session.is_special_event,
+      session_type: session.session_type || (session.is_special_event ? 'special_bingo' : 'regular_bingo'),
       event_title: session.event_title || '',
       event_description: session.event_description || '',
     });
@@ -541,7 +586,10 @@ export default function AdminDashboard() {
   const handleSaveEdit = async () => {
     if (!editingSession || !editForm.date) return;
     const payload = { ...editForm };
-    if (!payload.is_special_event) {
+    if (payload.session_type === 'event') {
+      payload.is_special_event = true;
+    }
+    if (!payload.is_special_event && payload.session_type !== 'event') {
       payload.event_title = '';
       payload.event_description = '';
     }
@@ -661,6 +709,23 @@ export default function AdminDashboard() {
     if (!confirm('Cancel this booking and release seats?')) return;
     await cancelAdminBooking(token, id);
     loadBookings(reportSession);
+  };
+
+  const handleCreateEvent = async () => {
+    if (!newEvent.date || !newEvent.event_title) return;
+    const payload = {
+      ...newEvent,
+      session_type: 'event',
+      is_special_event: true,
+    };
+    try {
+      await createAdminSession(token, payload);
+      setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
+      loadSessions();
+      loadBookingSales();
+    } catch (err) {
+      alert('Failed to create event: ' + (err?.message || 'Unknown error. Please try again.'));
+    }
   };
 
   const handleClearTestBookings = async () => {
@@ -789,6 +854,9 @@ export default function AdminDashboard() {
     newSession,
     setNewSession,
     handleCreateSession,
+    newEvent,
+    setNewEvent,
+    handleCreateEvent,
     editingSession,
     setEditingSession,
     editForm,
@@ -799,6 +867,7 @@ export default function AdminDashboard() {
     handleEditSessionPkgs,
     handleDeleteSession,
     editingSessionPkgs,
+    setEditingSessionPkgs,
     sessionPkgList,
     setSessionPkgList,
     handleSaveSessionPkgs,
@@ -853,9 +922,12 @@ export default function AdminDashboard() {
     setBulkDateFrom,
     bulkDateTo,
     setBulkDateTo,
+    bulkDepartment,
+    setBulkDepartment,
     bulkLoading,
     handleLoadBulkTickets,
     bulkData,
+    setBulkData,
     handlePrintBookingReceipt,
     deletedSessions,
     handleViewArchiveBookings,

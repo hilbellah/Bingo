@@ -4,6 +4,7 @@ import SessionsTab from './SessionsTab';
 import PackagesTab from './PackagesTab';
 import AnnouncementsTab from './AnnouncementsTab';
 import BookingsTab from './BookingsTab';
+import EventSalesTab from './EventSalesTab';
 import CustomersTab from './CustomersTab';
 import BulkPrintTab from './BulkPrintTab';
 import ArchiveAuditTab from './ArchiveAuditTab';
@@ -24,6 +25,7 @@ export default function AdminDashboardContent({ value }) {
         <PackagesTab />
         <AnnouncementsTab />
         <BookingsTab />
+        <EventSalesTab />
         <CustomersTab />
         <BulkPrintTab />
         <ArchiveAuditTab />

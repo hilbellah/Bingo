@@ -148,6 +148,120 @@ function csvCell(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
 
+function normalizePackageDrafts(pkgs = []) {
+  return Array.isArray(pkgs)
+    ? pkgs
+      .map((pkg, index) => ({
+        ...pkg,
+        name: normalizeCustomerName(pkg?.name),
+        price: Number(pkg?.price || 0),
+        type: pkg?.type === 'optional' ? 'optional' : 'required',
+        max_quantity: Math.max(1, parseInt(pkg?.max_quantity || 1, 10)),
+        sort_order: Number.isFinite(Number(pkg?.sort_order)) ? Number(pkg.sort_order) : index,
+        is_phd: pkg?.is_phd ? 1 : 0,
+      }))
+      .filter(pkg => pkg.name && pkg.price > 0)
+    : [];
+}
+
+function validateSpecialEventPackageDrafts(pkgs = []) {
+  const normalized = normalizePackageDrafts(pkgs);
+  const required = normalized.filter(pkg => pkg.type === 'required');
+  const optional = normalized.filter(pkg => pkg.type === 'optional');
+
+  if (required.length !== 1) {
+    return { ok: false, error: 'Special bingo requires exactly one per-person admission package with a price.' };
+  }
+
+  if (!required[0].is_phd) {
+    return { ok: false, error: 'Special bingo admission must include 1 PHD unit.' };
+  }
+
+  const nonPhdOptional = optional.filter(pkg => !pkg.is_phd);
+  if (nonPhdOptional.length > 0) {
+    return { ok: false, error: 'Special bingo optional add-ons are limited to PHD units.' };
+  }
+
+  const phdOptional = optional.filter(pkg => pkg.is_phd);
+  if (phdOptional.length > 1) {
+    return { ok: false, error: 'Special bingo can only have one PHD add-on package.' };
+  }
+
+  return { ok: true, packages: normalized };
+}
+
+const DEFAULT_SPECIAL_BINGO_CONFIG = {
+  admissionName: 'Special Bingo Admission (includes 1 PHD)',
+  admissionPrice: 7500,
+  additionalPhdName: 'Additional PHD Unit',
+  additionalPhdPrice: 5000,
+  additionalPhdMaxQuantity: 1,
+};
+
+function getSpecialBingoConfig() {
+  const row = get("SELECT value FROM settings WHERE key = 'special_bingo_config'");
+  if (!row) return DEFAULT_SPECIAL_BINGO_CONFIG;
+  try {
+    return { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...JSON.parse(row.value) };
+  } catch {
+    return DEFAULT_SPECIAL_BINGO_CONFIG;
+  }
+}
+
+function getDefaultSpecialBingoPackages() {
+  const config = getSpecialBingoConfig();
+  return [
+    {
+      name: config.admissionName,
+      price: Number(config.admissionPrice || DEFAULT_SPECIAL_BINGO_CONFIG.admissionPrice),
+      type: 'required',
+      max_quantity: 1,
+      sort_order: 0,
+      is_phd: true,
+    },
+    {
+      name: config.additionalPhdName,
+      price: Number(config.additionalPhdPrice || 0),
+      type: 'optional',
+      max_quantity: Math.max(1, parseInt(config.additionalPhdMaxQuantity || DEFAULT_SPECIAL_BINGO_CONFIG.additionalPhdMaxQuantity, 10)),
+      sort_order: 1,
+      is_phd: true,
+    },
+  ];
+}
+
+function normalizeSessionType(value, isSpecialEvent = false) {
+  if (value === 'event') return 'event';
+  if (value === 'special_bingo' || isSpecialEvent) return 'special_bingo';
+  return 'regular_bingo';
+}
+
+function sessionTypeSql(alias = 's') {
+  return `COALESCE(NULLIF(${alias}.session_type, ''), CASE WHEN ${alias}.is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END)`;
+}
+
+function validateEventPackageDrafts(pkgs = []) {
+  const normalized = normalizePackageDrafts(pkgs);
+  const required = normalized.filter(pkg => pkg.type === 'required');
+  const optional = normalized.filter(pkg => pkg.type === 'optional');
+
+  if (required.length !== 1) {
+    return { ok: false, error: 'Events require exactly one per-person admission package with a price.' };
+  }
+
+  if (optional.length > 0) {
+    return { ok: false, error: 'Events do not allow add-ons.' };
+  }
+
+  return { ok: true, packages: normalized };
+}
+
+function validateSessionPackagesForType(sessionType, pkgs = []) {
+  if (sessionType === 'event') return validateEventPackageDrafts(pkgs);
+  if (sessionType === 'special_bingo') return validateSpecialEventPackageDrafts(pkgs);
+  return { ok: true, packages: normalizePackageDrafts(pkgs) };
+}
+
 // ============ BOOKING + PAYMENT HELPERS ============
 //
 // Shared building blocks for:
@@ -305,6 +419,10 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
 
   const session = get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
   if (!session) return { ok: false, statusCode: 404, error: 'Session not found' };
+  const currentSessionType = normalizeSessionType(session.session_type, session.is_special_event);
+  if (currentSessionType === 'event' && attendees.some(att => (att.addons || []).some(addon => addon.quantity > 0))) {
+    return { ok: false, statusCode: 400, error: 'Events do not allow add-ons.' };
+  }
 
   // Session-specific packages override the global package list when present.
   const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [sessionId]);
@@ -334,6 +452,7 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
       customerLastName: trimmedCustomerLastName,
       emailVerifiedAt: emailCheck.verifiedAt || null,
       session,
+      sessionType: currentSessionType,
       useSessionPkgs,
       sessionPkgs,
       requiredPkg
@@ -351,17 +470,32 @@ function getPhdConfig() {
 function getPhdUsedForSession(sessionId) {
   if (!sessionId) return 0;
   const usedRow = get(`
-    SELECT COALESCE(SUM(ba.quantity), 0) as total_used
-    FROM booking_addons ba
-    JOIN booking_items bi ON bi.id = ba.booking_item_id
-    JOIN bookings b ON b.id = bi.booking_id
-    WHERE b.payment_status = 'paid'
-      AND b.session_id = ?
-      AND (
-        ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-        OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-      )
-  `, [sessionId]);
+    SELECT
+      COALESCE((
+        SELECT COUNT(*)
+        FROM booking_items bi
+        JOIN bookings b ON b.id = bi.booking_id
+        WHERE b.payment_status = 'paid'
+          AND b.session_id = ?
+          AND (
+            bi.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+            OR bi.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+          )
+      ), 0)
+      +
+      COALESCE((
+        SELECT SUM(ba.quantity)
+        FROM booking_addons ba
+        JOIN booking_items bi ON bi.id = ba.booking_item_id
+        JOIN bookings b ON b.id = bi.booking_id
+        WHERE b.payment_status = 'paid'
+          AND b.session_id = ?
+          AND (
+            ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+            OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+          )
+      ), 0) as total_used
+  `, [sessionId, sessionId]);
   return usedRow?.total_used || 0;
 }
 
@@ -379,18 +513,37 @@ function getPhdInventoryForSession(sessionId) {
 
 function getPhdUsageBySession() {
   return all(`
-    SELECT s.id, s.date, s.time, s.event_title, s.is_special_event,
-      COALESCE(SUM(ba.quantity), 0) as phd_count
-    FROM sessions s
-    JOIN bookings b ON b.session_id = s.id AND b.payment_status = 'paid'
-    JOIN booking_items bi ON bi.booking_id = b.id
-    JOIN booking_addons ba ON ba.booking_item_id = bi.id
-    WHERE (
-      ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-      OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-    ) AND s.deleted_at IS NULL
-    GROUP BY s.id
-    ORDER BY s.date DESC
+    SELECT * FROM (
+      SELECT s.id, s.date, s.time, s.event_title, s.is_special_event,
+        COALESCE((
+          SELECT COUNT(*)
+          FROM booking_items bi
+          JOIN bookings b ON b.id = bi.booking_id
+          WHERE b.payment_status = 'paid'
+            AND b.session_id = s.id
+            AND (
+              bi.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+              OR bi.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+            )
+        ), 0)
+        +
+        COALESCE((
+          SELECT SUM(ba.quantity)
+          FROM booking_addons ba
+          JOIN booking_items bi ON bi.id = ba.booking_item_id
+          JOIN bookings b ON b.id = bi.booking_id
+          WHERE b.payment_status = 'paid'
+            AND b.session_id = s.id
+            AND (
+              ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+              OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+            )
+        ), 0) as phd_count
+      FROM sessions s
+      WHERE s.deleted_at IS NULL
+    )
+    WHERE phd_count > 0
+    ORDER BY date DESC
   `);
 }
 
@@ -406,7 +559,7 @@ function getNextPhdSessionId() {
   return row?.id || null;
 }
 
-function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs) {
+function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg) {
   const phdConfig = getPhdConfig();
 
   const phdPkgIds = new Set();
@@ -417,12 +570,12 @@ function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs)
   }
 
   if (phdPkgIds.size === 0) return { ok: true, phdPkgIds, phdConfig };
+  const includedPhdPerPlayer = requiredPkg?.is_phd ? 1 : 0;
 
   // Per-player limit
   for (const att of attendees) {
-    if (!att.addons) continue;
-    let playerPhdQty = 0;
-    for (const addon of att.addons) {
+    let playerPhdQty = includedPhdPerPlayer;
+    for (const addon of att.addons || []) {
       if (phdPkgIds.has(addon.packageId)) playerPhdQty += addon.quantity;
     }
     if (playerPhdQty > phdConfig.perPlayerLimit) {
@@ -432,10 +585,9 @@ function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs)
 
   // PHD stock resets per session. Example: a 5/15 session has its own 200,
   // and the 5/16 session also has its own 200.
-  let totalPhdInBooking = 0;
+  let totalPhdInBooking = includedPhdPerPlayer * attendees.length;
   for (const att of attendees) {
-    if (!att.addons) continue;
-    for (const addon of att.addons) {
+    for (const addon of att.addons || []) {
       if (phdPkgIds.has(addon.packageId)) totalPhdInBooking += addon.quantity;
     }
   }
@@ -622,15 +774,30 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
     }))
   });
 
-  // PHD inventory update emit — only if this booking had PHD addons
+  // PHD inventory update emit — included PHD packages and PHD add-ons both count.
   const phdInBooking = get(`
-    SELECT COALESCE(SUM(ba.quantity), 0) as cnt
-    FROM booking_addons ba
-    JOIN booking_items bi ON bi.id = ba.booking_item_id
-    WHERE bi.booking_id = ?
-      AND (ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-           OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1))
-  `, [bookingId]);
+    SELECT
+      COALESCE((
+        SELECT COUNT(*)
+        FROM booking_items bi
+        WHERE bi.booking_id = ?
+          AND (
+            bi.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+            OR bi.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+          )
+      ), 0)
+      +
+      COALESCE((
+        SELECT SUM(ba.quantity)
+        FROM booking_addons ba
+        JOIN booking_items bi ON bi.id = ba.booking_item_id
+        WHERE bi.booking_id = ?
+          AND (
+            ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
+            OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
+          )
+      ), 0) as cnt
+  `, [bookingId, bookingId]);
   if (phdInBooking && phdInBooking.cnt > 0) {
     const phdInventory = getPhdInventoryForSession(booking.session_id);
     io.to('admin:receipts').emit('phd:updated', {
@@ -1111,7 +1278,7 @@ app.post('/api/bookings', adminAuth, (req, res) => {
     requiredPkg
   } = validation.data;
 
-  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs);
+  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg);
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
   try {
@@ -1170,7 +1337,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     requiredPkg
   } = validation.data;
 
-  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs);
+  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg);
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
   let bookingId, refNumber, totalAmount, itemRefs;
@@ -1946,7 +2113,7 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
 
 app.get('/api/admin/booking-sales', adminAuth, (req, res) => {
   const rows = all(`
-    SELECT s.id, s.date, s.time, s.is_special_event, s.event_title,
+    SELECT s.id, s.date, s.time, s.is_special_event, s.event_title, ${sessionTypeSql('s')} as session_type,
       COUNT(DISTINCT b.id) as quantity,
       COALESCE(SUM(b.total_amount), 0) as total_amount
     FROM sessions s
@@ -1959,7 +2126,8 @@ app.get('/api/admin/booking-sales', adminAuth, (req, res) => {
     id: r.id,
     date: r.date,
     time: r.time,
-    description: r.is_special_event && r.event_title ? r.event_title : `${r.date} — ${r.time}`,
+    description: r.session_type === 'event' && r.event_title ? r.event_title : r.is_special_event && r.event_title ? r.event_title : `${r.date} — ${r.time}`,
+    sessionType: r.session_type,
     isSpecialEvent: !!r.is_special_event,
     eventTitle: r.event_title,
     quantity: r.quantity,
@@ -2065,6 +2233,13 @@ app.get('/api/admin/sessions', adminAuth, (req, res) => {
 
 app.post('/api/admin/sessions', adminAuth, (req, res) => {
   const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, packages: pkgs } = req.body;
+  const sessionType = normalizeSessionType(req.body.session_type, is_special_event);
+  const isSpecialType = sessionType === 'special_bingo' || sessionType === 'event';
+  const packageDrafts = sessionType === 'special_bingo' && (!Array.isArray(pkgs) || pkgs.length === 0)
+    ? getDefaultSpecialBingoPackages()
+    : pkgs;
+  const packageValidation = validateSessionPackagesForType(sessionType, packageDrafts);
+  if (!packageValidation.ok) return res.status(400).json({ error: packageValidation.error });
 
   // Prevent duplicate sessions on the same date within the same hour
   const requestHour = time ? time.split(':')[0] : '18';
@@ -2077,8 +2252,8 @@ app.post('/api/admin/sessions', adminAuth, (req, res) => {
   }
 
   const id = uuid();
-  run('INSERT INTO sessions (id, date, time, cutoff_time, is_available, is_special_event, event_title, event_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, date, time, cutoff_time || '12:00', is_available !== false ? 1 : 0, is_special_event ? 1 : 0, event_title || null, event_description || null]);
+  run('INSERT INTO sessions (id, date, time, cutoff_time, is_available, is_special_event, event_title, event_description, session_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, date, time, cutoff_time || '12:00', is_available !== false ? 1 : 0, isSpecialType ? 1 : 0, event_title || null, event_description || null, sessionType]);
 
   // Create 73 tables x 6 chairs = 438 chairs per session
   let chairCount = 0;
@@ -2091,30 +2266,42 @@ app.post('/api/admin/sessions', adminAuth, (req, res) => {
   }
 
   // Create session-specific packages if provided
-  if (Array.isArray(pkgs) && pkgs.length > 0) {
-    for (const pkg of pkgs) {
+  if (packageValidation.packages.length > 0) {
+    for (const pkg of packageValidation.packages) {
       run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [uuid(), id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0]);
     }
   }
 
-  logAudit('session_created', 'session', id, { date, time, cutoff_time, is_special_event, event_title });
+  logAudit('session_created', 'session', id, { date, time, cutoff_time, session_type: sessionType, is_special_event: isSpecialType, event_title });
 
   // Flush to disk immediately — critical write should not rely on debounced save
   saveDb();
 
-  res.json({ id, date, time, cutoff_time, is_available, is_special_event, event_title, totalChairs: chairCount });
+  res.json({ id, date, time, cutoff_time, is_available, session_type: sessionType, is_special_event: isSpecialType, event_title, totalChairs: chairCount });
 });
 
 app.patch('/api/admin/sessions/:id', adminAuth, (req, res) => {
-  const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description } = req.body;
+  const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, session_type } = req.body;
   const updates = [];
   const values = [];
+  const nextSessionType = session_type !== undefined ? normalizeSessionType(session_type, is_special_event) : null;
   if (date !== undefined) { updates.push('date = ?'); values.push(date); }
   if (time !== undefined) { updates.push('time = ?'); values.push(time); }
   if (cutoff_time !== undefined) { updates.push('cutoff_time = ?'); values.push(cutoff_time); }
   if (is_available !== undefined) { updates.push('is_available = ?'); values.push(is_available ? 1 : 0); }
-  if (is_special_event !== undefined) { updates.push('is_special_event = ?'); values.push(is_special_event ? 1 : 0); }
+  if (nextSessionType !== null) {
+    updates.push('session_type = ?');
+    values.push(nextSessionType);
+    updates.push('is_special_event = ?');
+    values.push(nextSessionType === 'special_bingo' || nextSessionType === 'event' ? 1 : 0);
+  } else if (is_special_event !== undefined) {
+    const legacyType = normalizeSessionType(undefined, is_special_event);
+    updates.push('session_type = ?');
+    values.push(legacyType);
+    updates.push('is_special_event = ?');
+    values.push(legacyType === 'special_bingo' ? 1 : 0);
+  }
   if (event_title !== undefined) { updates.push('event_title = ?'); values.push(event_title || null); }
   if (event_description !== undefined) { updates.push('event_description = ?'); values.push(event_description || null); }
   if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
@@ -2569,8 +2756,9 @@ app.get('/api/admin/sessions/:id/bookings', adminAuth, (req, res) => {
   const rows = all(`
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
            b.email, b.customer_first_name, b.customer_last_name,
-           bi.first_name, bi.last_name, bi.price as item_price,
+           bi.id as booking_item_id, bi.first_name, bi.last_name, bi.price as item_price,
            bi.reference_number as item_reference_number,
+           bi.printed_at as item_printed_at,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name
     FROM bookings b
@@ -2699,14 +2887,26 @@ app.get('/api/admin/sessions/:id/packages', adminAuth, (req, res) => {
 app.post('/api/admin/sessions/:id/packages', adminAuth, (req, res) => {
   const { packages: pkgs } = req.body;
   if (!Array.isArray(pkgs)) return res.status(400).json({ error: 'packages array required' });
+  const session = get('SELECT is_special_event, session_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  const sessionType = normalizeSessionType(session.session_type, session.is_special_event);
+  const packageDrafts = sessionType === 'special_bingo' && pkgs.length === 0
+    ? getDefaultSpecialBingoPackages()
+    : pkgs;
+  const packageValidation = validateSessionPackagesForType(
+    sessionType,
+    packageDrafts
+  );
+  if (!packageValidation.ok) return res.status(400).json({ error: packageValidation.error });
+
   // Replace all session packages
   run('DELETE FROM session_packages WHERE session_id = ?', [req.params.id]);
-  for (const pkg of pkgs) {
+  for (const pkg of packageValidation.packages) {
     const id = uuid();
     run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [id, req.params.id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0]);
   }
-  res.json({ success: true, count: pkgs.length });
+  res.json({ success: true, count: packageValidation.packages.length });
 });
 
 // --- Admin: Schedule info and manual trigger ---
@@ -2720,13 +2920,14 @@ app.post('/api/admin/schedule/generate', adminAuth, (req, res) => {
   res.json({ success: true, message: 'Weekly sessions opened and future sessions generated' });
 });
 
-// ============ ADMIN: BULK TICKETS (Print all tickets for date range) ============
+// ============ ADMIN: BULK TICKETS (Print special-event template tickets) ============
 
 app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
   const { dateFrom, dateTo } = req.query;
   if (!dateFrom) return res.status(400).json({ error: 'dateFrom query parameter required' });
 
   const endDate = dateTo || dateFrom;
+  const requestedDepartment = req.query.department === 'event' ? 'event' : 'special_bingo';
 
   // Check if special event columns exist
   let hasSpecialEvent = false;
@@ -2735,9 +2936,10 @@ app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
     hasSpecialEvent = true;
   } catch (e) { /* column doesn't exist */ }
 
-  const specialCols = hasSpecialEvent ? ', s.is_special_event, s.event_title' : '';
+  const specialCols = hasSpecialEvent ? `, s.is_special_event, s.event_title, ${sessionTypeSql('s')} as session_type` : '';
 
-  // Get all paid bookings for sessions within the date range
+  // Get paid bookings for template-print sessions within the date range.
+  // Regular bingo orders are handled as thermal receipts, not letter-size ticket templates.
   const rows = all(`
     SELECT b.id as booking_id, b.reference_number, b.total_amount, b.payment_status,
            s.id as session_id, s.date as session_date, s.time as session_time
@@ -2753,8 +2955,9 @@ app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
     LEFT JOIN packages p ON p.id = bi.package_id
     LEFT JOIN session_packages sp ON sp.id = bi.package_id
     WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'
+      ${hasSpecialEvent ? `AND ${sessionTypeSql('s')} = ?` : 'AND 1 = 0'}
     ORDER BY s.date ASC, s.time ASC, b.reference_number, seats.table_number, seats.chair_number
-  `, [dateFrom, endDate]);
+  `, hasSpecialEvent ? [dateFrom, endDate, requestedDepartment] : [dateFrom, endDate]);
 
   // Group by session, then by booking
   const sessions = {};
@@ -2765,6 +2968,7 @@ app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
         sessionDate: row.session_date,
         sessionTime: row.session_time,
         isSpecialEvent: !!(row.is_special_event),
+        sessionType: row.session_type || (row.is_special_event ? 'special_bingo' : 'regular_bingo'),
         eventTitle: row.event_title || null,
         bookings: {}
       };
@@ -2779,11 +2983,13 @@ app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
       };
     }
     sess.bookings[row.booking_id].tickets.push({
+      id: row.booking_item_id,
       firstName: row.first_name,
       lastName: row.last_name,
       tableNumber: row.table_number,
       chairNumber: row.chair_number,
       referenceNumber: row.item_reference_number,
+      printedAt: row.item_printed_at || null,
       packageName: row.package_name,
       packagePrice: row.package_price,
       packagePriceFormatted: '$' + formatPrice(row.package_price)
@@ -2798,7 +3004,50 @@ app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
 
   const totalTickets = result.reduce((sum, s) => sum + s.bookings.reduce((bs, b) => bs + b.tickets.length, 0), 0);
 
-  res.json({ dateFrom, dateTo: endDate, sessions: result, totalTickets });
+  res.json({
+    dateFrom,
+    dateTo: endDate,
+    printMode: 'template',
+    department: requestedDepartment,
+    sessions: result,
+    totalTickets
+  });
+});
+
+app.post('/api/admin/bookings/bulk-tickets/mark-printed', adminAuth, (req, res) => {
+  const ticketIds = Array.isArray(req.body?.ticketIds)
+    ? req.body.ticketIds.map(id => String(id || '').trim()).filter(Boolean)
+    : [];
+
+  if (ticketIds.length === 0) {
+    return res.status(400).json({ error: 'ticketIds array required' });
+  }
+
+  const uniqueIds = [...new Set(ticketIds)].slice(0, 1000);
+  const placeholders = uniqueIds.map(() => '?').join(',');
+  const now = new Date().toISOString();
+  const result = run(
+    `UPDATE booking_items
+     SET printed_at = ?
+     WHERE id IN (${placeholders})
+       AND booking_id IN (
+         SELECT b.id
+         FROM bookings b
+         JOIN sessions s ON s.id = b.session_id
+         WHERE b.payment_status = 'paid'
+           AND ${sessionTypeSql('s')} IN ('special_bingo', 'event')
+           AND s.deleted_at IS NULL
+       )`,
+    [now, ...uniqueIds]
+  );
+
+  logAudit('template_tickets_marked_printed', 'booking_items', 'bulk', {
+    requested: uniqueIds.length,
+    updated: result.changes,
+  });
+
+  saveDb();
+  res.json({ success: true, printedAt: now, updated: result.changes });
 });
 
 // ============ SOCKET.IO ============
@@ -2830,8 +3079,11 @@ io.on('connection', (socket) => {
 // --- Ticket data for printing (public, by reference number) ---
 app.get('/api/bookings/:ref/tickets', (req, res) => {
   const { ref } = req.params;
-  const booking = get('SELECT b.*, s.date as session_date, s.time as session_time, s.is_special_event, s.event_title FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE b.reference_number = ?', [ref]);
+  const booking = get(`SELECT b.*, s.date as session_date, s.time as session_time, s.is_special_event, s.event_title,
+    ${sessionTypeSql('s')} as session_type
+    FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE b.reference_number = ?`, [ref]);
   if (!booking) return res.status(404).json({ error: 'Booking not found' });
+  const currentSessionType = normalizeSessionType(booking.session_type, booking.is_special_event);
 
   const items = all(`
     SELECT bi.id as item_id, bi.first_name, bi.last_name, bi.price, bi.reference_number,
@@ -2873,7 +3125,10 @@ app.get('/api/bookings/:ref/tickets', (req, res) => {
     sessionDate: booking.session_date,
     sessionTime: booking.session_time,
     isSpecialEvent: !!(booking.is_special_event),
+    sessionType: currentSessionType,
     eventTitle: booking.event_title || null,
+    printMode: currentSessionType === 'regular_bingo' ? 'receipt' : 'template',
+    printLayout: currentSessionType === 'event' ? 'event_6up' : currentSessionType === 'special_bingo' ? 'bingo_3up' : 'receipt',
     totalAmount: booking.total_amount,
     totalFormatted: '$' + formatPrice(booking.total_amount),
     paymentStatus: booking.payment_status,

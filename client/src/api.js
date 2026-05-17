@@ -332,11 +332,22 @@ export async function deleteAdminAnnouncement(token, id) {
 }
 
 // Admin Bulk Tickets
-export async function fetchAdminBulkTickets(token, dateFrom, dateTo) {
+export async function fetchAdminBulkTickets(token, dateFrom, dateTo, department = 'special_bingo') {
   const params = new URLSearchParams({ dateFrom });
   if (dateTo) params.set('dateTo', dateTo);
+  if (department) params.set('department', department);
   const res = await fetch(`${API}/admin/bookings/bulk-tickets?${params}`, { headers: adminHeaders(token) });
   return res.json();
+}
+
+export async function markAdminBulkTicketsPrinted(token, ticketIds) {
+  const res = await fetch(`${API}/admin/bookings/bulk-tickets/mark-printed`, {
+    method: 'POST',
+    headers: adminHeaders(token),
+    body: JSON.stringify({ ticketIds })
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
 }
 
 // Admin Session Packages
@@ -349,7 +360,9 @@ export async function setAdminSessionPackages(token, sessionId, packages) {
   const res = await fetch(`${API}/admin/sessions/${sessionId}/packages`, {
     method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ packages })
   });
-  return res.json();
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to save session packages');
+  return json;
 }
 
 // Admin Archive & Audit

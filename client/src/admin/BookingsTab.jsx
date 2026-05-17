@@ -18,6 +18,7 @@ export default function BookingsTab() {
     handleClearTestBookings,
     bookings,
   } = useAdminDashboard();
+  const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
 
   return (
     <>
@@ -35,7 +36,7 @@ export default function BookingsTab() {
                   Clear Test Bookings
                 </button>
               </div>
-              {bookingSales.length === 0 ? (
+              {bingoSales.length === 0 ? (
                 <p className="text-gray-400 text-center py-8">No sessions found</p>
               ) : (
                 <>
@@ -50,7 +51,7 @@ export default function BookingsTab() {
                         </tr>
                       </thead>
                       <tbody>
-                        {bookingSales.map((sale, idx) => (
+                        {bingoSales.map((sale, idx) => (
                           <tr key={sale.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                             <td className="py-2.5 pl-2 text-gray-400 text-xs">{idx + 1}</td>
                             <td className="py-2.5">
@@ -81,10 +82,10 @@ export default function BookingsTab() {
                             <span className="font-semibold text-brand-blue">Total</span>
                           </td>
                           <td className="py-3 text-center font-bold text-brand-blue">
-                            {bookingSales.reduce((sum, s) => sum + s.quantity, 0)}
+                            {bingoSales.reduce((sum, s) => sum + s.quantity, 0)}
                           </td>
                           <td className="py-3 text-right pr-2 font-bold text-brand-gold">
-                            {formatPrice(bookingSales.reduce((sum, s) => sum + s.totalAmount, 0))}
+                            {formatPrice(bingoSales.reduce((sum, s) => sum + s.totalAmount, 0))}
                           </td>
                         </tr>
                       </tfoot>

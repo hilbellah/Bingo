@@ -52,13 +52,16 @@ export default function SessionWeekPicker({
       <div className="flex items-center gap-2 overflow-x-auto pb-1 ml-2">
         {visibleSessions.map(session => {
           const isSelected = selectedSession?.id === session.id;
-          const isSpecial = !!session.is_special_event;
+          const sessionType = session.session_type || (session.is_special_event ? 'special_bingo' : 'regular_bingo');
+          const isEvent = sessionType === 'event';
+          const isSpecial = sessionType === 'special_bingo' || isEvent;
+          const label = isEvent ? 'Event' : 'Special Bingo';
 
           return (
             <div key={session.id} className="flex-shrink-0 flex flex-col items-center">
               {isSpecial && (
                 <div className="bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-t-lg w-full text-center">
-                  &#9733; Special Event
+                  &#9733; {label}
                 </div>
               )}
               <button
