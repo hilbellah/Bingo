@@ -15,7 +15,16 @@ import { v4 as uuid } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { adminAuth, requireSuperUser, isSuperUser } from './middleware/adminAuth.js';
 import { releaseExpiredHolds } from './services/holds.js';
-import { cleanupOldData, ensureFutureSessions, getScheduleSummary, openWeeklySessions } from './services/scheduler.js';
+import {
+  cleanupOldData,
+  ensureFutureSessions,
+  getScheduleSummary,
+  openWeeklySessions,
+  listRecurringSchedules,
+  getAutoGenerateConfig,
+  updateAutoGenerateConfig,
+  DAY_LABELS
+} from './services/scheduler.js';
 import { createUploadMiddleware } from './uploads.js';
 import { formatLocalDate, formatPrice, generateRef } from './utils/format.js';
 import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode } from './services/email.js';
@@ -2916,8 +2925,125 @@ app.get('/api/admin/schedule', adminAuth, (req, res) => {
 
 app.post('/api/admin/schedule/generate', adminAuth, (req, res) => {
   openWeeklySessions();
-  ensureFutureSessions();
-  res.json({ success: true, message: 'Weekly sessions opened and future sessions generated' });
+  const result = ensureFutureSessions();
+  res.json({
+    success: true,
+    message: result.skipped
+      ? 'Auto-generation is currently disabled or has no active days configured. No sessions were created.'
+      : `Generated ${result.created} new session(s) over the next ${result.lookAheadDays} day(s).`,
+    ...result
+  });
+});
+
+// --- Admin: Recurring schedule CRUD (drives the auto-generator) ---
+//
+// Each row in `recurring_schedules` represents one weekly slot
+// ("Tuesday at 18:30 with cutoff 12:00, regular bingo, active").
+// The generator runs on server boot, hourly thereafter, and on demand via
+// POST /api/admin/schedule/generate. All endpoints require admin auth.
+//
+// Notes:
+// - day_of_week is 0-6 with 0 = Sunday, matching JS Date.getDay().
+// - Time fields are HH:MM strings; we don't enforce timezone — the server's
+//   local TZ is whatever Render decided.
+// - Deletes are hard, not soft. Already-generated sessions stay; only future
+//   generation for that day stops. This is the safe default — admins can
+//   always edit/delete individual sessions on the Sessions tab.
+const VALID_SESSION_TYPES = new Set(['regular_bingo', 'special_bingo', 'event']);
+const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function normalizeRecurringPayload(payload) {
+  const day = Number(payload.day_of_week);
+  if (!Number.isInteger(day) || day < 0 || day > 6) {
+    return { error: 'day_of_week must be an integer 0-6 (0=Sunday)' };
+  }
+  const time = String(payload.time || '').trim();
+  if (!TIME_REGEX.test(time)) return { error: 'time must be HH:MM (24-hour)' };
+  const cutoff = String(payload.cutoff_time || '12:00').trim();
+  if (!TIME_REGEX.test(cutoff)) return { error: 'cutoff_time must be HH:MM (24-hour)' };
+  const sessionType = String(payload.session_type || 'regular_bingo');
+  if (!VALID_SESSION_TYPES.has(sessionType)) {
+    return { error: `session_type must be one of: ${[...VALID_SESSION_TYPES].join(', ')}` };
+  }
+  const isActive = payload.is_active === false || payload.is_active === 0 ? 0 : 1;
+  return { day, time, cutoff, sessionType, isActive };
+}
+
+app.get('/api/admin/recurring-schedules', adminAuth, (req, res) => {
+  res.json({
+    schedules: listRecurringSchedules(),
+    config: getAutoGenerateConfig(),
+    dayLabels: DAY_LABELS,
+  });
+});
+
+app.post('/api/admin/recurring-schedules', adminAuth, (req, res) => {
+  const norm = normalizeRecurringPayload(req.body || {});
+  if (norm.error) return res.status(400).json({ error: norm.error });
+
+  const id = uuid();
+  run(
+    `INSERT INTO recurring_schedules
+       (id, day_of_week, time, cutoff_time, session_type, is_active)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, norm.day, norm.time, norm.cutoff, norm.sessionType, norm.isActive]
+  );
+  logAudit('recurring_schedule_created', 'recurring_schedule', id, {
+    day_of_week: norm.day, time: norm.time, cutoff_time: norm.cutoff, session_type: norm.sessionType
+  });
+  saveDb();
+  res.json({ id, day_of_week: norm.day, time: norm.time, cutoff_time: norm.cutoff, session_type: norm.sessionType, is_active: norm.isActive });
+});
+
+app.patch('/api/admin/recurring-schedules/:id', adminAuth, (req, res) => {
+  const existing = get('SELECT * FROM recurring_schedules WHERE id = ?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: 'Schedule not found' });
+
+  const payload = {
+    day_of_week: req.body.day_of_week !== undefined ? req.body.day_of_week : existing.day_of_week,
+    time: req.body.time !== undefined ? req.body.time : existing.time,
+    cutoff_time: req.body.cutoff_time !== undefined ? req.body.cutoff_time : existing.cutoff_time,
+    session_type: req.body.session_type !== undefined ? req.body.session_type : existing.session_type,
+    is_active: req.body.is_active !== undefined ? req.body.is_active : existing.is_active,
+  };
+  const norm = normalizeRecurringPayload(payload);
+  if (norm.error) return res.status(400).json({ error: norm.error });
+
+  run(
+    `UPDATE recurring_schedules
+        SET day_of_week = ?, time = ?, cutoff_time = ?, session_type = ?, is_active = ?,
+            updated_at = datetime('now')
+      WHERE id = ?`,
+    [norm.day, norm.time, norm.cutoff, norm.sessionType, norm.isActive, req.params.id]
+  );
+  logAudit('recurring_schedule_updated', 'recurring_schedule', req.params.id, payload);
+  saveDb();
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/recurring-schedules/:id', adminAuth, (req, res) => {
+  const existing = get('SELECT * FROM recurring_schedules WHERE id = ?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: 'Schedule not found' });
+  run('DELETE FROM recurring_schedules WHERE id = ?', [req.params.id]);
+  logAudit('recurring_schedule_deleted', 'recurring_schedule', req.params.id, {
+    day_of_week: existing.day_of_week, time: existing.time
+  });
+  saveDb();
+  res.json({ success: true });
+});
+
+app.get('/api/admin/recurring-schedules/summary', adminAuth, (req, res) => {
+  res.json(getScheduleSummary());
+});
+
+app.patch('/api/admin/recurring-schedules/config', adminAuth, (req, res) => {
+  const patch = {};
+  if (req.body.lookAheadDays !== undefined) patch.lookAheadDays = Number(req.body.lookAheadDays);
+  if (req.body.enabled !== undefined) patch.enabled = !!req.body.enabled;
+  const next = updateAutoGenerateConfig(patch);
+  logAudit('auto_generate_config_updated', 'settings', 'auto_generate_config', next);
+  saveDb();
+  res.json(next);
 });
 
 // ============ ADMIN: BULK TICKETS (Print special-event template tickets) ============
@@ -3224,10 +3350,11 @@ async function start() {
   // Re-check daily (every 24 hours)
   setInterval(cleanupOldData, 24 * 60 * 60 * 1000);
 
-  // Open current week's sessions (Tue-Sun) and generate future weeks
+  // Auto-generate regular bingo sessions for the configured look-ahead window
+  // based on the recurring_schedules table. Runs once on boot to backfill any
+  // gap from downtime, then hourly to keep the rolling window full.
   openWeeklySessions();
   ensureFutureSessions();
-  // Re-check hourly for Monday morning openings and new session generation
   setInterval(() => { openWeeklySessions(); ensureFutureSessions(); }, 60 * 60 * 1000);
 
   // Release expired holds every 30 seconds

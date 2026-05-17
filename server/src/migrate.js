@@ -233,6 +233,59 @@ async function migrate() {
   });
   try { run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [defaultPhdInventory]); } catch(e) {}
 
+  // --- Recurring Schedule (auto-generated regular bingo sessions) ---
+  // Drives the auto-generator in services/scheduler.js. Each row says:
+  //   "On day_of_week N, create a `session_type` session at `time`
+  //    with cutoff `cutoff_time`, as long as is_active = 1."
+  // The generator looks ahead `auto_generate_config.lookAheadDays` and creates
+  // any missing sessions (idempotent — never duplicates an existing session
+  // at the same (date, hour)).
+  //
+  // day_of_week uses JS getDay() convention: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat.
+  //
+  // Default seed (matches the St. Mary's Entertainment Centre "Bingo 6 Nights
+  // per week!" pattern from their Facebook page — skips Wednesday):
+  //   Sun, Mon, Tue, Thu, Fri, Sat at 18:30 with 12:00 cutoff.
+  console.log('Running recurring-schedule migration...');
+  exec(`
+    CREATE TABLE IF NOT EXISTS recurring_schedules (
+      id TEXT PRIMARY KEY,
+      day_of_week INTEGER NOT NULL,
+      time TEXT NOT NULL,
+      cutoff_time TEXT NOT NULL DEFAULT '12:00',
+      session_type TEXT NOT NULL DEFAULT 'regular_bingo',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { exec('CREATE INDEX idx_recurring_schedules_active_day ON recurring_schedules(is_active, day_of_week)'); } catch(e) {}
+
+  const existingScheduleCount = all('SELECT COUNT(*) as count FROM recurring_schedules')[0]?.count || 0;
+  if (existingScheduleCount === 0) {
+    console.log('Seeding default recurring schedule (6 nights/week, skip Wednesday)');
+    const defaultDays = [0, 1, 2, 4, 5, 6]; // Sun, Mon, Tue, Thu, Fri, Sat
+    for (const dow of defaultDays) {
+      run(
+        `INSERT INTO recurring_schedules
+           (id, day_of_week, time, cutoff_time, session_type, is_active)
+         VALUES (?, ?, '18:30', '12:00', 'regular_bingo', 1)`,
+        [uuid(), dow]
+      );
+    }
+  }
+
+  // auto_generate_config controls how the scheduler runs:
+  //   - lookAheadDays: how many days into the future to keep sessions for
+  //   - enabled: master switch (false stops auto-creation entirely)
+  //   - lastRunAt: ISO timestamp of the most recent generator run (informational)
+  const defaultAutoGenConfig = JSON.stringify({
+    lookAheadDays: 30,
+    enabled: true,
+    lastRunAt: null
+  });
+  try { run("INSERT INTO settings (key, value) VALUES ('auto_generate_config', ?)", [defaultAutoGenConfig]); } catch(e) {}
+
   const defaultSpecialBingoConfig = JSON.stringify({
     admissionName: 'Special Bingo Admission (includes 1 PHD)',
     admissionPrice: 7500,

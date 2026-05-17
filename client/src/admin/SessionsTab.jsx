@@ -38,10 +38,10 @@ export default function SessionsTab() {
           <div>
             <div className="bg-blue-50 rounded-xl p-4 shadow-sm mb-4 border border-blue-200">
               <div className="flex items-center gap-3">
-                <div className="text-2xl">📅</div>
+                <div className="text-2xl">🔁</div>
                 <div>
                   <h3 className="font-semibold text-brand-blue text-sm">Auto-Schedule Active</h3>
-                  <p className="text-xs text-gray-600">Regular bingo sessions (Tue-Sun) are generated automatically. Each new week opens Monday morning. Use the form below only for special bingo.</p>
+                  <p className="text-xs text-gray-600">Regular bingo sessions are generated automatically from the recurring schedule. Manage which days, times, and the look-ahead window on the <span className="font-semibold">Auto Schedule</span> tab. Use the form below for one-off special bingo events.</p>
                 </div>
               </div>
             </div>

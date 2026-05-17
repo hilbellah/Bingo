@@ -399,7 +399,59 @@ export async function triggerScheduleGenerate(token) {
   const res = await fetch(`${API}/admin/schedule/generate`, {
     method: 'POST', headers: adminHeaders(token)
   });
-  return res.json();
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
+// Admin Recurring Schedules (day-of-week templates that drive auto-generation)
+export async function fetchRecurringSchedules(token) {
+  const res = await fetch(`${API}/admin/recurring-schedules`, { headers: adminHeaders(token) });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to load recurring schedules');
+  return json;
+}
+
+export async function createRecurringSchedule(token, data) {
+  const res = await fetch(`${API}/admin/recurring-schedules`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to create recurring schedule');
+  return json;
+}
+
+export async function updateRecurringSchedule(token, id, data) {
+  const res = await fetch(`${API}/admin/recurring-schedules/${id}`, {
+    method: 'PATCH', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to update recurring schedule');
+  return json;
+}
+
+export async function deleteRecurringSchedule(token, id) {
+  const res = await fetch(`${API}/admin/recurring-schedules/${id}`, {
+    method: 'DELETE', headers: adminHeaders(token)
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to delete recurring schedule');
+  return json;
+}
+
+export async function fetchRecurringScheduleSummary(token) {
+  const res = await fetch(`${API}/admin/recurring-schedules/summary`, { headers: adminHeaders(token) });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to load schedule summary');
+  return json;
+}
+
+export async function updateAutoGenerateConfig(token, data) {
+  const res = await fetch(`${API}/admin/recurring-schedules/config`, {
+    method: 'PATCH', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to update auto-generate config');
+  return json;
 }
 
 // Admin Users (super users only)

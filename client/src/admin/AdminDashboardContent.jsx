@@ -1,6 +1,7 @@
 import React from 'react';
 import DashboardTab from './DashboardTab';
 import SessionsTab from './SessionsTab';
+import RecurringScheduleTab from './RecurringScheduleTab';
 import PackagesTab from './PackagesTab';
 import AnnouncementsTab from './AnnouncementsTab';
 import BookingsTab from './BookingsTab';
@@ -22,6 +23,7 @@ export default function AdminDashboardContent({ value }) {
       <div className="flex-1 px-6 py-6">
         <DashboardTab />
         <SessionsTab />
+        <RecurringScheduleTab />
         <PackagesTab />
         <AnnouncementsTab />
         <BookingsTab />
