@@ -1,5 +1,31 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
+
+function CollapsibleBoard({ title, description, isOpen, onToggle, children }) {
+  return (
+    <section className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-gray-50"
+        aria-expanded={isOpen}
+      >
+        <div>
+          <h3 className="font-semibold text-brand-blue">{title}</h3>
+          <p className="text-sm text-gray-500 mt-1">{description}</p>
+        </div>
+        <span className="shrink-0 w-8 h-8 rounded-full bg-brand-blue/10 text-brand-blue flex items-center justify-center text-lg leading-none">
+          {isOpen ? '-' : '+'}
+        </span>
+      </button>
+      {isOpen && (
+        <div className="px-5 pb-5 border-t border-gray-100">
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default function BookingsTab() {
   const {
@@ -22,6 +48,11 @@ export default function BookingsTab() {
     handleClearTestBookings,
     bookings,
   } = useAdminDashboard();
+  const [openBoards, setOpenBoards] = useState({
+    bookingSales: false,
+    transactions: true,
+    dailySales: false,
+  });
   const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
   const transactionRows = transactions?.items || [];
   const transactionSummary = transactions?.summary || {};
@@ -47,15 +78,20 @@ export default function BookingsTab() {
     if (status === 'pending') return 'bg-amber-100 text-amber-700';
     return 'bg-gray-100 text-gray-600';
   };
+  const toggleBoard = (key) => setOpenBoards(prev => ({ ...prev, [key]: !prev[key] }));
 
   return (
     <>
         {/* BOOKINGS TAB — Booking Sales Summary */}
         {tab === 'bookings' && (
-          <div>
-            <div className="bg-white rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h3 className="font-semibold text-brand-blue">Booking Sales</h3>
+          <div className="space-y-4">
+            <CollapsibleBoard
+              title="Booking Sales"
+              description="Session-by-session sales totals for bingo bookings, with ticket counts you can click to drill into purchasers."
+              isOpen={openBoards.bookingSales}
+              onToggle={() => toggleBoard('bookingSales')}
+            >
+              <div className="flex items-center justify-end gap-3 mb-4 pt-4">
                 <button
                   type="button"
                   onClick={handleClearTestBookings}
@@ -121,13 +157,16 @@ export default function BookingsTab() {
                   </div>
                 </>
               )}
-            </div>
+            </CollapsibleBoard>
 
             {/* Transactions Summary */}
-            <div className="bg-white rounded-xl p-5 shadow-sm mt-4">
-              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-                <h3 className="font-semibold text-brand-blue">Transactions</h3>
-                <div className="flex items-center gap-2 flex-wrap">
+            <CollapsibleBoard
+              title="Transactions & Refund Summary"
+              description="All payment activity in one place, including paid bookings, refunds, voids, pending payments, failed payments, gross sales, and net total."
+              isOpen={openBoards.transactions}
+              onToggle={() => toggleBoard('transactions')}
+            >
+              <div className="flex items-center gap-2 flex-wrap mb-4 pt-4">
                   <input
                     type="text"
                     placeholder="Search ref, name, email..."
@@ -170,7 +209,6 @@ export default function BookingsTab() {
                   >
                     Reset
                   </button>
-                </div>
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
@@ -240,13 +278,16 @@ export default function BookingsTab() {
                   </table>
                 </div>
               )}
-            </div>
+            </CollapsibleBoard>
 
             {/* Daily Sales Report */}
-            <div className="bg-white rounded-xl p-5 shadow-sm mt-4">
-              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <h3 className="font-semibold text-brand-blue">Daily Sales</h3>
-                <div className="flex items-center gap-3 flex-wrap">
+            <CollapsibleBoard
+              title="Daily Sales"
+              description="A ticket-level report for one selected day, including attendee names, seats, packages, add-ons, export, print, and receipt tools."
+              isOpen={openBoards.dailySales}
+              onToggle={() => toggleBoard('dailySales')}
+            >
+              <div className="flex items-center gap-3 flex-wrap mb-4 pt-4">
                   <input
                     type="text"
                     placeholder="Search by name..."
@@ -335,7 +376,6 @@ export default function BookingsTab() {
                       Receipt
                     </button>
                   )}
-                </div>
               </div>
 
               {!dailySales ? (
@@ -414,7 +454,7 @@ export default function BookingsTab() {
                   </table>
                 </div>
               )}
-            </div>
+            </CollapsibleBoard>
           </div>
         )}
     </>

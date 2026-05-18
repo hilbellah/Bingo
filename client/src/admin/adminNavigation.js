@@ -38,7 +38,7 @@ export const ADMIN_TABS = [
     label: 'Reports & Activity',
     icon: '📈',
     children: [
-      { id: 'bookings', label: 'Bookings', icon: '💰' },
+      { id: 'bookings', label: 'Sales & Transactions', icon: '💰' },
       { id: 'bulkprint', label: 'Bulk Print', icon: '🖨' },
       { id: 'customers', label: 'Customers', icon: '👥' },
       { id: 'archive', label: 'Archive & Audit', icon: '🗃' },
