@@ -6,6 +6,7 @@ export default function SalesDrilldownModal() {
     bookings,
     handlePrintBookingReceipt,
     handleRefundBooking,
+    handleRefundBookingItem,
     salesDrilldown,
     setSalesDrilldown,
     handlePrintSalesDrilldown,
@@ -22,7 +23,7 @@ export default function SalesDrilldownModal() {
               <div>
                 <h3 className="font-bold text-brand-blue text-lg">Booking Details</h3>
                 <p className="text-sm text-gray-500">
-                  {salesDrilldown.session.description} &mdash; {salesDrilldown.bookings.reduce((sum, b) => sum + b.items.length, 0)} ticket(s) in {salesDrilldown.session.quantity} batch(es) &mdash; {salesDrilldown.session.totalFormatted}
+                  {salesDrilldown.session.description} &mdash; {salesDrilldown.bookings.reduce((sum, b) => sum + b.items.filter(item => item.refundStatus !== 'refunded').length, 0)} active ticket(s) in {salesDrilldown.session.bookingCount || salesDrilldown.bookings.length} batch(es) &mdash; {salesDrilldown.session.totalFormatted}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -43,6 +44,7 @@ export default function SalesDrilldownModal() {
                         <span className="font-mono text-sm font-semibold text-brand-blue ml-1">{b.referenceNumber}</span>
                         <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
                           b.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                          b.paymentStatus === 'partially_refunded' ? 'bg-amber-100 text-amber-700' :
                           b.paymentStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
                           'bg-gray-100 text-gray-600'
                         }`}>{b.paymentStatus}</span>
@@ -56,13 +58,13 @@ export default function SalesDrilldownModal() {
                         >
                           Receipt
                         </button>
-                        {b.paymentStatus === 'paid' && handleRefundBooking && (
+                        {b.paymentStatus === 'paid' && b.items.every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
                           <button
                             onClick={() => handleRefundBooking(b.id, b.referenceNumber)}
                             className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                            title="Refund this booking via Authorize.Net"
+                            title="Refund the full booking batch via Authorize.Net"
                           >
-                            Refund
+                            Refund Batch
                           </button>
                         )}
                       </div>
@@ -86,11 +88,12 @@ export default function SalesDrilldownModal() {
                           <th className="pb-1">Chair</th>
                           <th className="pb-1">Package</th>
                           <th className="pb-1">Add-ons</th>
+                          <th className="pb-1 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {b.items.map((item, i) => (
-                          <tr key={i} className="border-b border-gray-50">
+                          <tr key={item.id || i} className={`border-b border-gray-50 ${item.refundStatus === 'refunded' ? 'text-gray-400 bg-gray-50' : ''}`}>
                             <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || '—'}</td>
                             <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
                             <td className="py-1">{item.tableNumber}</td>
@@ -100,6 +103,23 @@ export default function SalesDrilldownModal() {
                               {item.addons.length > 0
                                 ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
                                 : '—'}
+                            </td>
+                            <td className="py-1 text-right">
+                              {item.refundStatus === 'refunded' ? (
+                                <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+                                  Refunded {item.refundAmountFormatted || ''}
+                                </span>
+                              ) : ['paid', 'partially_refunded'].includes(b.paymentStatus) && handleRefundBookingItem ? (
+                                <button
+                                  onClick={() => handleRefundBookingItem(item, b)}
+                                  className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                  title="Refund only this ticket"
+                                >
+                                  Refund Ticket
+                                </button>
+                              ) : (
+                                <span className="text-xs text-gray-400">-</span>
+                              )}
                             </td>
                           </tr>
                         ))}

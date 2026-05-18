@@ -511,8 +511,9 @@ function getPhdUsedForSession(sessionId) {
         SELECT COUNT(*)
         FROM booking_items bi
         JOIN bookings b ON b.id = bi.booking_id
-        WHERE b.payment_status = 'paid'
+        WHERE b.payment_status IN ('paid', 'partially_refunded')
           AND b.session_id = ?
+          AND COALESCE(bi.refund_status, 'active') != 'refunded'
           AND (
             bi.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
             OR bi.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
@@ -524,8 +525,9 @@ function getPhdUsedForSession(sessionId) {
         FROM booking_addons ba
         JOIN booking_items bi ON bi.id = ba.booking_item_id
         JOIN bookings b ON b.id = bi.booking_id
-        WHERE b.payment_status = 'paid'
+        WHERE b.payment_status IN ('paid', 'partially_refunded')
           AND b.session_id = ?
+          AND COALESCE(bi.refund_status, 'active') != 'refunded'
           AND (
             ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
             OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
@@ -555,8 +557,9 @@ function getPhdUsageBySession() {
           SELECT COUNT(*)
           FROM booking_items bi
           JOIN bookings b ON b.id = bi.booking_id
-          WHERE b.payment_status = 'paid'
+          WHERE b.payment_status IN ('paid', 'partially_refunded')
             AND b.session_id = s.id
+            AND COALESCE(bi.refund_status, 'active') != 'refunded'
             AND (
               bi.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
               OR bi.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
@@ -568,8 +571,9 @@ function getPhdUsageBySession() {
           FROM booking_addons ba
           JOIN booking_items bi ON bi.id = ba.booking_item_id
           JOIN bookings b ON b.id = bi.booking_id
-          WHERE b.payment_status = 'paid'
+          WHERE b.payment_status IN ('paid', 'partially_refunded')
             AND b.session_id = s.id
+            AND COALESCE(bi.refund_status, 'active') != 'refunded'
             AND (
               ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
               OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
@@ -967,7 +971,18 @@ function markBookingRefunded({ bookingId, transactionId = null, refundTransactio
     return { ok: false, error: `cannot refund booking in status '${booking.payment_status}'` };
   }
 
+  const refundedAt = new Date().toISOString();
   run(`UPDATE bookings SET payment_status = 'refunded' WHERE id = ?`, [bookingId]);
+  run(
+    `UPDATE booking_items
+     SET refund_status = 'refunded',
+         refunded_at = ?,
+         refund_transaction_id = ?,
+         refund_amount = COALESCE(NULLIF(refund_amount, 0), price + COALESCE((SELECT SUM(price) FROM booking_addons WHERE booking_item_id = booking_items.id), 0)),
+         refund_action = 'refund'
+     WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
+    [refundedAt, refundTransactionId || transactionId, bookingId]
+  );
   const releasedSeats = releaseBookingSeats({ bookingId, sessionId: booking.session_id });
   saveDb();
 
@@ -993,7 +1008,18 @@ function markBookingVoided({ bookingId, transactionId = null, voidTransactionId 
     return { ok: false, error: `cannot void booking in status '${booking.payment_status}'` };
   }
 
+  const voidedAt = new Date().toISOString();
   run(`UPDATE bookings SET payment_status = 'voided' WHERE id = ?`, [bookingId]);
+  run(
+    `UPDATE booking_items
+     SET refund_status = 'refunded',
+         refunded_at = ?,
+         refund_transaction_id = ?,
+         refund_amount = COALESCE(NULLIF(refund_amount, 0), price + COALESCE((SELECT SUM(price) FROM booking_addons WHERE booking_item_id = booking_items.id), 0)),
+         refund_action = 'void'
+     WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
+    [voidedAt, voidTransactionId || transactionId, bookingId]
+  );
   const releasedSeats = releaseBookingSeats({ bookingId, sessionId: booking.session_id });
   saveDb();
 
@@ -1006,6 +1032,84 @@ function markBookingVoided({ bookingId, transactionId = null, voidTransactionId 
   });
   sendRefundNotificationAsync({ bookingId, action: 'void', refundTransactionId: voidTransactionId || transactionId });
   return { ok: true, releasedSeats };
+}
+
+function getBookingItemRefundAmount(itemId) {
+  const item = get('SELECT price FROM booking_items WHERE id = ?', [itemId]);
+  if (!item) return null;
+  const addons = get('SELECT COALESCE(SUM(price), 0) as total FROM booking_addons WHERE booking_item_id = ?', [itemId]);
+  return (item.price || 0) + (addons?.total || 0);
+}
+
+function markBookingItemRefunded({
+  bookingId,
+  bookingItemId,
+  transactionId = null,
+  refundTransactionId = null,
+  amountCents = 0,
+  action = 'refund',
+  source = 'admin',
+}) {
+  const booking = get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) return { ok: false, error: 'booking_not_found' };
+  if (!['paid', 'partially_refunded'].includes(booking.payment_status)) {
+    return { ok: false, error: `cannot refund ticket in booking status '${booking.payment_status}'` };
+  }
+
+  const item = get('SELECT id, seat_id, first_name, last_name, reference_number, refund_status FROM booking_items WHERE id = ? AND booking_id = ?', [bookingItemId, bookingId]);
+  if (!item) return { ok: false, error: 'booking_item_not_found' };
+  if (item.refund_status === 'refunded') return { ok: true, alreadyRefunded: true, releasedSeats: 0 };
+
+  const refundedAt = new Date().toISOString();
+  run(
+    `UPDATE booking_items
+     SET refund_status = 'refunded',
+         refunded_at = ?,
+         refund_transaction_id = ?,
+         refund_amount = ?,
+         refund_action = ?
+     WHERE id = ?`,
+    [refundedAt, refundTransactionId || transactionId, amountCents, action, bookingItemId]
+  );
+  run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [item.seat_id]);
+
+  const remaining = get(
+    `SELECT COUNT(*) as count
+     FROM booking_items
+     WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
+    [bookingId]
+  )?.count || 0;
+  const nextStatus = remaining > 0 ? 'partially_refunded' : (action === 'void' ? 'voided' : 'refunded');
+  run('UPDATE bookings SET payment_status = ? WHERE id = ?', [nextStatus, bookingId]);
+  saveDb();
+
+  logPaymentEvent(bookingId, action === 'void' ? 'voided' : 'refunded', source, {
+    transactionId,
+    refundTransactionId: refundTransactionId || transactionId,
+    bookingItemId,
+    itemReference: item.reference_number,
+    amountCents,
+    partial: remaining > 0,
+  });
+  logAudit('booking_item_refunded', 'booking_item', bookingItemId, {
+    bookingId,
+    transactionId,
+    refundTransactionId: refundTransactionId || transactionId,
+    source,
+    action,
+    amountCents,
+    attendee: `${item.first_name} ${item.last_name}`,
+    ticketReference: item.reference_number,
+    releasedSeats: 1,
+    bookingStatus: nextStatus,
+  });
+  io.to(`session:${booking.session_id}`).emit('seats:refresh');
+  io.to('admin:receipts').emit('booking:item_refunded', { bookingId, bookingItemId, transactionId, amountCents });
+  io.to('admin:receipts').emit('phd:updated', {
+    ...getPhdInventoryForSession(booking.session_id),
+    perSession: getPhdUsageBySession(),
+  });
+  return { ok: true, releasedSeats: 1, remaining, bookingStatus: nextStatus };
 }
 
 // Loads a booking + related rows and fires the confirmation email.
@@ -1961,10 +2065,25 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
   const dateFrom = req.query.dateFrom || req.query.date || today;
   const dateTo = req.query.dateTo || dateFrom;
   const todayBookings = get(
-    `SELECT COUNT(*) as count FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'`, [dateFrom, dateTo]
+    `SELECT COUNT(DISTINCT b.id) as count
+     FROM bookings b
+     JOIN sessions s ON b.session_id = s.id
+     WHERE s.date >= ? AND s.date <= ?
+       AND b.payment_status IN ('paid', 'partially_refunded')`, [dateFrom, dateTo]
   );
   const todayRevenue = get(
-    `SELECT COALESCE(SUM(b.total_amount), 0) as total FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'`, [dateFrom, dateTo]
+    `SELECT COALESCE(SUM(bi.price + COALESCE(addons.addon_total, 0)), 0) as total
+     FROM bookings b
+     JOIN sessions s ON b.session_id = s.id
+     JOIN booking_items bi ON bi.booking_id = b.id
+     LEFT JOIN (
+       SELECT booking_item_id, SUM(price) as addon_total
+       FROM booking_addons
+       GROUP BY booking_item_id
+     ) addons ON addons.booking_item_id = bi.id
+     WHERE s.date >= ? AND s.date <= ?
+       AND b.payment_status IN ('paid', 'partially_refunded')
+       AND COALESCE(bi.refund_status, 'active') != 'refunded'`, [dateFrom, dateTo]
   );
   const upcomingSessions = all(
     `SELECT s.*,
@@ -2013,7 +2132,9 @@ app.get('/api/admin/dashboard', adminAuth, (req, res) => {
     `SELECT COUNT(*) as count FROM booking_items bi
      JOIN bookings b ON bi.booking_id = b.id
      JOIN sessions s ON b.session_id = s.id
-     WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'`, [dateFrom, dateTo]
+     WHERE s.date >= ? AND s.date <= ?
+       AND b.payment_status IN ('paid', 'partially_refunded')
+       AND COALESCE(bi.refund_status, 'active') != 'refunded'`, [dateFrom, dateTo]
   );
 
   res.json({
@@ -2054,7 +2175,8 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
            s.date as session_date, s.time as session_time,
            s.is_special_event, s.event_title,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
-           bi.reference_number as item_reference_number,
+           bi.reference_number as item_reference_number, bi.refund_status,
+           bi.refunded_at, bi.refund_transaction_id, bi.refund_amount, bi.refund_action,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name
     FROM bookings b
@@ -2063,7 +2185,9 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
     JOIN seats ON seats.id = bi.seat_id
     LEFT JOIN packages p ON p.id = bi.package_id
     LEFT JOIN session_packages sp ON sp.id = bi.package_id
-    WHERE s.date = ? AND b.payment_status = 'paid'
+    WHERE s.date = ?
+      AND b.payment_status IN ('paid', 'partially_refunded')
+      AND COALESCE(bi.refund_status, 'active') != 'refunded'
     ORDER BY b.created_at ASC, b.id, bi.id
   `, [date]);
 
@@ -2077,7 +2201,9 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
     JOIN booking_items bi ON bi.id = ba.booking_item_id
     JOIN bookings b ON b.id = bi.booking_id
     JOIN sessions s ON s.id = b.session_id
-    WHERE s.date = ? AND b.payment_status = 'paid'
+    WHERE s.date = ?
+      AND b.payment_status IN ('paid', 'partially_refunded')
+      AND COALESCE(bi.refund_status, 'active') != 'refunded'
   `, [date]);
   const addonsByItem = {};
   for (const a of allAddons) {
@@ -2100,39 +2226,39 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
   }
 
   // Build individual ticket items
-  const items = filtered.map((r, i) => ({
-    rowNum: i + 1,
-    id: r.item_id,
-    bookingId: r.id,
-    referenceNumber: r.item_reference_number || r.reference_number,
-    firstName: r.first_name,
-    lastName: r.last_name,
-    tableNumber: r.table_number,
-    chairNumber: r.chair_number,
-    packageName: r.package_name,
-    description: r.is_special_event && r.event_title ? r.event_title : `Bingo Session ${r.session_time}`,
-    sessionDate: r.session_date,
-    sessionTime: r.session_time,
-    itemPrice: r.item_price,
-    itemPriceFormatted: '$' + formatPrice(r.item_price),
-    totalAmount: r.total_amount,
-    totalFormatted: '$' + formatPrice(r.total_amount),
-    addons: addonsByItem[r.item_id] || [],
-    createdAt: r.created_at
-  }));
+  const items = filtered.map((r, i) => {
+    const addons = addonsByItem[r.item_id] || [];
+    const addonTotal = addons.reduce((sum, addon) => sum + addon.price, 0);
+    const itemTotal = r.item_price + addonTotal;
+    return {
+      rowNum: i + 1,
+      id: r.item_id,
+      bookingId: r.id,
+      referenceNumber: r.item_reference_number || r.reference_number,
+      firstName: r.first_name,
+      lastName: r.last_name,
+      tableNumber: r.table_number,
+      chairNumber: r.chair_number,
+      packageName: r.package_name,
+      description: r.is_special_event && r.event_title ? r.event_title : `Bingo Session ${r.session_time}`,
+      sessionDate: r.session_date,
+      sessionTime: r.session_time,
+      itemPrice: r.item_price,
+      itemPriceFormatted: '$' + formatPrice(r.item_price),
+      totalAmount: itemTotal,
+      totalFormatted: '$' + formatPrice(itemTotal),
+      addons,
+      createdAt: r.created_at
+    };
+  });
 
-  // Calculate unique bookings and grand total from filtered results
+  // Calculate unique bookings and active-ticket grand total from filtered results
   const uniqueBookings = new Set(filtered.map(r => r.id));
-  const grandTotal = [...uniqueBookings].reduce((sum, bid) => {
-    const booking = filtered.find(r => r.id === bid);
-    return sum + (booking ? booking.total_amount : 0);
-  }, 0);
-
-  // Calculate package subtotal (base ticket prices) and addon subtotal
   const packageSubtotal = items.reduce((sum, item) => sum + item.itemPrice, 0);
   const addonSubtotal = items.reduce((sum, item) => {
     return sum + (item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0);
   }, 0);
+  const grandTotal = packageSubtotal + addonSubtotal;
 
   res.json({
     date,
@@ -2167,7 +2293,9 @@ app.get('/api/admin/transactions', adminAuth, (req, res) => {
   }
   if (status && status !== 'all') {
     if (status === 'refunds') {
-      where.push("payment_status IN ('refunded', 'voided')");
+      where.push("payment_status IN ('refunded', 'voided', 'partially_refunded')");
+    } else if (status === 'paid') {
+      where.push("payment_status IN ('paid', 'partially_refunded')");
     } else {
       where.push('payment_status = ?');
       params.push(status);
@@ -2236,10 +2364,28 @@ app.get('/api/admin/transactions', adminAuth, (req, res) => {
     LIMIT 1000
   `, params);
 
-  const paidStatuses = new Set(['paid', 'refunded', 'voided']);
+  const rowBookingIds = new Set(rows.map(row => row.id));
+  const partialRefundByBooking = {};
+  const partialRefundEvents = all(`
+    SELECT booking_id, raw_payload
+    FROM payment_events
+    WHERE event_type = 'refunded'
+  `).reduce((sum, event) => {
+    if (!rowBookingIds.has(event.booking_id)) return sum;
+    try {
+      const payload = event.raw_payload ? JSON.parse(event.raw_payload) : null;
+      if (!payload?.partial) return sum;
+      const amount = Number(payload.amountCents || 0);
+      partialRefundByBooking[event.booking_id] = (partialRefundByBooking[event.booking_id] || 0) + amount;
+      return sum + amount;
+    } catch {
+      return sum;
+    }
+  }, 0);
+  const paidStatuses = new Set(['paid', 'partially_refunded', 'refunded', 'voided']);
   const refundStatuses = new Set(['refunded', 'voided']);
   const grossSales = rows.reduce((sum, row) => paidStatuses.has(row.payment_status) ? sum + row.total_amount : sum, 0);
-  const refunds = rows.reduce((sum, row) => refundStatuses.has(row.payment_status) ? sum + row.total_amount : sum, 0);
+  const refunds = rows.reduce((sum, row) => refundStatuses.has(row.payment_status) ? sum + row.total_amount : sum, 0) + partialRefundEvents;
   const pendingAmount = rows.reduce((sum, row) => row.payment_status === 'pending' ? sum + row.total_amount : sum, 0);
   const failedAmount = rows.reduce((sum, row) => ['failed', 'cancelled'].includes(row.payment_status) ? sum + row.total_amount : sum, 0);
 
@@ -2250,8 +2396,9 @@ app.get('/api/admin/transactions', adminAuth, (req, res) => {
 
   const items = rows.map(row => {
     const isRefund = refundStatuses.has(row.payment_status);
-    const isPaid = row.payment_status === 'paid';
-    const amountEffect = isRefund ? -row.total_amount : isPaid ? row.total_amount : 0;
+    const isPaid = row.payment_status === 'paid' || row.payment_status === 'partially_refunded';
+    const partialRefundAmount = partialRefundByBooking[row.id] || 0;
+    const amountEffect = isRefund ? -row.total_amount : row.payment_status === 'partially_refunded' ? -partialRefundAmount : isPaid ? row.total_amount : 0;
     const customerName = [row.customer_first_name, row.customer_last_name].filter(Boolean).join(' ');
     const description = row.session_type === 'event' && row.event_title
       ? row.event_title
@@ -2263,9 +2410,11 @@ app.get('/api/admin/transactions', adminAuth, (req, res) => {
       id: row.id,
       referenceNumber: row.reference_number,
       status: row.payment_status,
-      transactionType: isRefund ? (row.payment_status === 'voided' ? 'Void' : 'Refund') : isPaid ? 'Payment' : row.payment_status,
+      transactionType: isRefund ? (row.payment_status === 'voided' ? 'Void' : 'Refund') : row.payment_status === 'partially_refunded' ? 'Partial Refund' : isPaid ? 'Payment' : row.payment_status,
       totalAmount: row.total_amount,
       totalFormatted: '$' + formatPrice(row.total_amount),
+      partialRefundAmount,
+      partialRefundFormatted: '$' + formatPrice(partialRefundAmount),
       amountEffect,
       amountEffectFormatted: `${amountEffect < 0 ? '-' : ''}$${formatPrice(Math.abs(amountEffect))}`,
       transactionAt: row.transaction_at,
@@ -2289,8 +2438,8 @@ app.get('/api/admin/transactions', adminAuth, (req, res) => {
     filters: { dateFrom, dateTo, status, search },
     summary: {
       totalTransactions: rows.length,
-      paidCount: statusCounts.paid || 0,
-      refundCount: (statusCounts.refunded || 0) + (statusCounts.voided || 0),
+      paidCount: (statusCounts.paid || 0) + (statusCounts.partially_refunded || 0),
+      refundCount: (statusCounts.refunded || 0) + (statusCounts.voided || 0) + (statusCounts.partially_refunded || 0),
       pendingCount: statusCounts.pending || 0,
       failedCount: (statusCounts.failed || 0) + (statusCounts.cancelled || 0),
       grossSales,
@@ -2311,10 +2460,17 @@ app.get('/api/admin/transactions', adminAuth, (req, res) => {
 app.get('/api/admin/booking-sales', adminAuth, (req, res) => {
   const rows = all(`
     SELECT s.id, s.date, s.time, s.is_special_event, s.event_title, ${sessionTypeSql('s')} as session_type,
-      COUNT(DISTINCT b.id) as quantity,
-      COALESCE(SUM(b.total_amount), 0) as total_amount
+      COUNT(bi.id) as quantity,
+      COUNT(DISTINCT b.id) as booking_count,
+      COALESCE(SUM(bi.price + COALESCE(addons.addon_total, 0)), 0) as total_amount
     FROM sessions s
-    LEFT JOIN bookings b ON b.session_id = s.id AND b.payment_status = 'paid'
+    LEFT JOIN bookings b ON b.session_id = s.id AND b.payment_status IN ('paid', 'partially_refunded')
+    LEFT JOIN booking_items bi ON bi.booking_id = b.id AND COALESCE(bi.refund_status, 'active') != 'refunded'
+    LEFT JOIN (
+      SELECT booking_item_id, SUM(price) as addon_total
+      FROM booking_addons
+      GROUP BY booking_item_id
+    ) addons ON addons.booking_item_id = bi.id
     WHERE s.deleted_at IS NULL
     GROUP BY s.id
     ORDER BY s.date ASC, s.time ASC
@@ -2328,6 +2484,7 @@ app.get('/api/admin/booking-sales', adminAuth, (req, res) => {
     isSpecialEvent: !!r.is_special_event,
     eventTitle: r.event_title,
     quantity: r.quantity,
+    bookingCount: r.booking_count,
     totalAmount: r.total_amount,
     totalFormatted: '$' + formatPrice(r.total_amount)
   })));
@@ -2638,7 +2795,8 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
            b.customer_first_name, b.customer_last_name,
            s.date as session_date, s.time as session_time,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
-           bi.reference_number as item_reference_number,
+           bi.reference_number as item_reference_number, bi.refund_status,
+           bi.refunded_at, bi.refund_transaction_id, bi.refund_amount, bi.refund_action,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM bookings b
@@ -2682,6 +2840,7 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
     }));
 
     bookings[row.id].items.push({
+      id: row.item_id,
       firstName: row.first_name,
       lastName: row.last_name,
       tableNumber: row.table_number,
@@ -2690,6 +2849,12 @@ app.get('/api/admin/bookings', adminAuth, (req, res) => {
       packageName: row.package_name,
       packagePrice: row.package_price,
       packagePriceFormatted: '$' + formatPrice(row.package_price),
+      refundStatus: row.refund_status || 'active',
+      refundedAt: row.refunded_at,
+      refundTransactionId: row.refund_transaction_id,
+      refundAmount: row.refund_amount || 0,
+      refundAmountFormatted: '$' + formatPrice(row.refund_amount || 0),
+      refundAction: row.refund_action,
       addons
     });
   }
@@ -2852,6 +3017,100 @@ app.delete('/api/admin/bookings/:id', adminAuth, (req, res) => {
     ok: true,
     deleted: booking.reference_number,
     releasedSeats: items.length,
+  });
+});
+
+app.post('/api/admin/booking-items/:id/refund', adminAuth, async (req, res) => {
+  const item = get(`
+    SELECT bi.*, b.id as booking_id, b.reference_number as booking_reference,
+           b.payment_status, b.transaction_id, b.total_amount
+    FROM booking_items bi
+    JOIN bookings b ON b.id = bi.booking_id
+    WHERE bi.id = ?
+  `, [req.params.id]);
+  if (!item) return res.status(404).json({ error: 'Ticket not found' });
+
+  if (item.refund_status === 'refunded') {
+    return res.status(400).json({ error: 'This ticket has already been refunded.' });
+  }
+  if (!['paid', 'partially_refunded'].includes(item.payment_status)) {
+    return res.status(400).json({ error: `Cannot refund a ticket from booking status '${item.payment_status}'.` });
+  }
+  if (!item.transaction_id) {
+    return res.status(400).json({
+      error: 'This booking has no transaction_id (likely created before payment integration). Use Cancel for legacy bookings.'
+    });
+  }
+
+  const amountCents = getBookingItemRefundAmount(item.id);
+  if (!amountCents || amountCents <= 0) {
+    return res.status(400).json({ error: 'Could not determine the ticket refund amount.' });
+  }
+
+  const activeItems = get(`
+    SELECT COUNT(*) as count
+    FROM booking_items
+    WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'
+  `, [item.booking_id])?.count || 0;
+
+  const verify = await verifyTransaction(item.transaction_id);
+  if (!verify.ok) {
+    return res.status(502).json({ error: `Could not verify transaction state: ${verify.error}` });
+  }
+
+  const txStatus = String(verify.status || '');
+  let action;
+  let result;
+
+  if (txStatus === 'capturedPendingSettlement' || txStatus === 'authorizedPendingCapture') {
+    if (activeItems > 1) {
+      return res.status(400).json({
+        error: 'This payment has not settled yet, so Authorize.Net can only void the full booking. Partial ticket refunds are available after settlement.'
+      });
+    }
+    action = 'void';
+    result = await voidTransaction(item.transaction_id);
+  } else if (txStatus === 'settledSuccessfully' || txStatus === 'settlementError') {
+    action = 'refund';
+    if (!verify.last4) {
+      return res.status(502).json({ error: 'Could not determine card last 4 for refund - Authorize.Net API did not return card details.' });
+    }
+    result = await refundTransaction({
+      transId: item.transaction_id,
+      amountCents,
+      last4: verify.last4,
+    });
+  } else {
+    return res.status(400).json({
+      error: `Cannot refund: transaction is in status '${txStatus}'. It may already be refunded or voided.`
+    });
+  }
+
+  if (!result.ok) {
+    return res.status(502).json({ error: `${action} failed: ${result.error}` });
+  }
+
+  const markResult = markBookingItemRefunded({
+    bookingId: item.booking_id,
+    bookingItemId: item.id,
+    transactionId: item.transaction_id,
+    refundTransactionId: result.refundTransId || result.voidTransId,
+    amountCents,
+    action,
+    source: 'admin',
+  });
+  if (!markResult.ok) {
+    return res.status(500).json({ error: markResult.error || 'Refund was processed but ticket status could not be updated.' });
+  }
+
+  res.json({
+    ok: true,
+    action,
+    refundTransId: result.refundTransId || result.voidTransId,
+    amountCents,
+    amountFormatted: '$' + formatPrice(amountCents),
+    seatsReleased: markResult.releasedSeats || 0,
+    bookingStatus: markResult.bookingStatus,
   });
 });
 

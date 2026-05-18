@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, getExportUrl, adminHeaders,
+  fetchAdminBookings, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -816,6 +816,37 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleRefundBookingItem = async (item, booking) => {
+    const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
+    const proceed = window.confirm(
+      `Refund ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}?\n\n` +
+      `Only this ticket will be refunded and its seat will be released. The rest of booking ${booking?.referenceNumber || ''} will remain active. ` +
+      `Cannot be undone. Proceed?`
+    );
+    if (!proceed) return;
+
+    const result = await refundAdminBookingItem(token, item.id);
+    if (result.ok) {
+      window.alert(
+        `Ticket refund successful (${result.action || 'completed'}).` +
+        (result.amountFormatted ? ` Amount: ${result.amountFormatted}.` : '') +
+        (result.seatsReleased ? ` ${result.seatsReleased} seat released.` : '')
+      );
+      loadBookings(reportSession);
+      loadTransactions(transactionFilters);
+      loadBookingSales();
+      loadDailySales(dailySalesDate, dailySalesSearch);
+      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
+      if (soldModal?.session?.id) {
+        fetchAdminBookings(token, soldModal.session.id).then(data => {
+          setSoldModal({ session: soldModal.session, bookings: data });
+        });
+      }
+    } else {
+      window.alert('Ticket refund failed: ' + (result.error || 'Unknown error'));
+    }
+  };
+
   const handleExport = () => {
     const url = getExportUrl(token, reportSession);
     // Need to add auth header for download — open in iframe or use fetch+blob
@@ -961,6 +992,7 @@ export default function AdminDashboard() {
     handleCancelBooking,
     handleClearTestBookings,
     handleRefundBooking,
+    handleRefundBookingItem,
     handleExport,
     bulkDateFrom,
     setBulkDateFrom,

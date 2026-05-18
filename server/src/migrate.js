@@ -304,7 +304,14 @@ async function migrate() {
   console.log('Running per-attendee ticket reference migration...');
   try { exec('ALTER TABLE booking_items ADD COLUMN reference_number TEXT'); } catch(e) {}
   try { exec('ALTER TABLE booking_items ADD COLUMN printed_at TEXT'); } catch(e) {}
+  try { exec("ALTER TABLE booking_items ADD COLUMN refund_status TEXT DEFAULT 'active'"); } catch(e) {}
+  try { exec('ALTER TABLE booking_items ADD COLUMN refunded_at TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE booking_items ADD COLUMN refund_transaction_id TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE booking_items ADD COLUMN refund_amount INTEGER DEFAULT 0'); } catch(e) {}
+  try { exec('ALTER TABLE booking_items ADD COLUMN refund_action TEXT'); } catch(e) {}
+  try { run("UPDATE booking_items SET refund_status = 'active' WHERE refund_status IS NULL OR refund_status = ''"); } catch(e) {}
   try { exec('CREATE UNIQUE INDEX idx_booking_items_reference ON booking_items(reference_number)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_booking_items_refund_status ON booking_items(refund_status)'); } catch(e) {}
 
   // --- Customer email on bookings (for confirmation emails) ---
   console.log('Running booking email migration...');
