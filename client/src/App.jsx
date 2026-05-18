@@ -302,6 +302,19 @@ export default function App() {
   const vacantCount = seats.filter(seat => seat.status === 'vacant' && !seat.is_disabled).length;
   const soldCount = seats.filter(seat => seat.status === 'sold').length;
   const heldCount = seats.filter(seat => seat.status === 'held').length;
+  const selectedSessionType = selectedSession?.session_type || (selectedSession?.is_special_event ? 'special_bingo' : 'regular_bingo');
+  const isSelectedSpecialBingo = selectedSessionType === 'special_bingo';
+  const isSelectedEvent = selectedSessionType === 'event';
+  const availableLegendColor = isSelectedEvent
+    ? 'bg-blue-600/80 ring-1 ring-blue-300/80'
+    : isSelectedSpecialBingo
+      ? 'bg-brand-gold/90 ring-1 ring-amber-200'
+      : 'bg-green-500/80';
+  const partialLegendColor = isSelectedEvent
+    ? 'bg-blue-900/70 ring-1 ring-blue-400/80'
+    : isSelectedSpecialBingo
+      ? 'bg-amber-700/70 ring-1 ring-amber-300/80'
+      : 'bg-amber-500/80';
 
   const getTableStatus = (tableNum) => {
     const chairs = tableMap[tableNum] || [];
@@ -380,8 +393,8 @@ export default function App() {
 
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-4 text-sm">
-            <LegendItem color={selectedSession?.is_special_event ? 'bg-green-600/70 ring-1 ring-amber-700' : 'bg-green-500/80'} label="Available" />
-            <LegendItem color={selectedSession?.is_special_event ? 'bg-amber-700/60 ring-1 ring-amber-700' : 'bg-amber-500/80'} label="Partial" />
+            <LegendItem color={availableLegendColor} label="Available" />
+            <LegendItem color={partialLegendColor} label="Partial" />
             <LegendItem color="bg-blue-500/80" label="Your Pick" />
             <LegendItem color="bg-gray-500/80" label="Full" />
           </div>

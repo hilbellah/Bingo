@@ -17,7 +17,9 @@ export default function FloorPlan({
   onChairClick,
   selectedSession
 }) {
-  const isSpecial = !!selectedSession?.is_special_event;
+  const sessionType = selectedSession?.session_type || (selectedSession?.is_special_event ? 'special_bingo' : 'regular_bingo');
+  const isSpecialBingo = sessionType === 'special_bingo';
+  const isEvent = sessionType === 'event';
   const tableProps = {
     tableMap,
     getTableStatus,
@@ -26,14 +28,14 @@ export default function FloorPlan({
     onChairClick,
     openTable,
     onOpenTable,
-    isSpecial
+    sessionType
   };
 
   return (
     <div className="seat-map-container" onClick={() => onOpenTable(null)}>
       <div className="floorplan-room" onClick={e => e.stopPropagation()}>
         {selectedSession && (
-          <SessionDateBanner selectedSession={selectedSession} isSpecial={isSpecial} placement="top" />
+          <SessionDateBanner selectedSession={selectedSession} isSpecialBingo={isSpecialBingo} isEvent={isEvent} placement="top" />
         )}
 
         <div className="floorplan-front-wall">
@@ -115,24 +117,30 @@ export default function FloorPlan({
         </div>
 
         {selectedSession && (
-          <SessionDateBanner selectedSession={selectedSession} isSpecial={isSpecial} placement="bottom" />
+          <SessionDateBanner selectedSession={selectedSession} isSpecialBingo={isSpecialBingo} isEvent={isEvent} placement="bottom" />
         )}
       </div>
     </div>
   );
 }
 
-function SessionDateBanner({ selectedSession, isSpecial, placement }) {
+function SessionDateBanner({ selectedSession, isSpecialBingo, isEvent, placement }) {
   const isTop = placement === 'top';
+  const isFeatured = isSpecialBingo || isEvent;
+  const bannerClass = isEvent
+    ? 'bg-blue-900/30 border border-blue-500/50'
+    : isSpecialBingo
+      ? 'bg-brand-gold/15 border border-brand-gold/45'
+      : isTop
+        ? 'bg-brand-gold/15 border border-brand-gold/45'
+        : 'bg-white/5 border border-white/10';
+  const titleBadgeClass = isEvent
+    ? 'bg-blue-600 text-white'
+    : 'bg-brand-gold text-brand-blue';
+  const featuredLabel = isEvent ? 'Live Event / Venue' : 'Special Bingo';
 
   return (
-    <div className={`${isTop ? 'mx-3 mt-3 mb-2 px-4 py-3' : 'mt-4 px-4 py-2.5'} rounded-lg flex flex-wrap items-center justify-center gap-2.5 ${
-      isSpecial
-        ? 'bg-blue-900/30 border border-blue-500/50'
-        : isTop
-          ? 'bg-brand-gold/15 border border-brand-gold/45'
-          : 'bg-white/5 border border-white/10'
-    }`}>
+    <div className={`${isTop ? 'mx-3 mt-3 mb-2 px-4 py-3' : 'mt-4 px-4 py-2.5'} ${bannerClass} rounded-lg flex flex-wrap items-center justify-center gap-2.5`}>
       <svg className={`${isTop ? 'w-5 h-5' : 'w-4 h-4'} text-brand-gold/80 flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
         <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
       </svg>
@@ -144,9 +152,9 @@ function SessionDateBanner({ selectedSession, isSpecial, placement }) {
       <span className={`text-white font-bold ${isTop ? 'text-base sm:text-lg' : 'text-sm'}`}>
         {formatDateShort(selectedSession.date)} - {formatTime(selectedSession.time)}
       </span>
-      {isSpecial && selectedSession.event_title ? (
-        <span className="inline-flex items-center gap-1 bg-blue-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-full max-w-full">
-          &#9733; {selectedSession.event_title}
+      {isFeatured && selectedSession.event_title ? (
+        <span className={`inline-flex items-center gap-1 ${titleBadgeClass} text-xs font-bold px-2.5 py-0.5 rounded-full max-w-full`}>
+          &#9733; {featuredLabel}: {selectedSession.event_title}
         </span>
       ) : (
         <span className={`${isTop ? 'text-white/60' : 'text-white/40'} text-xs font-medium`}>
@@ -157,7 +165,7 @@ function SessionDateBanner({ selectedSession, isSpecial, placement }) {
   );
 }
 
-function TableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, getTableStatus, selectedSeats, holderId, onChairClick, openTable, onOpenTable, isSpecial }) {
+function TableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, getTableStatus, selectedSeats, holderId, onChairClick, openTable, onOpenTable, sessionType }) {
   return (
     <div style={{ gridColumn, gridRow, ...(marginTop ? { marginTop } : {}) }}>
       <TableButton
@@ -169,7 +177,7 @@ function TableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, getTabl
         onChairClick={onChairClick}
         isOpen={openTable === tableNum}
         onClick={onOpenTable}
-        isSpecial={isSpecial}
+        sessionType={sessionType}
       />
     </div>
   );
@@ -201,12 +209,14 @@ function InlineChair({ chair, holderId, selectedSeats, onChairClick }) {
   );
 }
 
-function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats, holderId, onChairClick, isSpecial }) {
+function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats, holderId, onChairClick, sessionType }) {
   if (status === 'empty' || !status) {
     return <div className="floorplan-cell-empty shrink-0" />;
   }
 
   const { hasMyChairs, allSold, allVacant, vacantChairs } = status;
+  const isSpecialBingo = sessionType === 'special_bingo';
+  const isEvent = sessionType === 'event';
 
   let bgClass, borderClass, textClass, extraClass = '';
   if (isOpen) {
@@ -215,11 +225,17 @@ function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats,
     bgClass = 'bg-blue-500/80'; borderClass = 'border-blue-400'; textClass = 'text-white';
   } else if (allSold) {
     bgClass = 'bg-gray-600/60'; borderClass = 'border-gray-500/50'; textClass = 'text-gray-400';
-  } else if (isSpecial && allVacant) {
-    bgClass = 'bg-green-600/70'; borderClass = 'border-amber-400'; textClass = 'text-white';
+  } else if (isEvent && allVacant) {
+    bgClass = 'bg-blue-600/75'; borderClass = 'border-blue-300/80'; textClass = 'text-white';
+    extraClass = 'table-btn-event shadow-md shadow-blue-500/20';
+  } else if (isEvent) {
+    bgClass = 'bg-blue-900/65'; borderClass = 'border-blue-400/80'; textClass = 'text-white';
+    extraClass = 'table-btn-event shadow-sm shadow-blue-500/20';
+  } else if (isSpecialBingo && allVacant) {
+    bgClass = 'bg-brand-gold/90'; borderClass = 'border-amber-200'; textClass = 'text-brand-blue';
     extraClass = 'table-btn-special shadow-md shadow-amber-500/20';
-  } else if (isSpecial) {
-    bgClass = 'bg-amber-700/50'; borderClass = 'border-amber-400/70'; textClass = 'text-white';
+  } else if (isSpecialBingo) {
+    bgClass = 'bg-amber-700/70'; borderClass = 'border-amber-300/80'; textClass = 'text-white';
     extraClass = 'table-btn-special shadow-sm shadow-amber-500/20';
   } else if (allVacant) {
     bgClass = 'bg-green-600/70'; borderClass = 'border-green-500/50'; textClass = 'text-white';
