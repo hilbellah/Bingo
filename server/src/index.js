@@ -249,6 +249,33 @@ function sessionTypeSql(alias = 's') {
   return `COALESCE(NULLIF(${alias}.session_type, ''), CASE WHEN ${alias}.is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END)`;
 }
 
+function archiveFinishedEvents() {
+  const today = formatLocalDate(new Date());
+  const finishedEvents = all(`
+    SELECT s.id, s.date, s.time, s.event_title
+    FROM sessions s
+    WHERE s.deleted_at IS NULL
+      AND ${sessionTypeSql('s')} = 'event'
+      AND s.date < ?
+  `, [today]);
+
+  if (finishedEvents.length === 0) return { archived: 0 };
+
+  const archivedAt = new Date().toISOString();
+  for (const event of finishedEvents) {
+    run('UPDATE sessions SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', [archivedAt, event.id]);
+    logAudit('session_auto_archived', 'session', event.id, {
+      date: event.date,
+      time: event.time,
+      event_title: event.event_title,
+      reason: 'finished_live_event_venue',
+    });
+  }
+  saveDb();
+  logger.info('Auto-archived finished live events / venues', { count: finishedEvents.length });
+  return { archived: finishedEvents.length };
+}
+
 function validateEventPackageDrafts(pkgs = []) {
   const normalized = normalizePackageDrafts(pkgs);
   const required = normalized.filter(pkg => pkg.type === 'required');
@@ -1033,6 +1060,7 @@ async function sendBookingConfirmationEmail(bookingId) {
 
 // --- Sessions ---
 app.get('/api/sessions', (req, res) => {
+  archiveFinishedEvents();
   const today = formatLocalDate(new Date());
   const sessions = all(
     `SELECT s.*,
@@ -2395,6 +2423,7 @@ app.get('/api/admin/customers/export', adminAuth, (req, res) => {
 });
 
 app.get('/api/admin/sessions', adminAuth, (req, res) => {
+  archiveFinishedEvents();
   const includeDeleted = req.query.includeDeleted === 'true';
   const where = includeDeleted ? '' : 'WHERE deleted_at IS NULL';
   res.json(all(`SELECT * FROM sessions ${where} ORDER BY date ASC, time ASC`));
@@ -2910,6 +2939,7 @@ app.post('/api/admin/bookings/:id/refund', adminAuth, async (req, res) => {
 // ============ ADMIN: DELETED SESSIONS & AUDIT LOG ============
 
 app.get('/api/admin/sessions/deleted', adminAuth, (req, res) => {
+  archiveFinishedEvents();
   const sessions = all(`
     SELECT s.*,
       (SELECT COUNT(*) FROM bookings WHERE session_id = s.id AND payment_status = 'paid') as paid_bookings,
@@ -3515,7 +3545,8 @@ async function start() {
   // gap from downtime, then hourly to keep the rolling window full.
   openWeeklySessions();
   ensureFutureSessions();
-  setInterval(() => { openWeeklySessions(); ensureFutureSessions(); }, 60 * 60 * 1000);
+  archiveFinishedEvents();
+  setInterval(() => { openWeeklySessions(); ensureFutureSessions(); archiveFinishedEvents(); }, 60 * 60 * 1000);
 
   // Release expired holds every 30 seconds
   setInterval(() => releaseExpiredHolds(io), 30000);
