@@ -299,7 +299,10 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
 
   const html = renderBookingHtml({ booking, session, attendees, seats, packages, siteUrl });
   const text = renderBookingText({ booking, session, attendees, seats, packages, siteUrl });
-  const subject = `Your Bingo Booking — ${booking.referenceNumber}`;
+  const subjectDate = formatDateLong(session?.date);
+  const subject = ['Your Bingo Booking', subjectDate, booking.referenceNumber]
+    .filter(Boolean)
+    .join(' - ');
 
   // Decide provider: Gmail SMTP if creds are present, else Resend, else no-op.
   const transporter = getGmailTransporter();
