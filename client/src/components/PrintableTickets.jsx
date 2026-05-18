@@ -88,7 +88,7 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
 function EventTicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTitle }) {
   return (
     <div className="event-ticket-card">
-      <div className="event-ticket-title">{eventTitle || 'Event'}</div>
+      <div className="event-ticket-title">{eventTitle || 'Live Event / Venue'}</div>
       <div className="event-ticket-name">{ticket.firstName} {ticket.lastName}</div>
       <div className="event-ticket-row">
         <span>Table {ticket.tableNumber}</span>

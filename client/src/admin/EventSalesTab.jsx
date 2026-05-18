@@ -31,7 +31,7 @@ export default function EventSalesTab() {
 
   const eventSessions = sessions.filter(session => session.session_type === 'event');
   const eventSales = bookingSales.filter(sale => sale.sessionType === 'event');
-  const eventPackage = newEvent.packages[0] || { name: 'Event Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false };
+  const eventPackage = newEvent.packages[0] || { name: 'Live Event / Venue Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false };
 
   const updatePackage = (patch) => {
     setNewEvent({
@@ -43,13 +43,13 @@ export default function EventSalesTab() {
   return (
     <div>
       <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-        <h3 className="font-semibold text-brand-blue mb-3">Create Event</h3>
+        <h3 className="font-semibold text-brand-blue mb-3">Create Live Event / Venue</h3>
         <p className="text-sm text-gray-500 mb-4">
           Concerts and shows use one set admission price, no add-ons, advance sales, and 6-up template printing.
         </p>
         <div className="grid md:grid-cols-4 gap-3">
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Event Name</label>
+            <label className="block text-xs text-gray-400 mb-1">Live Event / Venue Name</label>
             <input
               value={newEvent.event_title}
               onChange={e => setNewEvent({ ...newEvent, event_title: e.target.value })}
@@ -92,7 +92,7 @@ export default function EventSalesTab() {
               value={eventPackage.name}
               onChange={e => updatePackage({ name: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg text-sm"
-              placeholder="Event Admission"
+              placeholder="Live Event / Venue Admission"
             />
           </div>
           <div>
@@ -115,7 +115,7 @@ export default function EventSalesTab() {
               disabled={!newEvent.date || !newEvent.event_title || !eventPackage.price}
               className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90 disabled:opacity-40"
             >
-              Add Event
+              Add Live Event / Venue
             </button>
           </div>
         </div>
@@ -123,15 +123,15 @@ export default function EventSalesTab() {
 
       <div className="grid xl:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl p-5 shadow-sm">
-          <h3 className="font-semibold text-brand-blue mb-3">Event Sessions</h3>
+          <h3 className="font-semibold text-brand-blue mb-3">Live Event / Venue Sessions</h3>
           {eventSessions.length === 0 ? (
-            <p className="text-gray-400 text-sm py-6 text-center">No events created yet.</p>
+            <p className="text-gray-400 text-sm py-6 text-center">No live events or venues created yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-gray-400 border-b">
-                    <th className="pb-2">Event</th>
+                    <th className="pb-2">Live Event / Venue</th>
                     <th className="pb-2">Date</th>
                     <th className="pb-2">Time</th>
                     <th className="pb-2">Status</th>
@@ -141,7 +141,7 @@ export default function EventSalesTab() {
                 <tbody>
                   {eventSessions.map(session => (
                     <tr key={session.id} className="border-b border-gray-50">
-                      <td className="py-2 font-medium text-gray-800">{session.event_title || 'Event'}</td>
+                      <td className="py-2 font-medium text-gray-800">{session.event_title || 'Live Event / Venue'}</td>
                       <td className="py-2">{session.date}</td>
                       <td className="py-2">{session.time}</td>
                       <td className="py-2">
@@ -166,14 +166,14 @@ export default function EventSalesTab() {
         </div>
 
         <div className="bg-white rounded-xl p-5 shadow-sm">
-          <h3 className="font-semibold text-brand-blue mb-3">Event Sales</h3>
+          <h3 className="font-semibold text-brand-blue mb-3">Live Event / Venue Sales</h3>
           {eventSales.length === 0 ? (
-            <p className="text-gray-400 text-sm py-6 text-center">No event sales yet.</p>
+            <p className="text-gray-400 text-sm py-6 text-center">No live event or venue sales yet.</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-400 border-b">
-                  <th className="pb-2">Event</th>
+                  <th className="pb-2">Live Event / Venue</th>
                   <th className="pb-2 text-center">Tickets</th>
                   <th className="pb-2 text-right">Amount</th>
                 </tr>
@@ -208,10 +208,10 @@ export default function EventSalesTab() {
       {editingSession && (editingSession.session_type === 'event') && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-6 max-w-lg w-full">
-            <h3 className="font-semibold text-brand-blue mb-4">Edit Event</h3>
+            <h3 className="font-semibold text-brand-blue mb-4">Edit Live Event / Venue</h3>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Event Name</label>
+                <label className="block text-xs text-gray-500 mb-1">Live Event / Venue Name</label>
                 <input
                   value={editForm.event_title}
                   onChange={e => setEditForm({ ...editForm, event_title: e.target.value })}
@@ -256,8 +256,8 @@ export default function EventSalesTab() {
       {editingSessionPkgs && sessions.find(session => session.id === editingSessionPkgs)?.session_type === 'event' && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-6 max-w-md w-full">
-            <h3 className="font-semibold text-brand-blue mb-4">Edit Event Price</h3>
-            {(sessionPkgList.length ? sessionPkgList : [{ name: 'Event Admission', price: 0 }]).slice(0, 1).map((pkg, i) => (
+            <h3 className="font-semibold text-brand-blue mb-4">Edit Live Event / Venue Price</h3>
+            {(sessionPkgList.length ? sessionPkgList : [{ name: 'Live Event / Venue Admission', price: 0 }]).slice(0, 1).map((pkg, i) => (
               <div key={i} className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Ticket Name</label>

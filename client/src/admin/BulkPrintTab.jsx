@@ -56,7 +56,7 @@ export default function BulkPrintTab() {
   const printedCount = allTickets.filter(ticket => ticket.printedAt).length;
   const unprintedCount = allTickets.length - printedCount;
   const isEventPrint = bulkDepartment === 'event';
-  const departmentLabel = isEventPrint ? 'Event' : 'Special Bingo';
+  const departmentLabel = isEventPrint ? 'Live Event / Venue' : 'Special Bingo';
 
   useEffect(() => {
     const defaultTickets = allTickets.filter(ticket => !ticket.printedAt);
@@ -105,7 +105,7 @@ export default function BulkPrintTab() {
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4 no-print">
               <h3 className="font-semibold text-brand-blue mb-3">{departmentLabel} Template Tickets</h3>
               <p className="text-sm text-gray-500 mb-4">
-                Select a date or date range to load template tickets. Special bingo prints 3 per sheet; events print 6 per sheet. Regular bingo orders print on receipt paper and are not included here.
+                Select a date or date range to load template tickets. Special bingo prints 3 per sheet; live events / venues print 6 per sheet. Regular bingo orders print on receipt paper and are not included here.
               </p>
               <div className="flex flex-wrap gap-3 items-end">
                 <div>
@@ -119,7 +119,7 @@ export default function BulkPrintTab() {
                     className="px-3 py-2 border rounded-lg text-sm"
                   >
                     <option value="special_bingo">Special Bingo</option>
-                    <option value="event">Events</option>
+                    <option value="event">Live Event / Venue</option>
                   </select>
                 </div>
                 <div>

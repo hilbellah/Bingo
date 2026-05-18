@@ -31,7 +31,7 @@ export default function ArchiveAuditTab() {
                     <tr className="text-left text-gray-400 text-xs uppercase">
                       <th className="pb-2">Date</th>
                       <th className="pb-2">Time</th>
-                      <th className="pb-2">Event</th>
+                      <th className="pb-2">Live Event / Venue</th>
                       <th className="pb-2">Paid Bookings</th>
                       <th className="pb-2">Revenue</th>
                       <th className="pb-2">Deleted At</th>

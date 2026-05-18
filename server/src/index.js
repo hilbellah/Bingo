@@ -255,11 +255,11 @@ function validateEventPackageDrafts(pkgs = []) {
   const optional = normalized.filter(pkg => pkg.type === 'optional');
 
   if (required.length !== 1) {
-    return { ok: false, error: 'Events require exactly one per-person admission package with a price.' };
+    return { ok: false, error: 'Live Event / Venue requires exactly one per-person admission package with a price.' };
   }
 
   if (optional.length > 0) {
-    return { ok: false, error: 'Events do not allow add-ons.' };
+    return { ok: false, error: 'Live Event / Venue does not allow add-ons.' };
   }
 
   return { ok: true, packages: normalized };
@@ -430,7 +430,7 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
   if (!session) return { ok: false, statusCode: 404, error: 'Session not found' };
   const currentSessionType = normalizeSessionType(session.session_type, session.is_special_event);
   if (currentSessionType === 'event' && attendees.some(att => (att.addons || []).some(addon => addon.quantity > 0))) {
-    return { ok: false, statusCode: 400, error: 'Events do not allow add-ons.' };
+    return { ok: false, statusCode: 400, error: 'Live Event / Venue does not allow add-ons.' };
   }
 
   // Session-specific packages override the global package list when present.

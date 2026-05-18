@@ -113,7 +113,7 @@ export default function InventoryTab() {
                       <tr className="border-b-2 border-gray-100">
                         <th className="text-left py-2 px-3 text-gray-500">Date</th>
                         <th className="text-left py-2 px-3 text-gray-500">Time</th>
-                        <th className="text-left py-2 px-3 text-gray-500">Event</th>
+                        <th className="text-left py-2 px-3 text-gray-500">Live Event / Venue</th>
                         <th className="text-right py-2 px-3 text-gray-500">PHDs Used</th>
                       </tr>
                     </thead>

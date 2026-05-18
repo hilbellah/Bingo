@@ -50,7 +50,7 @@ function defaultSpecialEventPackages(config = DEFAULT_SPECIAL_BINGO_CONFIG) {
 
 function defaultEventPackages() {
   return [
-    { name: 'Event Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false },
+    { name: 'Live Event / Venue Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false },
   ];
 }
 
@@ -492,7 +492,7 @@ export default function AdminDashboard() {
         `Time: ${formatTime(payload.time)}\n` +
         `Sales cutoff: ${formatTime(payload.cutoff_time)}\n` +
         `Packages: ${packageSummary(payload.packages) || 'No packages configured'}\n\n` +
-        `This will make the event available for booking.`
+        `This will make the special bingo event available for booking.`
       );
       if (!proceed) return;
     }
@@ -549,7 +549,9 @@ export default function AdminDashboard() {
     const sessionType = session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
     const fallbackPkgs = sessionType === 'special_bingo'
       ? defaultSpecialEventPackages(specialBingoConfig)
-      : [{ name: '', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false }];
+      : sessionType === 'event'
+        ? defaultEventPackages()
+        : [{ name: '', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false }];
     setSessionPkgList(pkgs.length > 0 ? pkgs : [
       ...fallbackPkgs
     ]);
@@ -739,13 +741,13 @@ export default function AdminDashboard() {
       is_special_event: true,
     };
     const proceed = window.confirm(
-      `Create this event?\n\n` +
-      `Event: ${payload.event_title}\n` +
+      `Create this live event / venue?\n\n` +
+      `Live Event / Venue: ${payload.event_title}\n` +
       `Date: ${formatDateShort(payload.date)}\n` +
       `Time: ${formatTime(payload.time)}\n` +
       `Sales cutoff: ${formatTime(payload.cutoff_time)}\n` +
       `Ticket: ${packageSummary(payload.packages) || 'No ticket price configured'}\n\n` +
-      `This will make the event available for booking.`
+      `This will make the live event / venue available for booking.`
     );
     if (!proceed) return;
 
@@ -755,7 +757,7 @@ export default function AdminDashboard() {
       loadSessions();
       loadBookingSales();
     } catch (err) {
-      alert('Failed to create event: ' + (err?.message || 'Unknown error. Please try again.'));
+      alert('Failed to create live event / venue: ' + (err?.message || 'Unknown error. Please try again.'));
     }
   };
 

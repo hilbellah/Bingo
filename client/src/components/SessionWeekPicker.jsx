@@ -56,7 +56,7 @@ export default function SessionWeekPicker({
           const isEvent = sessionType === 'event';
           const isSpecialBingo = sessionType === 'special_bingo';
           const isFeatured = isSpecialBingo || isEvent;
-          const label = isEvent ? 'Event' : 'Special Bingo';
+          const label = isEvent ? 'Live Event / Venue' : 'Special Bingo';
           const theme = isEvent
             ? {
                 badge: 'bg-sky-500 text-white',

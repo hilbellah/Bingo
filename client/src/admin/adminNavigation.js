@@ -19,7 +19,7 @@ export const ADMIN_TABS = [
     children: [
       { id: 'sessions', label: 'Calendar', icon: '📋' },
       { id: 'recurring', label: 'Recurring', icon: '🔁' },
-      { id: 'events', label: 'Events', icon: '🎟' },
+      { id: 'events', label: 'Live Event / Venue', icon: '🎟' },
     ],
   },
   {
