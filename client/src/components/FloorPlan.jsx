@@ -32,6 +32,10 @@ export default function FloorPlan({
   return (
     <div className="seat-map-container" onClick={() => onOpenTable(null)}>
       <div className="floorplan-room" onClick={e => e.stopPropagation()}>
+        {selectedSession && (
+          <SessionDateBanner selectedSession={selectedSession} isSpecial={isSpecial} placement="top" />
+        )}
+
         <div className="floorplan-front-wall">
           <div className="floorplan-stage-label">
             <svg className="w-4 h-4 text-brand-gold/60 inline-block mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
@@ -111,27 +115,44 @@ export default function FloorPlan({
         </div>
 
         {selectedSession && (
-          <div className={`mt-4 rounded-lg px-4 py-2.5 flex items-center justify-center gap-3 ${
-            isSpecial
-              ? 'bg-amber-900/20 border border-amber-700/40'
-              : 'bg-white/5 border border-white/10'
-          }`}>
-            <svg className="w-4 h-4 text-brand-gold/70 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-            </svg>
-            <span className="text-white font-bold text-sm">
-              {formatDateShort(selectedSession.date)} - {formatTime(selectedSession.time)}
-            </span>
-            {isSpecial && selectedSession.event_title ? (
-              <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">
-                &#9733; {selectedSession.event_title}
-              </span>
-            ) : (
-              <span className="text-white/40 text-xs font-medium">Regular Bingo Night</span>
-            )}
-          </div>
+          <SessionDateBanner selectedSession={selectedSession} isSpecial={isSpecial} placement="bottom" />
         )}
       </div>
+    </div>
+  );
+}
+
+function SessionDateBanner({ selectedSession, isSpecial, placement }) {
+  const isTop = placement === 'top';
+
+  return (
+    <div className={`${isTop ? 'mx-3 mt-3 mb-2 px-4 py-3' : 'mt-4 px-4 py-2.5'} rounded-lg flex flex-wrap items-center justify-center gap-2.5 ${
+      isSpecial
+        ? 'bg-amber-900/30 border border-amber-600/50'
+        : isTop
+          ? 'bg-brand-gold/15 border border-brand-gold/45'
+          : 'bg-white/5 border border-white/10'
+    }`}>
+      <svg className={`${isTop ? 'w-5 h-5' : 'w-4 h-4'} text-brand-gold/80 flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+      </svg>
+      {isTop && (
+        <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-brand-gold/90">
+          Bingo Game
+        </span>
+      )}
+      <span className={`text-white font-bold ${isTop ? 'text-base sm:text-lg' : 'text-sm'}`}>
+        {formatDateShort(selectedSession.date)} - {formatTime(selectedSession.time)}
+      </span>
+      {isSpecial && selectedSession.event_title ? (
+        <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full max-w-full">
+          &#9733; {selectedSession.event_title}
+        </span>
+      ) : (
+        <span className={`${isTop ? 'text-white/60' : 'text-white/40'} text-xs font-medium`}>
+          Regular Bingo Night
+        </span>
+      )}
     </div>
   );
 }
