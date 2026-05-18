@@ -9,7 +9,7 @@ import {
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
   fetchDeletedSessions, restoreSession, fetchSessionBookings, fetchAuditLog,
-  fetchBookingSales, fetchDailySales,
+  fetchBookingSales, fetchDailySales, fetchAdminTransactions,
   fetchAdminCustomers, getCustomersExportUrl,
   fetchSettings, saveSettings,
   uploadImage,
@@ -94,6 +94,8 @@ export default function AdminDashboard() {
   const [dailySales, setDailySales] = useState(null);
   const [dailySalesDate, setDailySalesDate] = useState(new Date().toISOString().split('T')[0]);
   const [dailySalesSearch, setDailySalesSearch] = useState('');
+  const [transactions, setTransactions] = useState({ items: [], summary: null, filters: {} });
+  const [transactionFilters, setTransactionFilters] = useState({ dateFrom: '', dateTo: '', status: 'all', search: '' });
   const [dashboardDateFrom, setDashboardDateFrom] = useState(new Date().toISOString().split('T')[0]);
   const [dashboardDateTo, setDashboardDateTo] = useState(new Date().toISOString().split('T')[0]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -161,13 +163,14 @@ export default function AdminDashboard() {
   const loadAuditLogs = () => fetchAuditLog(token, { limit: 50 }).then(setAuditLogs);
   const loadBookingSales = () => fetchBookingSales(token).then(setBookingSales);
   const loadDailySales = (date, search) => fetchDailySales(token, date, search).then(setDailySales);
+  const loadTransactions = (filters = transactionFilters) => fetchAdminTransactions(token, filters).then(setTransactions);
   const loadCustomers = (search) => fetchAdminCustomers(token, search ?? customerSearch).then(setCustomers);
 
   useEffect(() => {
     if (tab === 'sessions') loadSessions();
     if (tab === 'events') { loadSessions(); loadBookingSales(); }
     if (tab === 'packages') loadPackages();
-    if (tab === 'bookings') { loadBookingSales(); loadDailySales(dailySalesDate); }
+    if (tab === 'bookings') { loadBookingSales(); loadDailySales(dailySalesDate); loadTransactions(transactionFilters); }
     if (tab === 'customers') loadCustomers();
     if (tab === 'dashboard') loadDashboard();
     if (tab === 'announcements') loadAnnouncements();
@@ -781,6 +784,7 @@ export default function AdminDashboard() {
     );
     loadBookingSales();
     loadDailySales(dailySalesDate, dailySalesSearch);
+    loadTransactions(transactionFilters);
     loadBookings(reportSession);
     loadDashboard(dashboardDateFrom, dashboardDateTo);
     loadPhdInventory();
@@ -804,6 +808,9 @@ export default function AdminDashboard() {
         (result.seatsReleased ? ` ${result.seatsReleased} seat(s) released.` : '')
       );
       loadBookings(reportSession);
+      loadTransactions(transactionFilters);
+      loadBookingSales();
+      loadDailySales(dailySalesDate, dailySalesSearch);
     } else {
       window.alert('Refund failed: ' + (result.error || 'Unknown error'));
     }
@@ -940,6 +947,10 @@ export default function AdminDashboard() {
     dailySalesDate,
     setDailySalesDate,
     dailySales,
+    transactions,
+    transactionFilters,
+    setTransactionFilters,
+    loadTransactions,
     handlePrintDailySalesReceipt,
     bookingSearch,
     setBookingSearch,

@@ -219,6 +219,17 @@ export async function fetchDailySales(token, date, search) {
   return res.json();
 }
 
+export async function fetchAdminTransactions(token, filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+  if (filters.dateTo) params.set('dateTo', filters.dateTo);
+  if (filters.status && filters.status !== 'all') params.set('status', filters.status);
+  if (filters.search) params.set('search', filters.search);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API}/admin/transactions${qs}`, { headers: adminHeaders(token) });
+  return res.json();
+}
+
 export async function fetchBookingSales(token) {
   const res = await fetch(`${API}/admin/booking-sales`, { headers: adminHeaders(token) });
   return res.json();

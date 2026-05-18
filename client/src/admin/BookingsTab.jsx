@@ -14,11 +14,39 @@ export default function BookingsTab() {
     dailySalesDate,
     setDailySalesDate,
     dailySales,
+    transactions,
+    transactionFilters,
+    setTransactionFilters,
+    loadTransactions,
     handlePrintDailySalesReceipt,
     handleClearTestBookings,
     bookings,
   } = useAdminDashboard();
   const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
+  const transactionRows = transactions?.items || [];
+  const transactionSummary = transactions?.summary || {};
+  const updateTransactionFilter = (key, value) => {
+    const next = { ...transactionFilters, [key]: value };
+    setTransactionFilters(next);
+    loadTransactions(next);
+  };
+  const resetTransactionFilters = () => {
+    const next = { dateFrom: '', dateTo: '', status: 'all', search: '' };
+    setTransactionFilters(next);
+    loadTransactions(next);
+  };
+  const formatTransactionDate = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  };
+  const statusClass = (status) => {
+    if (status === 'paid') return 'bg-green-100 text-green-700';
+    if (status === 'refunded' || status === 'voided') return 'bg-red-100 text-red-700';
+    if (status === 'pending') return 'bg-amber-100 text-amber-700';
+    return 'bg-gray-100 text-gray-600';
+  };
 
   return (
     <>
@@ -92,6 +120,125 @@ export default function BookingsTab() {
                     </table>
                   </div>
                 </>
+              )}
+            </div>
+
+            {/* Transactions Summary */}
+            <div className="bg-white rounded-xl p-5 shadow-sm mt-4">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <h3 className="font-semibold text-brand-blue">Transactions</h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="text"
+                    placeholder="Search ref, name, email..."
+                    value={transactionFilters.search}
+                    onChange={e => updateTransactionFilter('search', e.target.value)}
+                    className="px-3 py-1.5 border rounded-lg text-sm w-56"
+                  />
+                  <input
+                    type="date"
+                    value={transactionFilters.dateFrom}
+                    onChange={e => updateTransactionFilter('dateFrom', e.target.value)}
+                    className="px-3 py-1.5 border rounded-lg text-sm"
+                    title="From date"
+                  />
+                  <input
+                    type="date"
+                    value={transactionFilters.dateTo}
+                    onChange={e => updateTransactionFilter('dateTo', e.target.value)}
+                    className="px-3 py-1.5 border rounded-lg text-sm"
+                    title="To date"
+                  />
+                  <select
+                    value={transactionFilters.status}
+                    onChange={e => updateTransactionFilter('status', e.target.value)}
+                    className="px-3 py-1.5 border rounded-lg text-sm"
+                  >
+                    <option value="all">All statuses</option>
+                    <option value="paid">Paid</option>
+                    <option value="refunds">Refunds / Voids</option>
+                    <option value="refunded">Refunded</option>
+                    <option value="voided">Voided</option>
+                    <option value="pending">Pending</option>
+                    <option value="failed">Failed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={resetTransactionFilters}
+                    className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+                <div className="border rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Gross Sales</p>
+                  <p className="font-bold text-gray-900">{transactionSummary.grossSalesFormatted || '$0.00'}</p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Refunds / Voids</p>
+                  <p className="font-bold text-red-600">{transactionSummary.refundsFormatted || '$0.00'}</p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Net Total</p>
+                  <p className="font-bold text-brand-gold">{transactionSummary.netTotalFormatted || '$0.00'}</p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Transactions</p>
+                  <p className="font-bold text-brand-blue">{transactionSummary.totalTransactions || 0}</p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Pending / Failed</p>
+                  <p className="font-bold text-gray-700">{(transactionSummary.pendingCount || 0) + (transactionSummary.failedCount || 0)}</p>
+                </div>
+              </div>
+
+              {transactionRows.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">No transactions found</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-400 border-b">
+                        <th className="pb-2 pl-2">Date</th>
+                        <th className="pb-2">Reference</th>
+                        <th className="pb-2">Customer</th>
+                        <th className="pb-2">Session</th>
+                        <th className="pb-2">Status</th>
+                        <th className="pb-2">Transaction ID</th>
+                        <th className="pb-2 text-right pr-2">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactionRows.map(item => (
+                        <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                          <td className="py-2.5 pl-2 text-gray-500 text-xs whitespace-nowrap">{formatTransactionDate(item.transactionAt)}</td>
+                          <td className="py-2.5 font-mono text-sm font-medium text-brand-blue">{item.referenceNumber}</td>
+                          <td className="py-2.5">
+                            <div className="font-medium text-gray-800">{item.customerName}</div>
+                            <div className="text-xs text-gray-400">{item.email}</div>
+                          </td>
+                          <td className="py-2.5 text-gray-600 text-xs">
+                            <div className="font-medium text-gray-700">{item.description}</div>
+                            <div>{item.sessionDate} {item.sessionTime}</div>
+                          </td>
+                          <td className="py-2.5">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${statusClass(item.status)}`}>
+                              {item.transactionType}
+                            </span>
+                          </td>
+                          <td className="py-2.5 font-mono text-xs text-gray-500">{item.transactionId || '-'}</td>
+                          <td className={`py-2.5 text-right pr-2 font-semibold ${item.amountEffect < 0 ? 'text-red-600' : item.amountEffect > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
+                            {item.amountEffectFormatted}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
 

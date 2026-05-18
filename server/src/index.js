@@ -2120,6 +2120,166 @@ app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
   });
 });
 
+app.get('/api/admin/transactions', adminAuth, (req, res) => {
+  const status = String(req.query.status || 'all').trim().toLowerCase();
+  const dateFrom = String(req.query.dateFrom || '').trim();
+  const dateTo = String(req.query.dateTo || '').trim();
+  const search = String(req.query.search || '').trim().toLowerCase();
+
+  const where = [];
+  const params = [];
+
+  if (dateFrom) {
+    where.push('substr(transaction_at, 1, 10) >= ?');
+    params.push(dateFrom);
+  }
+  if (dateTo) {
+    where.push('substr(transaction_at, 1, 10) <= ?');
+    params.push(dateTo);
+  }
+  if (status && status !== 'all') {
+    if (status === 'refunds') {
+      where.push("payment_status IN ('refunded', 'voided')");
+    } else {
+      where.push('payment_status = ?');
+      params.push(status);
+    }
+  }
+  if (search) {
+    where.push(`(
+      LOWER(reference_number) LIKE ?
+      OR LOWER(COALESCE(email, '')) LIKE ?
+      OR LOWER(COALESCE(customer_first_name, '')) LIKE ?
+      OR LOWER(COALESCE(customer_last_name, '')) LIKE ?
+      OR LOWER(COALESCE(transaction_id, '')) LIKE ?
+      OR LOWER(COALESCE(event_title, '')) LIKE ?
+    )`);
+    const like = `%${search}%`;
+    params.push(like, like, like, like, like, like);
+  }
+
+  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const rows = all(`
+    WITH payment_event_rollup AS (
+      SELECT
+        booking_id,
+        MAX(created_at) as latest_event_at,
+        SUM(CASE WHEN event_type = 'refunded' THEN 1 ELSE 0 END) as refund_events,
+        SUM(CASE WHEN event_type = 'voided' THEN 1 ELSE 0 END) as void_events
+      FROM payment_events
+      GROUP BY booking_id
+    ),
+    transaction_rows AS (
+      SELECT
+        b.id,
+        b.reference_number,
+        b.total_amount,
+        b.payment_status,
+        b.created_at,
+        b.email,
+        b.customer_first_name,
+        b.customer_last_name,
+        b.transaction_id,
+        b.payment_completed_at,
+        s.date as session_date,
+        s.time as session_time,
+        s.is_special_event,
+        s.event_title,
+        ${sessionTypeSql('s')} as session_type,
+        COALESCE(per.latest_event_at, b.payment_completed_at, b.created_at) as transaction_at,
+        per.latest_event_at,
+        per.refund_events,
+        per.void_events,
+        (
+          SELECT pe.event_type
+          FROM payment_events pe
+          WHERE pe.booking_id = b.id
+          ORDER BY pe.created_at DESC
+          LIMIT 1
+        ) as latest_event_type
+      FROM bookings b
+      JOIN sessions s ON s.id = b.session_id
+      LEFT JOIN payment_event_rollup per ON per.booking_id = b.id
+    )
+    SELECT *
+    FROM transaction_rows
+    ${whereClause}
+    ORDER BY transaction_at DESC, created_at DESC
+    LIMIT 1000
+  `, params);
+
+  const paidStatuses = new Set(['paid', 'refunded', 'voided']);
+  const refundStatuses = new Set(['refunded', 'voided']);
+  const grossSales = rows.reduce((sum, row) => paidStatuses.has(row.payment_status) ? sum + row.total_amount : sum, 0);
+  const refunds = rows.reduce((sum, row) => refundStatuses.has(row.payment_status) ? sum + row.total_amount : sum, 0);
+  const pendingAmount = rows.reduce((sum, row) => row.payment_status === 'pending' ? sum + row.total_amount : sum, 0);
+  const failedAmount = rows.reduce((sum, row) => ['failed', 'cancelled'].includes(row.payment_status) ? sum + row.total_amount : sum, 0);
+
+  const statusCounts = rows.reduce((counts, row) => {
+    counts[row.payment_status] = (counts[row.payment_status] || 0) + 1;
+    return counts;
+  }, {});
+
+  const items = rows.map(row => {
+    const isRefund = refundStatuses.has(row.payment_status);
+    const isPaid = row.payment_status === 'paid';
+    const amountEffect = isRefund ? -row.total_amount : isPaid ? row.total_amount : 0;
+    const customerName = [row.customer_first_name, row.customer_last_name].filter(Boolean).join(' ');
+    const description = row.session_type === 'event' && row.event_title
+      ? row.event_title
+      : row.is_special_event && row.event_title
+        ? row.event_title
+        : `${row.session_date} - ${row.session_time}`;
+
+    return {
+      id: row.id,
+      referenceNumber: row.reference_number,
+      status: row.payment_status,
+      transactionType: isRefund ? (row.payment_status === 'voided' ? 'Void' : 'Refund') : isPaid ? 'Payment' : row.payment_status,
+      totalAmount: row.total_amount,
+      totalFormatted: '$' + formatPrice(row.total_amount),
+      amountEffect,
+      amountEffectFormatted: `${amountEffect < 0 ? '-' : ''}$${formatPrice(Math.abs(amountEffect))}`,
+      transactionAt: row.transaction_at,
+      createdAt: row.created_at,
+      paymentCompletedAt: row.payment_completed_at,
+      latestEventAt: row.latest_event_at,
+      latestEventType: row.latest_event_type,
+      transactionId: row.transaction_id,
+      email: row.email,
+      customerFirstName: row.customer_first_name,
+      customerLastName: row.customer_last_name,
+      customerName: customerName || row.email || '(no name)',
+      sessionDate: row.session_date,
+      sessionTime: row.session_time,
+      sessionType: row.session_type,
+      description,
+    };
+  });
+
+  res.json({
+    filters: { dateFrom, dateTo, status, search },
+    summary: {
+      totalTransactions: rows.length,
+      paidCount: statusCounts.paid || 0,
+      refundCount: (statusCounts.refunded || 0) + (statusCounts.voided || 0),
+      pendingCount: statusCounts.pending || 0,
+      failedCount: (statusCounts.failed || 0) + (statusCounts.cancelled || 0),
+      grossSales,
+      grossSalesFormatted: '$' + formatPrice(grossSales),
+      refunds,
+      refundsFormatted: '$' + formatPrice(refunds),
+      netTotal: grossSales - refunds,
+      netTotalFormatted: '$' + formatPrice(grossSales - refunds),
+      pendingAmount,
+      pendingAmountFormatted: '$' + formatPrice(pendingAmount),
+      failedAmount,
+      failedAmountFormatted: '$' + formatPrice(failedAmount),
+    },
+    items,
+  });
+});
+
 app.get('/api/admin/booking-sales', adminAuth, (req, res) => {
   const rows = all(`
     SELECT s.id, s.date, s.time, s.is_special_event, s.event_title, ${sessionTypeSql('s')} as session_type,
