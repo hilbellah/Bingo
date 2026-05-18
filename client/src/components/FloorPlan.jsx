@@ -128,7 +128,7 @@ function SessionDateBanner({ selectedSession, isSpecial, placement }) {
   return (
     <div className={`${isTop ? 'mx-3 mt-3 mb-2 px-4 py-3' : 'mt-4 px-4 py-2.5'} rounded-lg flex flex-wrap items-center justify-center gap-2.5 ${
       isSpecial
-        ? 'bg-amber-900/30 border border-amber-600/50'
+        ? 'bg-blue-900/30 border border-blue-500/50'
         : isTop
           ? 'bg-brand-gold/15 border border-brand-gold/45'
           : 'bg-white/5 border border-white/10'
@@ -145,7 +145,7 @@ function SessionDateBanner({ selectedSession, isSpecial, placement }) {
         {formatDateShort(selectedSession.date)} - {formatTime(selectedSession.time)}
       </span>
       {isSpecial && selectedSession.event_title ? (
-        <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full max-w-full">
+        <span className="inline-flex items-center gap-1 bg-blue-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-full max-w-full">
           &#9733; {selectedSession.event_title}
         </span>
       ) : (
