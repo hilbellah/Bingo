@@ -19,9 +19,17 @@ import {
 import { fetchSeats } from '../api';
 import AdminDashboardContent from './AdminDashboardContent';
 import AdminShell from './AdminShell';
+import { formatDateShort, formatTime } from '../utils/formatters';
 
 function formatPrice(cents) {
   return '$' + (cents / 100).toFixed(2);
+}
+
+function packageSummary(packages = []) {
+  return packages
+    .filter(pkg => pkg?.name)
+    .map(pkg => `${pkg.name} (${formatPrice(pkg.price || 0)})`)
+    .join(', ');
 }
 
 const DEFAULT_SPECIAL_BINGO_CONFIG = {
@@ -476,6 +484,18 @@ export default function AdminDashboard() {
   const handleCreateSession = async () => {
     if (!newSession.date) return;
     const payload = { ...newSession, session_type: newSession.is_special_event ? 'special_bingo' : 'regular_bingo' };
+    if (payload.is_special_event) {
+      const proceed = window.confirm(
+        `Create this special bingo event?\n\n` +
+        `Title: ${payload.event_title || 'Special Bingo'}\n` +
+        `Date: ${formatDateShort(payload.date)}\n` +
+        `Time: ${formatTime(payload.time)}\n` +
+        `Sales cutoff: ${formatTime(payload.cutoff_time)}\n` +
+        `Packages: ${packageSummary(payload.packages) || 'No packages configured'}\n\n` +
+        `This will make the event available for booking.`
+      );
+      if (!proceed) return;
+    }
     if (!payload.is_special_event) {
       delete payload.event_title;
       delete payload.event_description;
@@ -718,6 +738,17 @@ export default function AdminDashboard() {
       session_type: 'event',
       is_special_event: true,
     };
+    const proceed = window.confirm(
+      `Create this event?\n\n` +
+      `Event: ${payload.event_title}\n` +
+      `Date: ${formatDateShort(payload.date)}\n` +
+      `Time: ${formatTime(payload.time)}\n` +
+      `Sales cutoff: ${formatTime(payload.cutoff_time)}\n` +
+      `Ticket: ${packageSummary(payload.packages) || 'No ticket price configured'}\n\n` +
+      `This will make the event available for booking.`
+    );
+    if (!proceed) return;
+
     try {
       await createAdminSession(token, payload);
       setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
