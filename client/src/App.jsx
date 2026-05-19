@@ -395,8 +395,8 @@ export default function App() {
     <div className="min-h-screen flex flex-col">
       <header className="bg-brand-blue-dark border-b border-white/10 px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-brand-gold flex items-center justify-center">
-            <span className="text-white text-lg font-bold">B</span>
+          <div className="h-12 w-16 rounded-lg bg-white/95 p-1.5 shadow-sm flex items-center justify-center">
+            <img src="/logo.png" alt="Saint Mary's Entertainment Centre" className="max-h-full max-w-full object-contain" />
           </div>
           <div>
             <h1 className="text-white font-bold text-base md:text-lg leading-tight">Saint Mary's Entertainment Centre</h1>
