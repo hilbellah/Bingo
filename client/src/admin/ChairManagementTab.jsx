@@ -206,12 +206,6 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair }) {
   return (
     <div className="seat-map-container">
       <div className="floorplan-room">
-        <div className="floorplan-front-wall">
-          <div className="floorplan-stage-label">
-            Front of Room - Stage
-          </div>
-        </div>
-
         <div className="floorplan-interior">
           <div className="floorplan-grid floorplan-grid-upper">
             <div className="floorplan-stage-cell" style={{ gridColumn: '7 / span 3', gridRow: '1 / span 2' }}>
