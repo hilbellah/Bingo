@@ -25,6 +25,7 @@ import {
   verifyBookingEmail
 } from './services/customers.js';
 import { logPaymentEvent } from './services/paymentEvents.js';
+import { getSessionBookingStatus, withSessionBookingStatus } from './services/sessionBookingStatus.js';
 import {
   getNextPhdSessionId,
   getPhdInventoryForSession,
@@ -226,6 +227,10 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
 
   const session = get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
   if (!session) return { ok: false, statusCode: 404, error: 'Session not found' };
+  const bookingStatus = getSessionBookingStatus(session);
+  if (bookingStatus.booking_closed) {
+    return { ok: false, statusCode: 409, error: bookingStatus.booking_closed_message };
+  }
   const currentSessionType = normalizeSessionType(session.session_type, session.is_special_event);
   if (currentSessionType === 'event' && attendees.some(att => (att.addons || []).some(addon => addon.quantity > 0))) {
     return { ok: false, statusCode: 400, error: 'Live Event / Venue does not allow add-ons.' };
@@ -815,7 +820,9 @@ app.get('/api/sessions', (req, res) => {
     GROUP BY s.id
     ORDER BY s.date ASC, s.time ASC`, [today]
   );
-  res.json(sessions);
+  res.json(sessions.map(session => withSessionBookingStatus(session, {
+    soldOut: Number(session.total_seats) > 0 && Number(session.sold_seats) >= Number(session.total_seats),
+  })));
 });
 
 // --- Session-specific packages (public) ---
@@ -866,7 +873,17 @@ app.get('/api/announcements', (req, res) => {
 app.get('/api/sessions/:id', (req, res) => {
   const session = get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
   if (!session) return res.status(404).json({ error: 'Session not found' });
-  res.json(session);
+  const seatRow = get(
+    `SELECT
+       COUNT(CASE WHEN status = 'sold' THEN 1 END) as sold_seats,
+       COUNT(CASE WHEN is_disabled = 0 THEN 1 END) as total_seats
+     FROM seats
+     WHERE session_id = ?`,
+    [session.id]
+  );
+  res.json(withSessionBookingStatus(session, {
+    soldOut: Number(seatRow?.total_seats || 0) > 0 && Number(seatRow?.sold_seats || 0) >= Number(seatRow?.total_seats || 0),
+  }));
 });
 
 // --- Seats ---
@@ -901,6 +918,15 @@ app.post('/api/seats/:seatId/lock', bookingLimiter, (req, res) => {
 
   const seat = get('SELECT * FROM seats WHERE id = ?', [seatId]);
   if (!seat) return res.status(404).json({ error: 'Seat not found' });
+  const session = get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [seat.session_id]);
+  const bookingStatus = getSessionBookingStatus(session);
+  if (bookingStatus.booking_closed) {
+    return res.status(409).json({
+      error: bookingStatus.booking_closed_message,
+      bookingClosed: true,
+      reason: bookingStatus.booking_closed_reason,
+    });
+  }
   if (seat.is_disabled) return res.status(400).json({ error: 'Seat is disabled' });
   if (seat.status === 'sold') return res.status(409).json({ error: 'Seat already sold' });
   if (seat.status === 'held' && seat.held_by !== holderId) {

@@ -56,6 +56,7 @@ export default function SessionWeekPicker({
           const isEvent = sessionType === 'event';
           const isSpecialBingo = sessionType === 'special_bingo';
           const isFeatured = isSpecialBingo || isEvent;
+          const isClosed = !!session.booking_closed;
           const label = isEvent ? 'Live Event / Venue' : 'Special Bingo';
           const theme = isEvent
             ? {
@@ -85,10 +86,13 @@ export default function SessionWeekPicker({
                 className={`w-full px-3 py-1.5 text-sm font-medium transition-all ${
                   isFeatured ? 'rounded-b-lg' : 'rounded-lg'
                 } ${
-                  isSelected
+                  isClosed
+                    ? 'bg-red-950/50 text-red-100 ring-1 ring-red-500/50'
+                    : isSelected
                     ? isFeatured ? theme.selectedButton : 'bg-brand-gold text-white shadow-md'
                     : isFeatured ? theme.button : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
                 }`}
+                title={isClosed ? session.booking_closed_message : undefined}
               >
                 {formatDateShort(session.date)} - {formatTime(session.time)}
                 {isFeatured && session.event_title && (
@@ -96,8 +100,13 @@ export default function SessionWeekPicker({
                     {session.event_title}
                   </div>
                 )}
+                {isClosed && (
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-red-200">
+                    {session.booking_closed_reason === 'ongoing' ? 'On-going' : 'Closed'}
+                  </div>
+                )}
                 <span className={`ml-1.5 text-xs ${
-                  isSelected ? 'text-white/80' : session.available_seats > 100 ? 'text-green-400' : session.available_seats > 30 ? 'text-amber-400' : 'text-red-400'
+                  isClosed ? 'text-red-200' : isSelected ? 'text-white/80' : session.available_seats > 100 ? 'text-green-400' : session.available_seats > 30 ? 'text-amber-400' : 'text-red-400'
                 }`}>
                   ({session.available_seats})
                 </span>

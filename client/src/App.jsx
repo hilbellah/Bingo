@@ -45,6 +45,35 @@ function generateHolderId() {
 
 const emptyAttendee = () => ({ firstName: '', lastName: '', addons: [] });
 
+function getClientBookingStatus(session, { soldOut = false, nowMs = Date.now() } = {}) {
+  if (!session) return { isClosed: false, reason: 'open', message: '' };
+
+  const startsAtMs = session.starts_at ? Date.parse(session.starts_at) : NaN;
+  const cutoffAtMs = session.cutoff_at ? Date.parse(session.cutoff_at) : NaN;
+
+  if (Number.isFinite(startsAtMs) && nowMs >= startsAtMs) {
+    return { isClosed: true, reason: 'ongoing', message: 'Booking closed. Event is on-going.' };
+  }
+
+  if (soldOut) {
+    return { isClosed: true, reason: 'sold_out', message: 'Booking closed. This event is sold out.' };
+  }
+
+  if (Number.isFinite(cutoffAtMs) && nowMs >= cutoffAtMs) {
+    return { isClosed: true, reason: 'cutoff', message: 'Booking closed. Online sales cutoff has passed.' };
+  }
+
+  if (session.booking_closed) {
+    return {
+      isClosed: true,
+      reason: session.booking_closed_reason || 'closed',
+      message: session.booking_closed_message || 'Booking closed.',
+    };
+  }
+
+  return { isClosed: false, reason: 'open', message: '' };
+}
+
 export default function App() {
   // Payment-return short-circuit: if the customer just came back from
   // Authorize.Net, skip the entire booking flow and render the processing
@@ -77,6 +106,12 @@ export default function App() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [namesFilledBeforeChairs, setNamesFilledBeforeChairs] = useState(false);
   const [bookingStep, setBookingStep] = useState(0);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowTick(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     fetchTheme().then(theme => {
@@ -148,6 +183,11 @@ export default function App() {
   }, [selectedSession, socketRef]);
 
   const handleChairClick = async (chair) => {
+    if (bookingClosed) {
+      setError(selectedBookingStatus.message);
+      setTimeout(() => setError(''), 4000);
+      return;
+    }
     if (chair.is_disabled || chair.status === 'sold') return;
     if (chair.status === 'held' && chair.held_by !== holderId) return;
     if (bookingStep === 2) return;
@@ -230,6 +270,11 @@ export default function App() {
   };
 
   const handleSubmit = async (customer) => {
+    if (bookingClosed) {
+      setError(selectedBookingStatus.message);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
 
@@ -304,6 +349,13 @@ export default function App() {
   const vacantCount = seats.filter(seat => seat.status === 'vacant' && !seat.is_disabled).length;
   const soldCount = seats.filter(seat => seat.status === 'sold').length;
   const heldCount = seats.filter(seat => seat.status === 'held').length;
+  const sellableSeatCount = seats.filter(seat => !seat.is_disabled).length;
+  const soldOut = sellableSeatCount > 0 && seats.every(seat => seat.is_disabled || seat.status === 'sold');
+  const selectedBookingStatus = getClientBookingStatus(selectedSession, {
+    soldOut,
+    nowMs: nowTick,
+  });
+  const bookingClosed = selectedBookingStatus.isClosed;
   const selectedSessionType = selectedSession?.session_type || (selectedSession?.is_special_event ? 'special_bingo' : 'regular_bingo');
   const isSelectedSpecialBingo = selectedSessionType === 'special_bingo';
   const isSelectedEvent = selectedSessionType === 'event';
@@ -362,16 +414,26 @@ export default function App() {
           )}
 
           <button
-            onClick={() => setPanelOpen(true)}
+            onClick={() => {
+              if (bookingClosed) {
+                setError(selectedBookingStatus.message);
+                setTimeout(() => setError(''), 4000);
+                return;
+              }
+              setPanelOpen(true);
+            }}
+            disabled={bookingClosed}
             className={`relative px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
-              allSeatsSelected && allNamesValid
+              bookingClosed
+                ? 'bg-white/10 text-white/40 border border-white/10 cursor-not-allowed'
+                : allSeatsSelected && allNamesValid
                 ? 'bg-brand-gold text-white glow-gold-sm hover:bg-brand-gold-light'
                 : partySize > 0
                 ? 'bg-white/10 text-white hover:bg-white/20 border border-white/20'
                 : 'bg-brand-gold text-white hover:bg-brand-gold-light'
             }`}
           >
-            {allSeatsSelected && allNamesValid ? 'Complete Booking' : selectedSeats.length > 0 ? `Booking (${selectedSeats.length})` : 'Start Booking'}
+            {bookingClosed ? 'Booking Closed' : allSeatsSelected && allNamesValid ? 'Complete Booking' : selectedSeats.length > 0 ? `Booking (${selectedSeats.length})` : 'Start Booking'}
             {selectedSeats.length > 0 && (
               <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
                 {selectedSeats.length}
@@ -403,7 +465,7 @@ export default function App() {
           </div>
 
           <div className="text-sm text-white/50">
-            {vacantCount} chairs available &middot; {soldCount} sold
+            {bookingClosed ? selectedBookingStatus.message : `${vacantCount} chairs available`} &middot; {soldCount} sold
             {heldCount > 0 && <> &middot; {heldCount} on hold</>}
           </div>
 
@@ -420,7 +482,7 @@ export default function App() {
           </div>
         )}
 
-        {selectedSeats.length === 0 && !openTable && (
+        {selectedSeats.length === 0 && !openTable && !bookingClosed && (
           <div className="text-center mb-4">
             <p className="text-white/40 text-sm">Tap a table to see available chairs</p>
           </div>
@@ -435,15 +497,20 @@ export default function App() {
           onOpenTable={setOpenTable}
           onChairClick={handleChairClick}
           selectedSession={selectedSession}
+          bookingStatus={selectedBookingStatus}
         />
 
         {selectedSeats.length === 0 && !openTable && (
           <div className="text-center mt-8">
-            <button type="button" className="px-6 py-3 bg-brand-gold hover:bg-brand-gold-light text-white font-semibold rounded-xl shadow-lg transition-all glow-gold-sm">
-              Tap a Table Above to Pick Your Chairs
+            <button type="button" disabled={bookingClosed} className={`px-6 py-3 font-semibold rounded-xl shadow-lg transition-all ${
+              bookingClosed
+                ? 'bg-white/10 text-white/40 cursor-not-allowed border border-white/10'
+                : 'bg-brand-gold hover:bg-brand-gold-light text-white glow-gold-sm'
+            }`}>
+              {bookingClosed ? 'Booking Closed' : 'Tap a Table Above to Pick Your Chairs'}
             </button>
             <p className="text-white/40 text-sm mt-2">
-              Your party size will be set automatically based on chairs selected
+              {bookingClosed ? selectedBookingStatus.message : 'Your party size will be set automatically based on chairs selected'}
             </p>
           </div>
         )}

@@ -15,7 +15,8 @@ export default function FloorPlan({
   openTable,
   onOpenTable,
   onChairClick,
-  selectedSession
+  selectedSession,
+  bookingStatus
 }) {
   const sessionType = selectedSession?.session_type || (selectedSession?.is_special_event ? 'special_bingo' : 'regular_bingo');
   const isSpecialBingo = sessionType === 'special_bingo';
@@ -28,7 +29,8 @@ export default function FloorPlan({
     onChairClick,
     openTable,
     onOpenTable,
-    sessionType
+    sessionType,
+    bookingStatus
   };
 
   return (
@@ -36,6 +38,10 @@ export default function FloorPlan({
       <div className="floorplan-room" onClick={e => e.stopPropagation()}>
         {selectedSession && (
           <SessionDateBanner selectedSession={selectedSession} isSpecialBingo={isSpecialBingo} isEvent={isEvent} placement="top" />
+        )}
+
+        {bookingStatus?.isClosed && (
+          <BookingClosedNotice bookingStatus={bookingStatus} />
         )}
 
         <div className="floorplan-front-wall">
@@ -165,7 +171,20 @@ function SessionDateBanner({ selectedSession, isSpecialBingo, isEvent, placement
   );
 }
 
-function TableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, getTableStatus, selectedSeats, holderId, onChairClick, openTable, onOpenTable, sessionType }) {
+function BookingClosedNotice({ bookingStatus }) {
+  const isOngoing = bookingStatus.reason === 'ongoing';
+  const isSoldOut = bookingStatus.reason === 'sold_out';
+  const label = isOngoing ? 'Event is on-going' : isSoldOut ? 'Sold out' : 'Booking closed';
+
+  return (
+    <div className="mx-3 mb-3 rounded-lg border border-red-300/50 bg-red-950/70 px-4 py-3 text-center shadow-lg">
+      <div className="text-xs font-bold uppercase tracking-[0.18em] text-red-200">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-white">{bookingStatus.message}</div>
+    </div>
+  );
+}
+
+function TableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, getTableStatus, selectedSeats, holderId, onChairClick, openTable, onOpenTable, sessionType, bookingStatus }) {
   return (
     <div style={{ gridColumn, gridRow, ...(marginTop ? { marginTop } : {}) }}>
       <TableButton
@@ -178,20 +197,23 @@ function TableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, getTabl
         isOpen={openTable === tableNum}
         onClick={onOpenTable}
         sessionType={sessionType}
+        bookingStatus={bookingStatus}
       />
     </div>
   );
 }
 
-function InlineChair({ chair, holderId, selectedSeats, onChairClick }) {
+function InlineChair({ chair, holderId, selectedSeats, onChairClick, bookingStatus }) {
   const isSelected = selectedSeats.includes(chair.id);
   const isMyHold = chair.status === 'held' && chair.held_by === holderId;
   const isOtherHold = chair.status === 'held' && chair.held_by !== holderId;
   const isSold = chair.status === 'sold';
   const isDisabled = chair.is_disabled;
+  const isBookingClosed = bookingStatus?.isClosed;
 
   let bgClass, borderClass, textClass;
-  if (isDisabled) { bgClass = 'bg-gray-700/40'; borderClass = 'border-gray-600/30'; textClass = 'text-gray-500'; }
+  if (isBookingClosed) { bgClass = 'bg-red-950/50'; borderClass = 'border-red-700/40'; textClass = 'text-red-200/70'; }
+  else if (isDisabled) { bgClass = 'bg-gray-700/40'; borderClass = 'border-gray-600/30'; textClass = 'text-gray-500'; }
   else if (isSold) { bgClass = 'bg-gray-600/50'; borderClass = 'border-gray-500/40'; textClass = 'text-gray-400'; }
   else if (isSelected || isMyHold) { bgClass = 'bg-blue-500/70'; borderClass = 'border-blue-400'; textClass = 'text-white'; }
   else if (isOtherHold) { bgClass = 'bg-amber-500/50'; borderClass = 'border-amber-400/50'; textClass = 'text-amber-200'; }
@@ -200,16 +222,16 @@ function InlineChair({ chair, holderId, selectedSeats, onChairClick }) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onChairClick(chair); }}
-      disabled={isDisabled || isSold || isOtherHold}
+      disabled={isBookingClosed || isDisabled || isSold || isOtherHold}
       className={`${bgClass} border-2 ${borderClass} ${textClass} rounded-lg w-10 h-10 flex items-center justify-center shrink-0 transition-all text-sm font-bold hover:scale-110 disabled:hover:scale-100 disabled:cursor-not-allowed`}
-      title={`Chair ${chair.chair_number}`}
+      title={isBookingClosed ? bookingStatus.message : `Chair ${chair.chair_number}`}
     >
       {chair.chair_number}
     </button>
   );
 }
 
-function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats, holderId, onChairClick, sessionType }) {
+function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats, holderId, onChairClick, sessionType, bookingStatus }) {
   if (status === 'empty' || !status) {
     return <div className="floorplan-cell-empty shrink-0" />;
   }
@@ -217,9 +239,12 @@ function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats,
   const { hasMyChairs, allSold, allVacant, vacantChairs } = status;
   const isSpecialBingo = sessionType === 'special_bingo';
   const isEvent = sessionType === 'event';
+  const isBookingClosed = bookingStatus?.isClosed;
 
   let bgClass, borderClass, textClass, extraClass = '';
-  if (isOpen) {
+  if (isBookingClosed) {
+    bgClass = 'bg-red-950/70'; borderClass = 'border-red-500/50'; textClass = 'text-red-100';
+  } else if (isOpen) {
     bgClass = 'bg-brand-gold'; borderClass = 'border-brand-gold-light'; textClass = 'text-white';
   } else if (hasMyChairs) {
     bgClass = 'bg-blue-500/80'; borderClass = 'border-blue-400'; textClass = 'text-white';
@@ -248,7 +273,11 @@ function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats,
   const leftNums = [5, 3, 1];   // top → bottom on the left flank
   const rightNums = [6, 4, 2];  // top → bottom on the right flank
 
-  const chairCommon = { selectedSeats, holderId, onChairClick };
+  const chairCommon = { selectedSeats, holderId, onChairClick, bookingStatus };
+  const tableDisabled = isBookingClosed || allSold;
+  const tableLabel = isBookingClosed
+    ? (bookingStatus.reason === 'ongoing' ? 'On-going' : 'Closed')
+    : `${vacantChairs}/6`;
 
   return (
     <div className="relative shrink-0 floorplan-table-unit">
@@ -261,15 +290,15 @@ function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats,
 
       {/* Center table button — clicking opens the zoom chair-picker popup */}
       <button
-        onClick={() => onClick && onClick(allSold ? null : (isOpen ? null : tableNum))}
-        disabled={allSold}
+        onClick={() => onClick && onClick(tableDisabled ? null : (isOpen ? null : tableNum))}
+        disabled={tableDisabled}
         className={`table-btn ${bgClass} border-2 ${borderClass} ${textClass} ${extraClass} ${isOpen ? 'ring-2 ring-brand-gold/50 scale-110 z-10' : ''}`}
-        aria-label={`Table ${tableNum} - ${vacantChairs} chairs available`}
-        title={`Table ${tableNum} - ${vacantChairs}/6 available`}
+        aria-label={isBookingClosed ? `Table ${tableNum} - ${bookingStatus.message}` : `Table ${tableNum} - ${vacantChairs} chairs available`}
+        title={isBookingClosed ? bookingStatus.message : `Table ${tableNum} - ${vacantChairs}/6 available`}
       >
         <span className="text-sm font-bold leading-none">{tableNum}</span>
-        {!allSold && !isOpen && (
-          <span className="text-[9px] leading-none opacity-70">{vacantChairs}/6</span>
+        {(!allSold || isBookingClosed) && !isOpen && (
+          <span className="text-[9px] leading-none opacity-70">{tableLabel}</span>
         )}
       </button>
 
@@ -291,11 +320,11 @@ function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats,
             Table {tableNum} - Pick chairs
           </div>
           <div className="flex items-center justify-center gap-2">
-            <ChairColumn chairMap={chairMap} chairNumbers={[5, 3, 1]} selectedSeats={selectedSeats} holderId={holderId} onChairClick={onChairClick} />
+            <ChairColumn chairMap={chairMap} chairNumbers={[5, 3, 1]} selectedSeats={selectedSeats} holderId={holderId} onChairClick={onChairClick} bookingStatus={bookingStatus} />
             <div className="w-8 h-[130px] rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
               <span className="text-white/15 text-[8px] font-bold [writing-mode:vertical-rl]">Table {tableNum}</span>
             </div>
-            <ChairColumn chairMap={chairMap} chairNumbers={[6, 4, 2]} selectedSeats={selectedSeats} holderId={holderId} onChairClick={onChairClick} />
+            <ChairColumn chairMap={chairMap} chairNumbers={[6, 4, 2]} selectedSeats={selectedSeats} holderId={holderId} onChairClick={onChairClick} bookingStatus={bookingStatus} />
           </div>
         </div>
       )}
@@ -305,7 +334,7 @@ function TableButton({ tableNum, status, isOpen, onClick, chairs, selectedSeats,
 
 // Tiny chair button drawn directly on the floor plan, flanking each table.
 // Color-coded by status; clicking selects/unselects without opening the popup.
-function FloorChair({ chair, selectedSeats, holderId, onChairClick }) {
+function FloorChair({ chair, selectedSeats, holderId, onChairClick, bookingStatus }) {
   if (!chair) {
     // No chair record yet (e.g., table data still loading) — render a transparent
     // placeholder so the flanking column still reserves its slot.
@@ -317,9 +346,11 @@ function FloorChair({ chair, selectedSeats, holderId, onChairClick }) {
   const isOtherHold = chair.status === 'held' && chair.held_by !== holderId;
   const isSold = chair.status === 'sold';
   const isDisabled = chair.is_disabled;
+  const isBookingClosed = bookingStatus?.isClosed;
 
   let stateClass;
-  if (isDisabled) stateClass = 'chair-mini-disabled';
+  if (isBookingClosed) stateClass = 'chair-mini-closed';
+  else if (isDisabled) stateClass = 'chair-mini-disabled';
   else if (isSold) stateClass = 'chair-mini-sold';
   else if (isSelected || isMyHold) stateClass = 'chair-mini-mine';
   else if (isOtherHold) stateClass = 'chair-mini-other';
@@ -329,17 +360,17 @@ function FloorChair({ chair, selectedSeats, holderId, onChairClick }) {
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); onChairClick(chair); }}
-      disabled={isDisabled || isSold || isOtherHold}
+      disabled={isBookingClosed || isDisabled || isSold || isOtherHold}
       className={`chair-mini ${stateClass}`}
       aria-label={`Chair ${chair.chair_number}`}
-      title={`Chair ${chair.chair_number}`}
+      title={isBookingClosed ? bookingStatus.message : `Chair ${chair.chair_number}`}
     >
       {chair.chair_number}
     </button>
   );
 }
 
-function ChairColumn({ chairMap, chairNumbers, selectedSeats, holderId, onChairClick }) {
+function ChairColumn({ chairMap, chairNumbers, selectedSeats, holderId, onChairClick, bookingStatus }) {
   return (
     <div className="flex flex-col gap-1.5">
       {chairNumbers.map(num => chairMap[num] ? (
@@ -349,6 +380,7 @@ function ChairColumn({ chairMap, chairNumbers, selectedSeats, holderId, onChairC
           selectedSeats={selectedSeats}
           holderId={holderId}
           onChairClick={onChairClick}
+          bookingStatus={bookingStatus}
         />
       ) : (
         <div key={num} className="w-10 h-10" />
