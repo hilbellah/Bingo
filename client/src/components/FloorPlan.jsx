@@ -1,6 +1,7 @@
 import React from 'react';
 import { SECTIONS } from '../seatLayout';
 import { formatDateShort, formatTime } from '../utils/formatters';
+import VenueClock from './VenueClock';
 
 const sectionsById = SECTIONS.reduce((acc, section) => {
   acc[section.id] = section;
@@ -146,26 +147,31 @@ function SessionDateBanner({ selectedSession, isSpecialBingo, isEvent, placement
   const featuredLabel = isEvent ? 'Live Event / Venue' : 'Special Bingo';
 
   return (
-    <div className={`${isTop ? 'mx-3 mt-3 mb-2 px-4 py-3' : 'mt-4 px-4 py-2.5'} ${bannerClass} rounded-lg flex flex-wrap items-center justify-center gap-2.5`}>
-      <svg className={`${isTop ? 'w-5 h-5' : 'w-4 h-4'} text-brand-gold/80 flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-      </svg>
+    <div className={`${isTop ? 'mx-3 mt-3 mb-2 px-4 py-3 flex-col' : 'mt-4 px-4 py-2.5 flex-wrap'} ${bannerClass} rounded-lg flex items-center justify-center gap-2.5`}>
+      <div className="flex flex-wrap items-center justify-center gap-2.5">
+        <svg className={`${isTop ? 'w-5 h-5' : 'w-4 h-4'} text-brand-gold/80 flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+        </svg>
+        {isTop && (
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-brand-gold/90">
+            Bingo Game
+          </span>
+        )}
+        <span className={`text-white font-bold ${isTop ? 'text-base sm:text-lg' : 'text-sm'}`}>
+          {formatDateShort(selectedSession.date)} - {formatTime(selectedSession.time)}
+        </span>
+        {isFeatured && selectedSession.event_title ? (
+          <span className={`inline-flex items-center gap-1 ${titleBadgeClass} text-xs font-bold px-2.5 py-0.5 rounded-full max-w-full`}>
+            &#9733; {featuredLabel}: {selectedSession.event_title}
+          </span>
+        ) : (
+          <span className={`${isTop ? 'text-white/60' : 'text-white/40'} text-xs font-medium`}>
+            Regular Bingo Night
+          </span>
+        )}
+      </div>
       {isTop && (
-        <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-brand-gold/90">
-          Bingo Game
-        </span>
-      )}
-      <span className={`text-white font-bold ${isTop ? 'text-base sm:text-lg' : 'text-sm'}`}>
-        {formatDateShort(selectedSession.date)} - {formatTime(selectedSession.time)}
-      </span>
-      {isFeatured && selectedSession.event_title ? (
-        <span className={`inline-flex items-center gap-1 ${titleBadgeClass} text-xs font-bold px-2.5 py-0.5 rounded-full max-w-full`}>
-          &#9733; {featuredLabel}: {selectedSession.event_title}
-        </span>
-      ) : (
-        <span className={`${isTop ? 'text-white/60' : 'text-white/40'} text-xs font-medium`}>
-          Regular Bingo Night
-        </span>
+        <VenueClock className="w-full max-w-sm text-center bg-black/15 border-white/10" />
       )}
     </div>
   );

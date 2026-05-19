@@ -459,10 +459,6 @@ export default function App() {
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <AnnouncementBanner socket={socketRef.current} />
 
-        <div className="mb-4 flex justify-center">
-          <VenueClock prominent className="w-full max-w-xl text-center shadow-lg shadow-black/10" />
-        </div>
-
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-4 text-sm">
             <LegendItem color={availableLegendColor} label="Available" />
