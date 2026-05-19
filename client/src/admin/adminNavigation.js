@@ -2,65 +2,75 @@
 //
 // Top-level entries can be either:
 //   - Leaf tabs: { id, label, icon, requiresSuperUser? }
-//   - Groups:    { id: 'xxx-group', label, icon, children: [...leaf tabs] }
+//   - Groups:    { id, label, icon, description, children: [...leaf tabs] }
 //
 // Leaf tab IDs are the same IDs the tab components check internally
-// (`if (tab !== 'sessions') return null`) — keeping them stable means
-// nothing inside the tab files had to change when we moved them under groups.
+// (`if (tab !== 'sessions') return null`). Keeping IDs stable lets us move
+// tabs under different work-area groups without rewriting the tab bodies.
 //
-// `requiresSuperUser` works on both leaves and groups; a group with all its
-// children filtered out by permissions will itself be hidden.
+// Some shared tabs intentionally appear under more than one group. Example:
+// transactions are useful to the Live Event admin and also belong in the
+// combined Shared Operations section.
 export const ADMIN_TABS = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
   {
-    id: 'sessions-group',
-    label: 'Sessions',
-    icon: '📅',
+    id: 'bingo-group',
+    label: 'Bingo',
+    icon: 'B',
+    description: 'Regular and special bingo operations',
     children: [
-      { id: 'sessions', label: 'Calendar', icon: '📋' },
-      { id: 'recurring', label: 'Recurring', icon: '🔁' },
-      { id: 'events', label: 'Live Event / Venue', icon: '🎟' },
+      { id: 'dashboard', label: 'Bingo Dashboard', icon: 'D' },
+      { id: 'sessions', label: 'Bingo Sessions', icon: 'S' },
+      { id: 'recurring', label: 'Auto Schedule', icon: 'A' },
+      { id: 'chairs', label: 'Chair Management', icon: 'C' },
+      { id: 'inventory', label: 'PHD Inventory', icon: 'P' },
+      { id: 'packages', label: 'Bingo Packages', icon: 'T' },
     ],
   },
   {
-    id: 'venue-group',
-    label: 'Venue Resources',
-    icon: '🪑',
+    id: 'live-event-group',
+    label: 'Live Event / Venue',
+    icon: 'L',
+    description: 'Live event setup and sales review',
     children: [
-      { id: 'chairs', label: 'Chair Management', icon: '🪑' },
-      { id: 'inventory', label: 'PHD Inventory', icon: '📱' },
+      { id: 'events', label: 'Event Setup & Sales', icon: 'E' },
+      { id: 'chairs', label: 'Venue Chairs', icon: 'C' },
+      { id: 'announcements', label: 'Event Announcements', icon: 'N' },
+      { id: 'bookings', label: 'Event Transactions', icon: '$' },
     ],
   },
-  { id: 'packages', label: 'Packages', icon: '📦' },
-  { id: 'announcements', label: 'Announcements', icon: '📢' },
   {
-    id: 'reports-group',
-    label: 'Reports & Activity',
-    icon: '📈',
+    id: 'shared-group',
+    label: 'Shared Operations',
+    icon: 'O',
+    description: 'Combined reporting and customer tools',
     children: [
-      { id: 'bookings', label: 'Sales & Transactions', icon: '💰' },
-      { id: 'bulkprint', label: 'Bulk Print', icon: '🖨' },
-      { id: 'customers', label: 'Customers', icon: '👥' },
-      { id: 'archive', label: 'Archive & Audit', icon: '🗃' },
+      { id: 'bookings', label: 'All Sales & Transactions', icon: '$' },
+      { id: 'bulkprint', label: 'Bulk Print', icon: 'P' },
+      { id: 'customers', label: 'Customers', icon: 'U' },
+      { id: 'announcements', label: 'Announcements', icon: 'N' },
+      { id: 'archive', label: 'Archive & Audit', icon: 'R' },
     ],
   },
-  { id: 'settings', label: 'Printing Settings', icon: '🖨' },
-  { id: 'users', label: 'Users', icon: '👤', requiresSuperUser: true },
+  {
+    id: 'system-group',
+    label: 'System',
+    icon: 'G',
+    description: 'Settings and access',
+    children: [
+      { id: 'settings', label: 'Printing Settings', icon: 'P' },
+      { id: 'users', label: 'Users', icon: 'U', requiresSuperUser: true },
+    ],
+  },
 ];
 
-// Flattened list of leaves (no group entries). Useful for tab-label lookups,
-// breadcrumbs, etc. Order matches sidebar display order.
 export const ADMIN_LEAF_TABS = ADMIN_TABS.flatMap(tab =>
   tab.children ? tab.children : [tab]
 );
 
-// Resolve a leaf tab's human label for the page header.
 export function getAdminTabLabel(tabId) {
   return ADMIN_LEAF_TABS.find(tab => tab.id === tabId)?.label || 'Dashboard';
 }
 
-// Find which top-level group (if any) contains a given leaf tab. Returns the
-// group object, or null if the tab is itself a top-level leaf.
 export function getAdminTabParentGroup(tabId) {
   return ADMIN_TABS.find(tab => tab.children?.some(child => child.id === tabId)) || null;
 }

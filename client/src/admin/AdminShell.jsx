@@ -3,29 +3,31 @@ import { ADMIN_TABS, getAdminTabLabel, getAdminTabParentGroup } from './adminNav
 
 const EXPANDED_STORAGE_KEY = 'admin_sidebar_expanded_groups_v1';
 
-// Read/write the per-group expanded state from localStorage so the sidebar
-// remembers what the admin had open between sessions.
 function loadInitialExpanded() {
-  try {
-    const raw = typeof window !== 'undefined' && window.localStorage.getItem(EXPANDED_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') return parsed;
-    }
-  } catch { /* ignore unreadable storage */ }
-  // Default: every group expanded on first visit so the admin can see the
-  // full menu at once and discover the new groupings.
   const defaults = {};
   for (const tab of ADMIN_TABS) {
     if (tab.children) defaults[tab.id] = true;
   }
+
+  try {
+    const raw = typeof window !== 'undefined' && window.localStorage.getItem(EXPANDED_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return { ...defaults, ...parsed };
+    }
+  } catch {
+    // Ignore unreadable storage.
+  }
+
   return defaults;
 }
 
 function saveExpanded(state) {
   try {
     window.localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify(state));
-  } catch { /* quota / privacy mode — fall through */ }
+  } catch {
+    // Ignore quota or privacy-mode errors.
+  }
 }
 
 export default function AdminShell({
@@ -39,9 +41,6 @@ export default function AdminShell({
   rightActions,
   children
 }) {
-  // Filter top-level tabs by permission. For groups, also drop any children
-  // the current admin can't see; if a group ends up with no visible children,
-  // hide the whole group.
   const visibleTabs = ADMIN_TABS
     .map(tab => {
       if (!tab.children) return tab;
@@ -53,11 +52,11 @@ export default function AdminShell({
     .filter(tab => !tab.requiresSuperUser || isSuperUser);
 
   const [expanded, setExpanded] = useState(loadInitialExpanded);
+  const [activeGroupId, setActiveGroupId] = useState(null);
 
-  // Whenever the user navigates to a child tab, make sure its parent group
-  // is expanded so the active item is visible.
   useEffect(() => {
-    const parent = getAdminTabParentGroup(activeTab);
+    const parent = ADMIN_TABS.find(tab => tab.id === activeGroupId && tab.children?.some(child => child.id === activeTab))
+      || getAdminTabParentGroup(activeTab);
     if (parent && !expanded[parent.id]) {
       setExpanded(prev => {
         const next = { ...prev, [parent.id]: true };
@@ -65,7 +64,7 @@ export default function AdminShell({
         return next;
       });
     }
-  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab, activeGroupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleGroup = (groupId) => {
     setExpanded(prev => {
@@ -75,19 +74,23 @@ export default function AdminShell({
     });
   };
 
-  // Compute the page header label. When the active tab lives inside a group,
-  // show "Parent / Child" so the admin knows where they are in the new IA.
-  const parentGroup = getAdminTabParentGroup(activeTab);
+  const parentGroup = ADMIN_TABS.find(tab => tab.id === activeGroupId && tab.children?.some(child => child.id === activeTab))
+    || getAdminTabParentGroup(activeTab);
+  const activeLeafLabel = parentGroup?.children?.find(child => child.id === activeTab)?.label
+    || getAdminTabLabel(activeTab);
   const headerLabel = parentGroup
-    ? `${parentGroup.label} / ${getAdminTabLabel(activeTab)}`
-    : getAdminTabLabel(activeTab);
+    ? `${parentGroup.label} / ${activeLeafLabel}`
+    : activeLeafLabel;
 
-  const renderLeaf = (tab, { indented = false } = {}) => {
-    const isActive = activeTab === tab.id;
+  const renderLeaf = (tab, { indented = false, parentGroupId = null } = {}) => {
+    const isActive = activeTab === tab.id && (!activeGroupId || !parentGroupId || parentGroupId === activeGroupId);
     return (
       <button
-        key={tab.id}
-        onClick={() => onTabChange(tab.id)}
+        key={`${parentGroupId || 'root'}-${tab.id}`}
+        onClick={() => {
+          setActiveGroupId(parentGroupId);
+          onTabChange(tab.id);
+        }}
         className={`w-full flex items-center gap-3 ${indented ? 'pl-10 pr-4' : 'px-4'} py-2.5 text-sm transition-colors ${
           isActive
             ? 'bg-white/20 text-white font-semibold border-r-4 border-brand-gold'
@@ -95,53 +98,60 @@ export default function AdminShell({
         }`}
         title={collapsed ? tab.label : undefined}
       >
-        <span className="text-base">{tab.icon}</span>
+        <span className="flex h-5 w-5 items-center justify-center rounded bg-white/10 text-[11px] font-bold">
+          {tab.icon}
+        </span>
         {!collapsed && <span>{tab.label}</span>}
       </button>
     );
   };
 
   const renderGroup = (group) => {
-    // Determine if any child of this group is currently active — used to
-    // visually emphasise the parent row even when not directly clicked.
-    const hasActiveChild = group.children.some(c => c.id === activeTab);
+    const hasActiveChild = group.children.some(c => c.id === activeTab) && (!activeGroupId || activeGroupId === group.id);
     const isOpen = !!expanded[group.id];
 
     return (
       <div key={group.id}>
         <button
           onClick={() => toggleGroup(group.id)}
-          className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+          className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
             hasActiveChild
               ? 'text-white font-semibold'
               : 'text-gray-300 hover:bg-white/10 hover:text-white'
           }`}
           title={collapsed ? group.label : undefined}
         >
-          <span className="text-lg">{group.icon}</span>
+          <span className="flex h-6 w-6 items-center justify-center rounded bg-white/10 text-xs font-bold">
+            {group.icon}
+          </span>
           {!collapsed && (
             <>
-              <span className="flex-1 text-left">{group.label}</span>
-              <span className={`text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+              <span className="flex-1 text-left">
+                <span className="block">{group.label}</span>
+                {group.description && (
+                  <span className="block text-[10px] font-normal text-white/40 leading-tight">
+                    {group.description}
+                  </span>
+                )}
+              </span>
+              <span className="text-base font-bold">{isOpen ? '-' : '+'}</span>
             </>
           )}
         </button>
-        {/* When the sidebar is collapsed there's no room to show indented
-            children — instead, expose them as a flat list so they're still
-            clickable via tooltip. */}
+
         {isOpen && !collapsed && (
           <div className="bg-black/10">
-            {group.children.map(child => renderLeaf(child, { indented: true }))}
+            {group.children.map(child => renderLeaf(child, { indented: true, parentGroupId: group.id }))}
           </div>
         )}
-        {collapsed && group.children.map(child => renderLeaf(child))}
+        {collapsed && group.children.map(child => renderLeaf(child, { parentGroupId: group.id }))}
       </div>
     );
   };
 
   return (
     <div className="min-h-screen bg-brand-light flex">
-      <aside className={`bg-brand-blue text-white flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-56'} min-h-screen`}>
+      <aside className={`bg-brand-blue text-white flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'} min-h-screen`}>
         <div className="p-4 border-b border-white/10">
           {!collapsed && (
             <>
@@ -151,7 +161,7 @@ export default function AdminShell({
             </>
           )}
           <button onClick={onToggleCollapsed} className="mt-2 text-xs text-gray-300 hover:text-white">
-            {collapsed ? '▶' : '◀'}
+            {collapsed ? '>' : '<'}
           </button>
         </div>
 
@@ -167,7 +177,7 @@ export default function AdminShell({
             </>
           )}
           <button onClick={onLogout} className={`w-full text-xs bg-white/10 py-2 rounded hover:bg-white/20 ${collapsed ? 'px-1' : 'px-3'}`}>
-            {collapsed ? '🚪' : 'Logout'}
+            {collapsed ? 'X' : 'Logout'}
           </button>
         </div>
       </aside>
