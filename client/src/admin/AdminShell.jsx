@@ -30,6 +30,38 @@ function saveExpanded(state) {
   }
 }
 
+const GROUP_THEME_CLASSES = {
+  amber: {
+    activeGroup: 'bg-amber-500/20 text-amber-50 ring-1 ring-amber-300/35',
+    groupHover: 'hover:bg-amber-500/10 hover:text-amber-100',
+    icon: 'bg-amber-400/20 text-amber-100 ring-1 ring-amber-300/35',
+    childActive: 'bg-amber-500/20 text-white font-semibold border-r-4 border-amber-300',
+    childHover: 'hover:bg-amber-500/10 hover:text-amber-100',
+    childIcon: 'bg-amber-400/20 text-amber-100',
+  },
+  blue: {
+    activeGroup: 'bg-sky-500/20 text-sky-50 ring-1 ring-sky-300/35',
+    groupHover: 'hover:bg-sky-500/10 hover:text-sky-100',
+    icon: 'bg-sky-400/20 text-sky-100 ring-1 ring-sky-300/35',
+    childActive: 'bg-sky-500/20 text-white font-semibold border-r-4 border-sky-300',
+    childHover: 'hover:bg-sky-500/10 hover:text-sky-100',
+    childIcon: 'bg-sky-400/20 text-sky-100',
+  },
+  neutral: {
+    activeGroup: 'bg-white/15 text-white ring-1 ring-white/15',
+    groupHover: 'hover:bg-white/10 hover:text-white',
+    icon: 'bg-white/10 text-white',
+    childActive: 'bg-white/20 text-white font-semibold border-r-4 border-brand-gold',
+    childHover: 'hover:bg-white/10 hover:text-white',
+    childIcon: 'bg-white/10 text-white',
+  },
+};
+
+function getGroupTheme(groupId) {
+  const group = ADMIN_TABS.find(tab => tab.id === groupId);
+  return GROUP_THEME_CLASSES[group?.theme] || GROUP_THEME_CLASSES.neutral;
+}
+
 export default function AdminShell({
   activeTab,
   onTabChange,
@@ -84,6 +116,7 @@ export default function AdminShell({
 
   const renderLeaf = (tab, { indented = false, parentGroupId = null } = {}) => {
     const isActive = activeTab === tab.id && (!activeGroupId || !parentGroupId || parentGroupId === activeGroupId);
+    const theme = getGroupTheme(parentGroupId);
     return (
       <button
         key={`${parentGroupId || 'root'}-${tab.id}`}
@@ -93,12 +126,12 @@ export default function AdminShell({
         }}
         className={`w-full flex items-center gap-3 ${indented ? 'pl-10 pr-4' : 'px-4'} py-2.5 text-sm transition-colors ${
           isActive
-            ? 'bg-white/20 text-white font-semibold border-r-4 border-brand-gold'
-            : 'text-gray-300 hover:bg-white/10 hover:text-white'
+            ? theme.childActive
+            : `text-gray-300 ${theme.childHover}`
         }`}
         title={collapsed ? tab.label : undefined}
       >
-        <span className="flex h-5 w-5 items-center justify-center rounded bg-white/10 text-[11px] font-bold">
+        <span className={`flex h-5 w-5 items-center justify-center rounded text-[11px] font-bold ${isActive ? theme.childIcon : 'bg-white/10'}`}>
           {tab.icon}
         </span>
         {!collapsed && <span>{tab.label}</span>}
@@ -109,19 +142,20 @@ export default function AdminShell({
   const renderGroup = (group) => {
     const hasActiveChild = group.children.some(c => c.id === activeTab) && (!activeGroupId || activeGroupId === group.id);
     const isOpen = !!expanded[group.id];
+    const theme = GROUP_THEME_CLASSES[group.theme] || GROUP_THEME_CLASSES.neutral;
 
     return (
-      <div key={group.id}>
+      <div key={group.id} className="px-2 py-1">
         <button
           onClick={() => toggleGroup(group.id)}
-          className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+          className={`w-full flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors ${
             hasActiveChild
-              ? 'text-white font-semibold'
-              : 'text-gray-300 hover:bg-white/10 hover:text-white'
+              ? theme.activeGroup
+              : `text-gray-300 ${theme.groupHover}`
           }`}
           title={collapsed ? group.label : undefined}
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded bg-white/10 text-xs font-bold">
+          <span className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold ${theme.icon}`}>
             {group.icon}
           </span>
           {!collapsed && (
@@ -140,7 +174,7 @@ export default function AdminShell({
         </button>
 
         {isOpen && !collapsed && (
-          <div className="bg-black/10">
+          <div className="mt-1 overflow-hidden rounded-lg bg-black/10">
             {group.children.map(child => renderLeaf(child, { indented: true, parentGroupId: group.id }))}
           </div>
         )}
