@@ -101,6 +101,13 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 app.use(cors(corsOptions));
+app.use('/api/webhooks/authorize-net', express.raw({
+  type: '*/*',
+  limit: '1mb',
+  verify: (req, res, buf) => {
+    req.rawBody = Buffer.from(buf);
+  }
+}));
 app.use(express.json({
   limit: '1mb',
   verify: (req, res, buf) => {
@@ -1347,6 +1354,79 @@ async function reconcilePaymentReturn(booking, transactionId) {
   }
 }
 
+function scheduleDeferredWebhookVerification({
+  bookingId,
+  transactionId,
+  eventType,
+  notificationId,
+  invoiceNumber,
+  attempt = 1,
+}) {
+  const retryDelaysMs = [30000, 120000, 300000];
+  const delayMs = retryDelaysMs[attempt - 1];
+  if (!delayMs) return;
+
+  const timer = setTimeout(async () => {
+    const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+    if (!booking || booking.payment_status === 'paid') return;
+
+    const verify = await verifyTransaction(transactionId);
+    if (!verify.ok) {
+      console.error(`[webhooks] deferred verification attempt ${attempt} failed for booking=${bookingId} transId=${transactionId}: ${verify.error || 'unknown error'}`);
+      logPaymentEvent(bookingId, 'webhook_verify_retry_error', 'authorize_net_webhook', {
+        eventType,
+        notificationId,
+        transId: transactionId,
+        invoiceNumber,
+        attempt,
+        error: verify.error || null,
+      });
+      scheduleDeferredWebhookVerification({
+        bookingId,
+        transactionId,
+        eventType,
+        notificationId,
+        invoiceNumber,
+        attempt: attempt + 1,
+      });
+      return;
+    }
+
+    if (verify.invoiceNumber !== booking.reference_number || verify.amountCents !== booking.total_amount) {
+      logPaymentEvent(bookingId, 'webhook_verify_retry_mismatch', 'authorize_net_webhook', {
+        eventType,
+        notificationId,
+        transId: transactionId,
+        expectedInvoiceNumber: booking.reference_number,
+        actualInvoiceNumber: verify.invoiceNumber,
+        expectedAmountCents: booking.total_amount,
+        actualAmountCents: verify.amountCents,
+      });
+      return;
+    }
+
+    if (verify.approved) {
+      markBookingPaid({
+        bookingId,
+        transactionId,
+        authCode: verify.authCode,
+        source: 'authorize_net_webhook_deferred',
+      });
+      return;
+    }
+
+    if (['2', '3'].includes(String(verify.responseCode))) {
+      markBookingFailed({
+        bookingId,
+        reason: verify.error || `Authorize.Net response code ${verify.responseCode}`,
+        source: 'authorize_net_webhook_deferred',
+      });
+    }
+  }, delayMs);
+
+  if (typeof timer.unref === 'function') timer.unref();
+}
+
 app.all('/payment/return', async (req, res) => {
   const booking = findBookingForPaymentReturn(req);
   const transactionId = getReturnTransactionId(req);
@@ -1409,7 +1489,11 @@ app.all('/payment/cancel', (req, res) => {
 app.post('/api/webhooks/authorize-net',
   webhookLimiter,
   async (req, res) => {
-    const rawBody = req.rawBody; // Buffer captured by express.json verify hook.
+    const rawBody = Buffer.isBuffer(req.rawBody)
+      ? req.rawBody
+      : Buffer.isBuffer(req.body)
+        ? req.body
+        : null;
     const sigHeader = req.get('X-ANET-Signature');
 
     if (!Buffer.isBuffer(rawBody)) {
@@ -1463,6 +1547,18 @@ app.post('/api/webhooks/authorize-net',
         }
 
         const verify = await verifyTransaction(transId);
+        if (!verify.ok) {
+          console.error(`[webhooks] invalid-signature fallback verification failed for ${eventType}: ${verify.error || 'unknown error'}`);
+          logPaymentEvent(booking.id, 'webhook_signature_invalid_verify_error', 'authorize_net_webhook', {
+            eventType,
+            notificationId,
+            transId,
+            invoiceNumber,
+            error: verify.error || null,
+          });
+          return res.status(500).end();
+        }
+
         const verifiedMatch = verify.ok &&
           verify.approved &&
           verify.invoiceNumber === booking.reference_number &&
@@ -1527,7 +1623,22 @@ app.post('/api/webhooks/authorize-net',
         // but a redundant API lookup also confirms the transaction approved.
         const verify = await verifyTransaction(transId);
         if (!verify.ok) {
-          throw new Error(`Authorize.Net transaction verification failed: ${verify.error || 'unknown error'}`);
+          console.error(`[webhooks] transaction verification deferred for booking=${booking.id} transId=${transId}: ${verify.error || 'unknown error'}`);
+          logPaymentEvent(booking.id, 'webhook_verify_deferred', 'authorize_net_webhook', {
+            eventType,
+            notificationId,
+            transId,
+            invoiceNumber,
+            error: verify.error || null,
+          });
+          scheduleDeferredWebhookVerification({
+            bookingId: booking.id,
+            transactionId: transId,
+            eventType,
+            notificationId,
+            invoiceNumber,
+          });
+          return res.status(200).end();
         }
         if (verify.approved) {
           markBookingPaid({
