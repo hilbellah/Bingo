@@ -17,6 +17,22 @@ import { adminAuth, authenticateAdminToken, requireSuperUser, isSuperUser } from
 import { releaseExpiredHolds } from './services/holds.js';
 import { archivePastSessions } from './services/sessionArchive.js';
 import {
+  hasPriorPaidBooking,
+  isValidCustomerName,
+  isValidEmail,
+  normalizeCustomerName,
+  normalizeEmail,
+  upsertCustomerFromBooking,
+  verifyBookingEmail
+} from './services/customers.js';
+import { logPaymentEvent } from './services/paymentEvents.js';
+import {
+  getNextPhdSessionId,
+  getPhdInventoryForSession,
+  getPhdUsageBySession,
+  validatePhdInventory
+} from './services/phdInventory.js';
+import {
   cleanupOldData,
   ensureFutureSessions,
   getScheduleSummary,
@@ -178,114 +194,6 @@ function csvCell(value) {
 // Convention: all helpers return either { ok: true, ... } or { ok: false, error, statusCode? }.
 // Helpers never throw on logic errors (DB exceptions still propagate as runtime errors).
 
-// Insert a single row in the payment_events audit table. Best-effort; never throws.
-function logPaymentEvent(bookingId, eventType, source, payload) {
-  try {
-    run('INSERT INTO payment_events (id, booking_id, event_type, source, raw_payload, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [uuid(), bookingId, eventType, source, JSON.stringify(payload || {}), new Date().toISOString()]);
-  } catch (err) {
-    console.error('[payments] logPaymentEvent failed:', err?.message || err);
-  }
-}
-
-function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
-}
-
-function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
-}
-
-function normalizeCustomerName(value) {
-  return String(value || '').trim().replace(/\s+/g, ' ');
-}
-
-function isValidCustomerName(value) {
-  const name = normalizeCustomerName(value);
-  return name.length >= 1 && name.length <= 80;
-}
-
-function hasPriorPaidBooking(email) {
-  const normalized = normalizeEmail(email);
-  if (!normalized) return false;
-  const row = get(
-    `SELECT id FROM bookings
-     WHERE LOWER(email) = ?
-       AND payment_status IN ('paid', 'refunded', 'voided')
-     LIMIT 1`,
-    [normalized]
-  );
-  return !!row;
-}
-
-function verifyBookingEmail({ email, verificationId, requireVerification }) {
-  const normalized = normalizeEmail(email);
-  const now = new Date().toISOString();
-
-  if (!requireVerification) {
-    return { ok: true, trusted: false, verifiedAt: null };
-  }
-
-  if (hasPriorPaidBooking(normalized)) {
-    return { ok: true, trusted: true, verifiedAt: now, alreadyVerified: true };
-  }
-
-  if (!verificationId) {
-    return { ok: false, statusCode: 403, error: 'Please verify your email before continuing to payment.' };
-  }
-
-  const verification = get(
-    `SELECT * FROM email_verifications
-     WHERE id = ? AND LOWER(email) = ?
-     LIMIT 1`,
-    [verificationId, normalized]
-  );
-
-  if (!verification || !verification.verified_at) {
-    return { ok: false, statusCode: 403, error: 'Please verify your email before continuing to payment.' };
-  }
-
-  if (verification.expires_at <= now) {
-    return { ok: false, statusCode: 403, error: 'That verification code expired. Please send a new code.' };
-  }
-
-  return { ok: true, trusted: true, verifiedAt: verification.verified_at };
-}
-
-function upsertCustomerFromBooking(booking) {
-  const email = normalizeEmail(booking?.email);
-  if (!email || !isValidEmail(email)) return;
-
-  const now = new Date().toISOString();
-  const firstName = normalizeCustomerName(booking.customer_first_name) || null;
-  const lastName = normalizeCustomerName(booking.customer_last_name) || null;
-  const bookingAt = booking.payment_completed_at || now;
-
-  run(
-    `INSERT INTO customers
-      (id, email, first_name, last_name, email_verified_at, first_booking_at, last_booking_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(email) DO UPDATE SET
-       first_name = COALESCE(excluded.first_name, customers.first_name),
-       last_name = COALESCE(excluded.last_name, customers.last_name),
-       email_verified_at = COALESCE(customers.email_verified_at, excluded.email_verified_at),
-       first_booking_at = COALESCE(customers.first_booking_at, excluded.first_booking_at),
-       last_booking_at = excluded.last_booking_at,
-       updated_at = excluded.updated_at`,
-    [
-      uuid(),
-      email,
-      firstName,
-      lastName,
-      booking.email_verified_at || now,
-      booking.created_at || bookingAt,
-      bookingAt,
-      now,
-      now,
-    ]
-  );
-}
-
 // Validate the shape and integrity of a booking request body.
 // Returns { ok, data: { sessionId, holderId, attendees, trimmedEmail, session,
 //   useSessionPkgs, sessionPkgs, requiredPkg } } on success, or
@@ -362,154 +270,6 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
       requiredPkg
     }
   };
-}
-
-// Enforce PHD (Personal Handheld Device) per-player limit and total stock.
-// Returns { ok: true, phdPkgIds, phdConfig } or { ok: false, error }.
-function getPhdConfig() {
-  const phdSettingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
-  return phdSettingsRow ? JSON.parse(phdSettingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
-}
-
-function getPhdUsedForSession(sessionId) {
-  if (!sessionId) return 0;
-  const usedRow = get(`
-    SELECT
-      COALESCE((
-        SELECT COUNT(*)
-        FROM booking_items bi
-        JOIN bookings b ON b.id = bi.booking_id
-        WHERE b.payment_status IN ('paid', 'partially_refunded')
-          AND b.session_id = ?
-          AND COALESCE(bi.refund_status, 'active') != 'refunded'
-          AND (
-            bi.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-            OR bi.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-          )
-      ), 0)
-      +
-      COALESCE((
-        SELECT SUM(ba.quantity)
-        FROM booking_addons ba
-        JOIN booking_items bi ON bi.id = ba.booking_item_id
-        JOIN bookings b ON b.id = bi.booking_id
-        WHERE b.payment_status IN ('paid', 'partially_refunded')
-          AND b.session_id = ?
-          AND COALESCE(bi.refund_status, 'active') != 'refunded'
-          AND (
-            ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-            OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-          )
-      ), 0) as total_used
-  `, [sessionId, sessionId]);
-  return usedRow?.total_used || 0;
-}
-
-function getPhdInventoryForSession(sessionId) {
-  const config = getPhdConfig();
-  const totalUsed = getPhdUsedForSession(sessionId);
-  return {
-    sessionId: sessionId || null,
-    totalStock: config.totalStock,
-    totalUsed,
-    remaining: Math.max(0, config.totalStock - totalUsed),
-    perPlayerLimit: config.perPlayerLimit,
-  };
-}
-
-function getPhdUsageBySession() {
-  return all(`
-    SELECT * FROM (
-      SELECT s.id, s.date, s.time, s.event_title, s.is_special_event,
-        COALESCE((
-          SELECT COUNT(*)
-          FROM booking_items bi
-          JOIN bookings b ON b.id = bi.booking_id
-          WHERE b.payment_status IN ('paid', 'partially_refunded')
-            AND b.session_id = s.id
-            AND COALESCE(bi.refund_status, 'active') != 'refunded'
-            AND (
-              bi.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-              OR bi.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-            )
-        ), 0)
-        +
-        COALESCE((
-          SELECT SUM(ba.quantity)
-          FROM booking_addons ba
-          JOIN booking_items bi ON bi.id = ba.booking_item_id
-          JOIN bookings b ON b.id = bi.booking_id
-          WHERE b.payment_status IN ('paid', 'partially_refunded')
-            AND b.session_id = s.id
-            AND COALESCE(bi.refund_status, 'active') != 'refunded'
-            AND (
-              ba.package_id IN (SELECT id FROM packages WHERE is_phd = 1)
-              OR ba.package_id IN (SELECT id FROM session_packages WHERE is_phd = 1)
-            )
-        ), 0) as phd_count
-      FROM sessions s
-      WHERE s.deleted_at IS NULL
-    )
-    WHERE phd_count > 0
-    ORDER BY date DESC
-  `);
-}
-
-function getNextPhdSessionId() {
-  const today = formatLocalDate(new Date());
-  const row = get(
-    `SELECT id FROM sessions
-     WHERE date >= ? AND is_available = 1 AND deleted_at IS NULL
-     ORDER BY date ASC, time ASC
-     LIMIT 1`,
-    [today]
-  );
-  return row?.id || null;
-}
-
-function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg) {
-  const phdConfig = getPhdConfig();
-
-  const phdPkgIds = new Set();
-  if (useSessionPkgs) {
-    sessionPkgs.filter(p => p.is_phd).forEach(p => phdPkgIds.add(p.id));
-  } else {
-    all('SELECT id FROM packages WHERE is_phd = 1 AND is_active = 1').forEach(p => phdPkgIds.add(p.id));
-  }
-
-  if (phdPkgIds.size === 0) return { ok: true, phdPkgIds, phdConfig };
-  const includedPhdPerPlayer = requiredPkg?.is_phd ? 1 : 0;
-
-  // Per-player limit
-  for (const att of attendees) {
-    let playerPhdQty = includedPhdPerPlayer;
-    for (const addon of att.addons || []) {
-      if (phdPkgIds.has(addon.packageId)) playerPhdQty += addon.quantity;
-    }
-    if (playerPhdQty > phdConfig.perPlayerLimit) {
-      return { ok: false, error: `Each player can only add up to ${phdConfig.perPlayerLimit} handheld devices.` };
-    }
-  }
-
-  // PHD stock resets per session. Example: a 5/15 session has its own 200,
-  // and the 5/16 session also has its own 200.
-  let totalPhdInBooking = includedPhdPerPlayer * attendees.length;
-  for (const att of attendees) {
-    for (const addon of att.addons || []) {
-      if (phdPkgIds.has(addon.packageId)) totalPhdInBooking += addon.quantity;
-    }
-  }
-
-  if (totalPhdInBooking > 0) {
-    const totalUsed = getPhdUsedForSession(sessionId);
-    const remaining = phdConfig.totalStock - totalUsed;
-
-    if (totalPhdInBooking > remaining) {
-      return { ok: false, error: `Only ${remaining} handheld device${remaining !== 1 ? 's' : ''} remaining in stock. You requested ${totalPhdInBooking}.` };
-    }
-  }
-
-  return { ok: true, phdPkgIds, phdConfig };
 }
 
 // Insert a booking + its items + addons. Always 'pending' status.
