@@ -41,6 +41,7 @@
 // never throw — the booking flow shouldn't roll back if email is broken.
 
 import nodemailer from 'nodemailer';
+import { normalizeSessionType } from './sessionPackages.js';
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
@@ -103,6 +104,71 @@ function formatTime12h(timeStr) {
   return `${h12}:${String(mm).padStart(2, '0')} ${period}`;
 }
 
+function getBookingPresentation(session) {
+  const sessionType = normalizeSessionType(session?.session_type, session?.is_special_event);
+  if (sessionType === 'event') {
+    return {
+      sessionType,
+      isSpecial: true,
+      brandLabel: 'Live Event / Venue',
+      pageTitle: 'Your Live Event Tickets',
+      readyLine: "You're All Set!",
+      confirmationLine: 'Your live event tickets are confirmed',
+      referenceLabel: 'Event Ticket Reference',
+      sectionLabel: 'Your Event Tickets',
+      attendeeReferenceLabel: 'Live Event Ticket',
+      ctaLabel: 'View Event Tickets Online',
+      subjectPrefix: 'Your Live Event Tickets',
+      sessionLabel: 'Event Date',
+      proofText: 'Save this email or bring your event ticket reference as proof.',
+      referenceBg: '#eff6ff',
+      referenceBorder: '#2563eb',
+      accentColor: '#2563eb',
+      headerAccent: '#93c5fd',
+    };
+  }
+  if (sessionType === 'special_bingo') {
+    return {
+      sessionType,
+      isSpecial: true,
+      brandLabel: 'Wolastoq Bingo',
+      pageTitle: 'Your Special Bingo Tickets',
+      readyLine: "You're All Set!",
+      confirmationLine: 'Your special bingo seats are confirmed',
+      referenceLabel: 'Booking Reference',
+      sectionLabel: 'Your Tickets',
+      attendeeReferenceLabel: 'Ticket',
+      ctaLabel: 'View Tickets Online',
+      subjectPrefix: 'Your Special Bingo Tickets',
+      sessionLabel: 'Session',
+      proofText: "Or save this email - it's all the proof you need.",
+      referenceBg: '#fff7e6',
+      referenceBorder: '#c5a55a',
+      accentColor: '#c5a55a',
+      headerAccent: '#c5a55a',
+    };
+  }
+  return {
+    sessionType,
+    isSpecial: false,
+    brandLabel: 'Wolastoq Bingo',
+    pageTitle: 'Your Bingo Booking',
+    readyLine: "You're All Set!",
+    confirmationLine: 'Your bingo seats are confirmed',
+    referenceLabel: 'Booking Reference',
+    sectionLabel: 'Regular Bingo Order',
+    attendeeReferenceLabel: 'Ticket',
+    ctaLabel: 'View Booking Receipt',
+    subjectPrefix: 'Your Bingo Booking',
+    sessionLabel: 'Session',
+    proofText: 'Regular bingo orders are printed on receipt paper. Save this email or bring your booking reference as proof.',
+    referenceBg: '#fff7e6',
+    referenceBorder: '#c5a55a',
+    accentColor: '#c5a55a',
+    headerAccent: '#c5a55a',
+  };
+}
+
 /**
  * Build the HTML body for a booking-confirmation email.
  * Inline-styled so every webmail client (Gmail / Outlook / Yahoo) renders it.
@@ -111,7 +177,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
   const seatById = new Map(seats.map(s => [s.id, s]));
   const pkgById = new Map(packages.map(p => [p.id, p]));
   const thankYouMessage = 'Thank you for booking with us. We look forward to seeing you there!';
-  const isSpecialEvent = !!session?.is_special_event;
+  const presentation = getBookingPresentation(session);
 
   const attendeeBlocks = attendees.map((att, idx) => {
     const seat = seatById.get(att.seatId) || {};
@@ -134,7 +200,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
             Table <strong>${escapeHtml(seat.table_number ?? '?')}</strong>,
             Chair <strong>${escapeHtml(seat.chair_number ?? '?')}</strong>
           </div>
-          ${ticketRef ? `<div style="margin-top:4px;font-family:monospace;font-size:12px;color:#1a3a5c;background:#fff7e6;display:inline-block;padding:2px 8px;border-radius:4px;">${escapeHtml(ticketRef)}</div>` : ''}
+          ${ticketRef ? `<div style="margin-top:4px;font-family:monospace;font-size:12px;color:#1a3a5c;background:${presentation.referenceBg};display:inline-block;padding:2px 8px;border-radius:4px;"><span style="font-family:Arial,sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-right:6px;">${escapeHtml(presentation.attendeeReferenceLabel)}</span>${escapeHtml(ticketRef)}</div>` : ''}
           ${addonLines ? `<div style="margin-top:6px;">${addonLines}</div>` : ''}
         </td>
       </tr>
@@ -142,14 +208,14 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
   }).join('');
 
   const ticketUrl = `${siteUrl}/tickets/${encodeURIComponent(booking.referenceNumber)}`;
-  const ctaLabel = isSpecialEvent ? 'View Tickets Online' : 'View Booking Receipt';
-  const proofText = isSpecialEvent
-    ? "Or save this email - it's all the proof you need."
-    : 'Regular bingo orders are printed on receipt paper. Save this email or bring your booking reference as proof.';
-  const sectionLabel = isSpecialEvent ? 'Your Tickets' : 'Regular Bingo Order';
+  const eventTitleRow = session?.event_title ? `
+            <tr>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">${presentation.sessionType === 'event' ? 'Event' : 'Title'}</td>
+              <td style="padding:6px 0;font-size:14px;color:#1a3a5c;font-weight:700;text-align:right;">${escapeHtml(session.event_title)}</td>
+            </tr>` : '';
 
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Your Bingo Booking</title></head>
+<html><head><meta charset="utf-8"><title>${escapeHtml(presentation.pageTitle)}</title></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
     <tr><td align="center">
@@ -157,15 +223,15 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
 
         <!-- Header -->
         <tr><td style="background:linear-gradient(135deg,#0a1628 0%,#1a3a5c 100%);padding:28px 32px;color:#ffffff;text-align:center;">
-          <div style="font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:#c5a55a;font-weight:700;">Wolastoq Bingo</div>
-          <div style="margin-top:6px;font-size:22px;font-weight:700;">You're All Set!</div>
-          <div style="margin-top:4px;font-size:14px;color:#cbd5e1;">Your bingo seats are confirmed</div>
+          <div style="font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:${presentation.headerAccent};font-weight:700;">${escapeHtml(presentation.brandLabel)}</div>
+          <div style="margin-top:6px;font-size:22px;font-weight:700;">${escapeHtml(presentation.readyLine)}</div>
+          <div style="margin-top:4px;font-size:14px;color:#cbd5e1;">${escapeHtml(presentation.confirmationLine)}</div>
         </td></tr>
 
         <!-- Reference -->
         <tr><td style="padding:24px 32px 8px;">
-          <div style="background:#fff7e6;border:2px solid #c5a55a;border-radius:12px;padding:16px;text-align:center;">
-            <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.1em;">Booking Reference</div>
+          <div style="background:${presentation.referenceBg};border:2px solid ${presentation.referenceBorder};border-radius:12px;padding:16px;text-align:center;">
+            <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.1em;">${escapeHtml(presentation.referenceLabel)}</div>
             <div style="margin-top:6px;font-family:monospace;font-size:22px;font-weight:700;color:#1a3a5c;letter-spacing:.08em;">
               ${escapeHtml(booking.referenceNumber)}
             </div>
@@ -175,8 +241,9 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
         <!-- Session info -->
         <tr><td style="padding:8px 32px;">
           <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border-radius:10px;padding:14px 16px;">
+            ${eventTitleRow}
             <tr>
-              <td style="padding:6px 0;font-size:13px;color:#6b7280;">Session</td>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">${escapeHtml(presentation.sessionLabel)}</td>
               <td style="padding:6px 0;font-size:14px;color:#1a3a5c;font-weight:600;text-align:right;">${escapeHtml(formatDateLong(session?.date))}</td>
             </tr>
             <tr>
@@ -185,7 +252,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
             </tr>
             <tr>
               <td style="padding:6px 0;font-size:13px;color:#6b7280;">Total Paid</td>
-              <td style="padding:6px 0;font-size:18px;font-weight:700;color:#c5a55a;text-align:right;">${escapeHtml(booking.totalFormatted || formatPriceDollars(booking.totalAmount))}</td>
+              <td style="padding:6px 0;font-size:18px;font-weight:700;color:${presentation.accentColor};text-align:right;">${escapeHtml(booking.totalFormatted || formatPriceDollars(booking.totalAmount))}</td>
             </tr>
           </table>
         </td></tr>
@@ -199,7 +266,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
 
         <!-- Tickets -->
         <tr><td style="padding:16px 32px 8px;">
-          <div style="font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;">${escapeHtml(sectionLabel)}</div>
+          <div style="font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;">${escapeHtml(presentation.sectionLabel)}</div>
           <table width="100%" cellpadding="0" cellspacing="0">${attendeeBlocks}</table>
         </td></tr>
 
@@ -214,13 +281,13 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
         <tr><td style="padding:8px 32px 24px;text-align:center;">
           <a href="${escapeHtml(ticketUrl)}"
              style="display:inline-block;background:#1a3a5c;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;">
-            ${escapeHtml(ctaLabel)}
+            ${escapeHtml(presentation.ctaLabel)}
           </a>
           <div style="margin-top:10px;font-size:12px;color:#6b7280;">
             If this email was in spam or junk, mark it as not spam so future booking emails are easier to find.
           </div>
           <div style="margin-top:10px;font-size:12px;color:#9ca3af;">
-            ${escapeHtml(proofText)}
+            ${escapeHtml(presentation.proofText)}
           </div>
         </td></tr>
 
@@ -242,18 +309,19 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
 function renderBookingText({ booking, session, attendees, seats, packages, siteUrl }) {
   const seatById = new Map(seats.map(s => [s.id, s]));
   const pkgById = new Map(packages.map(p => [p.id, p]));
-  const isSpecialEvent = !!session?.is_special_event;
+  const presentation = getBookingPresentation(session);
   const lines = [];
 
-  lines.push("You're all set — your bingo seats are confirmed.");
+  lines.push(`${presentation.readyLine} ${presentation.confirmationLine}.`);
   lines.push('');
-  lines.push(`Booking reference: ${booking.referenceNumber}`);
-  lines.push(`Session: ${formatDateLong(session?.date)} at ${formatTime12h(session?.time)}`);
+  lines.push(`${presentation.referenceLabel}: ${booking.referenceNumber}`);
+  if (session?.event_title) lines.push(`${presentation.sessionType === 'event' ? 'Event' : 'Title'}: ${session.event_title}`);
+  lines.push(`${presentation.sessionLabel}: ${formatDateLong(session?.date)} at ${formatTime12h(session?.time)}`);
   lines.push(`Total paid: ${booking.totalFormatted || formatPriceDollars(booking.totalAmount)}`);
   lines.push('');
   lines.push('Thank you for booking with us. We look forward to seeing you there!');
   lines.push('');
-  lines.push('Tickets:');
+  lines.push(`${presentation.sectionLabel}:`);
   attendees.forEach((att, idx) => {
     const seat = seatById.get(att.seatId) || {};
     const ticketRef = booking.itemReferences?.[idx] || '';
@@ -266,10 +334,8 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   });
   lines.push('');
   lines.push('Please arrive by 4:30 PM. Doors open one hour before the session.');
-  lines.push(`${isSpecialEvent ? 'View your tickets online' : 'View your booking receipt'}: ${siteUrl}/tickets/${booking.referenceNumber}`);
-  if (!isSpecialEvent) {
-    lines.push('Regular bingo orders are printed on receipt paper. Save this email or bring your booking reference as proof.');
-  }
+  lines.push(`${presentation.ctaLabel}: ${siteUrl}/tickets/${booking.referenceNumber}`);
+  lines.push(presentation.proofText);
   lines.push('If you found this email in spam or junk, mark it as not spam so future booking emails are easier to find.');
   lines.push('');
   lines.push('Wolastoq Bingo');
@@ -300,7 +366,8 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
   const html = renderBookingHtml({ booking, session, attendees, seats, packages, siteUrl });
   const text = renderBookingText({ booking, session, attendees, seats, packages, siteUrl });
   const subjectDate = formatDateLong(session?.date);
-  const subject = ['Your Bingo Booking', subjectDate, booking.referenceNumber]
+  const presentation = getBookingPresentation(session);
+  const subject = [presentation.subjectPrefix, session?.event_title, subjectDate, booking.referenceNumber]
     .filter(Boolean)
     .join(' - ');
 

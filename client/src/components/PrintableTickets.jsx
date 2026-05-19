@@ -88,14 +88,16 @@ function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTi
 function EventTicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTitle }) {
   return (
     <div className="event-ticket-card">
+      <div className="event-ticket-kicker">Live Event Ticket</div>
       <div className="event-ticket-title">{eventTitle || 'Live Event / Venue'}</div>
+      <div className="event-ticket-admit">Admit One</div>
       <div className="event-ticket-name">{ticket.firstName} {ticket.lastName}</div>
       <div className="event-ticket-row">
         <span>Table {ticket.tableNumber}</span>
         <span>Seat {ticket.chairNumber}</span>
       </div>
       <div className="event-ticket-meta">{formatDateShort(sessionDate)} - {formatTime(sessionTime)}</div>
-      <div className="event-ticket-ref">{referenceNumber}</div>
+      <div className="event-ticket-ref"><span>Ticket</span>{referenceNumber}</div>
     </div>
   );
 }
@@ -304,6 +306,7 @@ export default function PrintableTickets() {
   }
 
   const isEventLayout = data.printLayout === 'event_6up' || data.sessionType === 'event';
+  const printTitle = isEventLayout ? 'Print Live Event Tickets' : 'Print Tickets';
   const ticketsPerPage = isEventLayout ? 6 : 3;
 
   const pages = [];
@@ -316,7 +319,7 @@ export default function PrintableTickets() {
       {/* Screen-only controls */}
       <div className="no-print bg-brand-blue text-white px-4 py-3 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold">Print Tickets</h1>
+          <h1 className="text-lg font-bold">{printTitle}</h1>
           <p className="text-xs text-gray-300">Booking {data.referenceNumber} - {data.tickets.length} ticket(s)</p>
         </div>
         <div className="flex gap-3 items-center">
@@ -408,30 +411,63 @@ export default function PrintableTickets() {
         }
 
         .event-ticket-card {
-          border: 1.5px dashed #1a3a5c;
+          border: 2px solid #2563eb;
           border-radius: 6px;
           box-sizing: border-box;
           padding: 0.18in;
-          background: #fffdf8;
+          background: linear-gradient(180deg, #eff6ff 0%, #ffffff 52%, #dbeafe 100%);
           display: flex;
           flex-direction: column;
           justify-content: center;
           align-items: center;
           text-align: center;
-          color: #1a3a5c;
+          color: #0f2d48;
           overflow: hidden;
+          position: relative;
+        }
+
+        .event-ticket-card::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          width: 0.08in;
+          background: #2563eb;
+        }
+
+        .event-ticket-kicker {
+          color: #2563eb;
+          font-size: 11px;
+          font-weight: 800;
+          line-height: 1;
+          letter-spacing: 0;
+          text-transform: uppercase;
+          margin-bottom: 0.08in;
         }
 
         .event-ticket-title {
-          font-family: Georgia, serif;
-          font-size: 18px;
+          font-size: 19px;
           font-weight: 700;
           line-height: 1.15;
-          margin-bottom: 0.12in;
+          margin-bottom: 0.08in;
+          max-width: 92%;
+        }
+
+        .event-ticket-admit {
+          background: #2563eb;
+          color: #fff;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 800;
+          line-height: 1;
+          padding: 0.05in 0.16in;
+          text-transform: uppercase;
+          margin-bottom: 0.1in;
         }
 
         .event-ticket-name {
-          font-size: 20px;
+          font-size: 19px;
           font-weight: 700;
           line-height: 1.2;
           word-break: break-word;
@@ -460,6 +496,17 @@ export default function PrintableTickets() {
           font-size: 13px;
           font-weight: 700;
           color: #0f2d48;
+          display: flex;
+          align-items: center;
+          gap: 0.08in;
+        }
+
+        .event-ticket-ref span {
+          font-family: Arial, sans-serif;
+          font-size: 10px;
+          color: #2563eb;
+          text-transform: uppercase;
+          font-weight: 800;
         }
 
         /* 3 tickets per page, full width, no wasted space */

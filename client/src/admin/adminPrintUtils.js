@@ -13,6 +13,29 @@ function csvCell(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getBookingSessionType(booking) {
+  if (booking?.sessionType) return booking.sessionType;
+  if (booking?.notificationType === 'live_event_ticket') return 'event';
+  if (booking?.notificationType === 'special_bingo_ticket') return 'special_bingo';
+  return 'regular_bingo';
+}
+
+function getReceiptTitle(booking, fallback = 'BOOKING RECEIPT') {
+  const sessionType = getBookingSessionType(booking);
+  if (sessionType === 'event') return 'LIVE EVENT TICKET';
+  if (sessionType === 'special_bingo') return 'SPECIAL BINGO TICKET';
+  return fallback;
+}
+
 function downloadCsv(filename, rows) {
   const csv = rows.map(row => row.map(csvCell).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -57,14 +80,16 @@ function printThermalReceipt(title, lines) {
 
 export function printAutoBookingReceipt(booking, cfg) {
   const bodyWidth = cfg.paperWidth === '58mm' ? '50mm' : '72mm';
+  const receiptTitle = getReceiptTitle(booking, cfg.receiptTitle);
   const lines = [
     `<div class="header">${cfg.businessName}</div>`,
     `<div class="sub-header">${cfg.businessSubtitle}</div>`,
     '<div class="line"></div>',
-    `<div class="center bold">${cfg.receiptTitle}</div>`,
+    `<div class="center bold">${receiptTitle}</div>`,
+    booking.sessionTitle ? `<div class="center bold" style="font-size:11px">${escapeHtml(booking.sessionTitle)}</div>` : '',
     `<div class="center">${booking.sessionDate} at ${booking.sessionTime}</div>`,
     '<div class="line"></div>',
-  ];
+  ].filter(Boolean);
 
   if (cfg.showRefNumber) {
     lines.push(`<div class="row"><span>Ref:</span><span class="bold">${booking.referenceNumber}</span></div>`);
@@ -195,18 +220,20 @@ export function printDailySalesReceipt(dailySales) {
 }
 
 export function printBookingReceipt(booking) {
+  const receiptTitle = getReceiptTitle(booking);
   const lines = [
     '<div class="header">SMEC BINGO</div>',
     '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
     '<div class="line"></div>',
-    '<div class="center bold">BOOKING RECEIPT</div>',
+    `<div class="center bold">${receiptTitle}</div>`,
+    booking.sessionTitle ? `<div class="center bold" style="font-size:11px">${escapeHtml(booking.sessionTitle)}</div>` : '',
     `<div class="center">${booking.sessionDate} at ${booking.sessionTime}</div>`,
     '<div class="line"></div>',
     `<div class="row"><span>Ref:</span><span class="bold">${booking.referenceNumber}</span></div>`,
-    `<div class="row"><span>Status:</span><span>${booking.paymentStatus.toUpperCase()}</span></div>`,
+    `<div class="row"><span>Status:</span><span>${String(booking.paymentStatus || 'paid').toUpperCase()}</span></div>`,
     '<div class="line"></div>',
     '<div class="bold">Attendees:</div>',
-  ];
+  ].filter(Boolean);
 
   for (const item of booking.items) {
     lines.push(`<div style="padding:2px 0">${item.firstName} ${item.lastName}</div>`);
@@ -214,8 +241,8 @@ export function printBookingReceipt(booking) {
       lines.push(`<div style="font-size:10px;color:#555;padding-left:8px">Ticket: ${item.referenceNumber}</div>`);
     }
     lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${item.tableNumber}/C${item.chairNumber} - ${item.packageName}</span><span class="item-amt">${item.packagePriceFormatted || ''}</span></div>`);
-    if (item.addons.length > 0) {
-      for (const addon of item.addons) {
+    if ((item.addons || []).length > 0) {
+      for (const addon of item.addons || []) {
         lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  + ${addon.packageName} x${addon.quantity}</span><span class="item-amt">${addon.priceFormatted}</span></div>`);
       }
     }

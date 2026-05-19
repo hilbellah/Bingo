@@ -5,6 +5,12 @@ const BOOKING_THANK_YOU_MESSAGE = 'Thank you for booking with us. We look forwar
 
 export default function Confirmation({ booking, session, attendees, seats, selectedSeats, requiredPkg, requiredPkgs, optionalPkgs = [] }) {
   const requiredPackageList = requiredPkgs?.length ? requiredPkgs : (requiredPkg ? [requiredPkg] : []);
+  const sessionType = session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
+  const isEvent = sessionType === 'event';
+  const referenceLabel = isEvent ? 'Event Ticket Reference' : 'Booking Reference';
+  const subtitle = isEvent ? 'Your live event tickets are confirmed' : 'Your bingo seats are confirmed';
+  const ticketHeading = isEvent ? 'Your Event Tickets' : 'Your Tickets';
+  const emailTicketLabel = isEvent ? 'live event tickets' : 'tickets';
 
   const getSeatInfo = (seatId) => {
     const seat = seats.find(s => s.id === seatId);
@@ -22,19 +28,25 @@ export default function Confirmation({ booking, session, attendees, seats, selec
             </svg>
           </div>
           <h1 className="text-3xl font-bold text-brand-blue">You're All Set!</h1>
-          <p className="text-gray-500 text-lg mt-1">Your bingo seats are confirmed</p>
+          <p className="text-gray-500 text-lg mt-1">{subtitle}</p>
         </div>
 
         {/* Reference number */}
-        <div className="bg-brand-gold/10 border-2 border-brand-gold/30 rounded-2xl p-5 mb-6 text-center">
-          <p className="text-sm text-gray-500 font-medium">Booking Reference</p>
+        <div className={`${isEvent ? 'bg-blue-50 border-blue-300' : 'bg-brand-gold/10 border-brand-gold/30'} border-2 rounded-2xl p-5 mb-6 text-center`}>
+          <p className="text-sm text-gray-500 font-medium">{referenceLabel}</p>
           <p className="text-2xl font-mono font-bold text-brand-blue mt-1 tracking-wider">{booking.referenceNumber}</p>
         </div>
 
         {/* Booking details */}
         <div className="bg-gray-50 rounded-2xl p-5 mb-6 space-y-3">
+          {session?.event_title && (
+            <div className="flex justify-between items-center gap-3">
+              <span className="text-gray-500 font-medium">{isEvent ? 'Event' : 'Title'}</span>
+              <span className="font-semibold text-brand-blue text-right">{session.event_title}</span>
+            </div>
+          )}
           <div className="flex justify-between items-center">
-            <span className="text-gray-500 font-medium">Session</span>
+            <span className="text-gray-500 font-medium">{isEvent ? 'Event Date' : 'Session'}</span>
             <span className="font-semibold text-brand-blue">{formatDateLong(session?.date)}</span>
           </div>
           <div className="flex justify-between items-center">
@@ -53,7 +65,7 @@ export default function Confirmation({ booking, session, attendees, seats, selec
 
         {/* Seats */}
         <div className="mb-6">
-          <h3 className="font-bold text-brand-blue mb-3 text-lg">Your Tickets</h3>
+          <h3 className="font-bold text-brand-blue mb-3 text-lg">{ticketHeading}</h3>
           <div className="space-y-2">
             {attendees.map((att, i) => {
               const info = getSeatInfo(selectedSeats[i]);
@@ -80,7 +92,7 @@ export default function Confirmation({ booking, session, attendees, seats, selec
                   </div>
                   {ticketRef && (
                     <div className="ml-9 mt-1">
-                      <span className="font-mono text-xs text-brand-blue font-semibold bg-brand-gold/10 px-2 py-0.5 rounded">{ticketRef}</span>
+                      <span className={`font-mono text-xs text-brand-blue font-semibold ${isEvent ? 'bg-blue-50' : 'bg-brand-gold/10'} px-2 py-0.5 rounded`}>{isEvent ? 'Live Event Ticket ' : ''}{ticketRef}</span>
                     </div>
                   )}
                   <div className="ml-9 mt-1 text-sm text-gray-500 space-y-0.5">
@@ -111,11 +123,11 @@ export default function Confirmation({ booking, session, attendees, seats, selec
               </p>
               {booking.email ? (
                 <p className="text-sm text-green-700 mt-0.5">
-                  We've emailed your tickets to <strong className="font-semibold">{booking.email}</strong>.
+                  We've emailed your {emailTicketLabel} to <strong className="font-semibold">{booking.email}</strong>.
                 </p>
               ) : (
                 <p className="text-sm text-green-700 mt-0.5">
-                  We've emailed your tickets to the address you provided.
+                  We've emailed your {emailTicketLabel} to the address you provided.
                 </p>
               )}
               <p className="text-xs text-green-700 mt-1">

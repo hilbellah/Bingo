@@ -441,10 +441,30 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
     JOIN booking_items bi ON bi.id = ba.booking_item_id
     WHERE bi.booking_id = ?
   `, [bookingId]);
+  const sessionType = normalizeSessionType(session?.session_type, session?.is_special_event);
+  const notificationType = sessionType === 'event'
+    ? 'live_event_ticket'
+    : sessionType === 'special_bingo'
+      ? 'special_bingo_ticket'
+      : 'regular_bingo_receipt';
+  const notificationLabel = sessionType === 'event'
+    ? 'Live Event Ticket'
+    : sessionType === 'special_bingo'
+      ? 'Special Bingo Ticket'
+      : 'Regular Bingo Receipt';
   io.to('admin:receipts').emit('booking:new', {
+    bookingId: booking.id,
     referenceNumber: booking.reference_number,
     sessionDate: session?.date,
     sessionTime: session?.time,
+    sessionTitle: session?.event_title || null,
+    eventTitle: session?.event_title || null,
+    sessionType,
+    isSpecialEvent: sessionType !== 'regular_bingo',
+    notificationType,
+    notificationLabel,
+    receiptTitle: notificationLabel.toUpperCase(),
+    paymentStatus: 'paid',
     totalAmount: booking.total_amount,
     totalFormatted: '$' + formatPrice(booking.total_amount),
     createdAt: new Date().toISOString(),

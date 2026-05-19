@@ -1,6 +1,16 @@
 import React from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 
+function getReceiptBadge(receipt) {
+  if (receipt.sessionType === 'event' || receipt.notificationType === 'live_event_ticket') {
+    return { label: 'Live Event', className: 'bg-blue-100 text-blue-800 border-blue-200' };
+  }
+  if (receipt.sessionType === 'special_bingo' || receipt.notificationType === 'special_bingo_ticket') {
+    return { label: 'Special Bingo', className: 'bg-yellow-100 text-yellow-800 border-yellow-200' };
+  }
+  return { label: 'Bingo', className: 'bg-gray-100 text-gray-700 border-gray-200' };
+}
+
 export default function DashboardTab() {
   const {
     tab,
@@ -184,12 +194,20 @@ export default function DashboardTab() {
                   <button onClick={() => setRecentReceipts([])} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
                 </div>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {recentReceipts.map((r, i) => (
+                  {recentReceipts.map((r, i) => {
+                    const badge = getReceiptBadge(r);
+                    return (
                     <div key={r.referenceNumber + '-' + i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <span className="font-mono font-semibold text-sm text-brand-blue">{r.referenceNumber}</span>
-                        <span className="text-xs text-gray-500 ml-2">{r.sessionDate} at {r.sessionTime}</span>
-                        <span className="text-xs text-gray-400 ml-2">{r.items.length} person(s)</span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${badge.className}`}>{badge.label}</span>
+                          <span className="font-mono font-semibold text-sm text-brand-blue">{r.referenceNumber}</span>
+                          <span className="text-xs text-gray-500">{r.sessionDate} at {r.sessionTime}</span>
+                          <span className="text-xs text-gray-400">{r.items.length} person(s)</span>
+                        </div>
+                        {r.sessionTitle && (
+                          <div className="text-xs text-gray-600 mt-1 truncate">{r.sessionTitle}</div>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-green-700">{r.totalFormatted}</span>
@@ -201,7 +219,8 @@ export default function DashboardTab() {
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
