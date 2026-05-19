@@ -8,6 +8,21 @@ export const DEFAULT_SPECIAL_BINGO_CONFIG = {
   additionalPhdMaxQuantity: 1,
 };
 
+export const REGULAR_BINGO_PACKAGE_DEFINITIONS = [
+  { id: 'pkg-regular-required-9-up', name: '9 up', price: 3000, type: 'required', max_quantity: 1, sort_order: 0, is_phd: 0 },
+  { id: 'pkg-regular-required-toonie-ball', name: 'Toonie Ball', price: 200, type: 'required', max_quantity: 1, sort_order: 1, is_phd: 0 },
+  { id: 'pkg-regular-optional-9-up', name: '9 up', price: 3000, type: 'optional', max_quantity: 1, sort_order: 10, is_phd: 0 },
+  { id: 'pkg-regular-optional-6-up', name: '6 up', price: 2000, type: 'optional', max_quantity: 1, sort_order: 11, is_phd: 0 },
+  { id: 'pkg-regular-optional-3-up', name: '3 up', price: 1000, type: 'optional', max_quantity: 1, sort_order: 12, is_phd: 0 },
+  { id: 'pkg-regular-optional-mp-early-bird', name: 'MP Early Bird', price: 500, type: 'optional', max_quantity: 1, sort_order: 13, is_phd: 0 },
+  { id: 'pkg-regular-optional-phd-1', name: 'PHD #1', price: 3000, type: 'optional', max_quantity: 1, sort_order: 20, is_phd: 1 },
+  { id: 'pkg-regular-optional-phd-2', name: 'PHD #2', price: 3500, type: 'optional', max_quantity: 1, sort_order: 21, is_phd: 1 },
+  { id: 'pkg-regular-optional-phd-3', name: 'PHD #3', price: 4000, type: 'optional', max_quantity: 1, sort_order: 22, is_phd: 1 },
+  { id: 'pkg-regular-optional-phd-4', name: 'PHD #4', price: 5000, type: 'optional', max_quantity: 1, sort_order: 23, is_phd: 1 },
+  { id: 'pkg-regular-optional-phd-5', name: 'PHD #5', price: 6000, type: 'optional', max_quantity: 1, sort_order: 24, is_phd: 1 },
+  { id: 'pkg-regular-optional-phd-6', name: 'PHD #6', price: 8000, type: 'optional', max_quantity: 1, sort_order: 25, is_phd: 1 },
+];
+
 function normalizePackageName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }

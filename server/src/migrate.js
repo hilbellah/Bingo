@@ -1,29 +1,71 @@
 import { getDb, exec, all, run } from './database.js';
 import { v4 as uuid } from 'uuid';
+import { REGULAR_BINGO_PACKAGE_DEFINITIONS } from './services/sessionPackages.js';
 
-const BASELINE_PACKAGES = [
-  ['pkg-required-12up-toonie', '12up / Toonie', 1800, 'required', 1, 1, 0, 0],
-  ['pkg-phd-handheld-device', 'Personal Handheld Device', 5000, 'optional', 2, 1, 0, 1],
-  ['pkg-special-books-3-plus-1', '3 Special Books (1 Free)', 1400, 'optional', 4, 1, 1, 0],
-  ['pkg-single-special-book', 'Single Special Book', 700, 'optional', 7, 1, 2, 0],
-  ['pkg-admission-book-6up', '6-up Admission Book', 500, 'optional', 4, 1, 3, 0],
-  ['pkg-admission-book-3up', '3-up Admission Book', 300, 'optional', 4, 1, 4, 0],
-  ['pkg-letter-w-card', 'Letter "W" Card', 200, 'optional', 4, 1, 5, 0],
-  ['pkg-mega-jackpot', 'Mega Jackpot', 200, 'optional', 12, 1, 6, 0],
-  ['pkg-winner-take-all', 'Winner Take All', 100, 'optional', 12, 1, 7, 0],
-];
+const BASELINE_PACKAGES = REGULAR_BINGO_PACKAGE_DEFINITIONS.map(pkg => [
+  pkg.id,
+  pkg.name,
+  pkg.price,
+  pkg.type,
+  pkg.max_quantity,
+  1,
+  pkg.sort_order,
+  pkg.is_phd,
+]);
 
 function ensureBaselinePackages() {
   const countRow = all('SELECT COUNT(*) as count FROM packages')[0];
-  if ((countRow?.count || 0) > 0) return;
+  const isEmpty = (countRow?.count || 0) === 0;
+  if (isEmpty) {
+    console.log('No packages found; inserting baseline ticket packages including PHD.');
+  } else {
+    console.log('Ensuring regular bingo package defaults.');
+  }
 
-  console.log('No packages found; inserting baseline ticket packages including PHD.');
   for (const pkg of BASELINE_PACKAGES) {
     run(
-      'INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      `INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         price = excluded.price,
+         type = excluded.type,
+         max_quantity = excluded.max_quantity,
+         is_active = excluded.is_active,
+         sort_order = excluded.sort_order,
+         is_phd = excluded.is_phd`,
       pkg
     );
   }
+
+  const defaultIds = BASELINE_PACKAGES.map(pkg => pkg[0]);
+  const placeholders = defaultIds.map(() => '?').join(',');
+  run(
+    `DELETE FROM packages
+     WHERE id NOT IN (${placeholders})
+       AND id NOT IN (SELECT package_id FROM booking_items WHERE package_id IS NOT NULL)
+       AND id NOT IN (SELECT package_id FROM booking_addons WHERE package_id IS NOT NULL)`,
+    defaultIds
+  );
+  run(
+    `UPDATE packages
+     SET is_active = 0
+     WHERE id NOT IN (${placeholders})`,
+    defaultIds
+  );
+}
+
+function removeRegularSessionPackageOverrides() {
+  run(
+    `DELETE FROM session_packages
+     WHERE session_id IN (
+       SELECT id
+       FROM sessions
+       WHERE COALESCE(NULLIF(session_type, ''), CASE WHEN is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END) = 'regular_bingo'
+     )
+       AND id NOT IN (SELECT package_id FROM booking_items WHERE package_id IS NOT NULL)
+       AND id NOT IN (SELECT package_id FROM booking_addons WHERE package_id IS NOT NULL)`
+  );
 }
 
 async function migrate() {
@@ -295,10 +337,11 @@ async function migrate() {
   });
   try { run("INSERT INTO settings (key, value) VALUES ('special_bingo_config', ?)", [defaultSpecialBingoConfig]); } catch(e) {}
 
-  // Empty databases can happen on a fresh install or after an accidental data
-  // reset. Restore the sellable baseline package list without touching
-  // existing/admin-managed package rows.
+  // Keep regular bingo on the approved package list. Old package rows that
+  // are still referenced by bookings are disabled instead of deleted so
+  // historical receipts and reports keep their names/prices.
   ensureBaselinePackages();
+  removeRegularSessionPackageOverrides();
 
   // --- Per-attendee ticket reference migration ---
   console.log('Running per-attendee ticket reference migration...');

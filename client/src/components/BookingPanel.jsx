@@ -12,7 +12,7 @@ import { sendEmailVerification, verifyEmailCode } from '../api';
 export default function BookingPanel({
   isOpen, onClose, onPickChairs, session, partySize, onPartySize,
   attendees, onAttendees, selectedSeats, seats,
-  requiredPkg, optionalPkgs, total,
+  requiredPkg, requiredPkgs, optionalPkgs, total,
   allNamesValid, allSeatsSelected, loading, onSubmit, holdExpiry,
   step, onStepChange, phdInventory
 }) {
@@ -152,37 +152,48 @@ export default function BookingPanel({
     onAttendees(updated);
   };
 
-  // Calculate total PHD units currently selected across all attendees.
-  // Some special bingo admission packages include one PHD before add-ons.
-  const getIncludedPhdTotal = () => requiredPkg?.is_phd ? attendees.length : 0;
-  const getOptionalPhdLimit = (pkg) => {
+  // Calculate PHD devices currently selected across all attendees.
+  const requiredPackageList = requiredPkgs?.length ? requiredPkgs : (requiredPkg ? [requiredPkg] : []);
+  const sessionType = session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
+  const isRegularBingo = sessionType === 'regular_bingo';
+  const requiredPhdIncluded = requiredPackageList.some(pkg => pkg?.is_phd);
+  const getIncludedPhdTotal = () => requiredPhdIncluded ? attendees.length : 0;
+  const getAttendeeOptionalPhdQty = (attendee) => (attendee?.addons || []).reduce((sum, addon) => {
+    const pkg = optionalPkgs.find(p => p.id === addon.packageId);
+    return sum + (pkg?.is_phd ? addon.quantity : 0);
+  }, 0);
+  const getOptionalPhdLimit = (pkg, attendeeIdx = null) => {
     if (!pkg?.is_phd) return pkg?.max_quantity || 1;
     const packageLimit = pkg?.max_quantity || 1;
-    const inventoryLimit = phdInventory ? Math.max(0, phdInventory.perPlayerLimit - (requiredPkg?.is_phd ? 1 : 0)) : packageLimit;
+    const attendee = attendeeIdx !== null ? attendees[attendeeIdx] : null;
+    const currentPkgQty = attendee ? getAddonQty(attendeeIdx, pkg.id) : 0;
+    const otherPhdQty = attendee ? Math.max(0, getAttendeeOptionalPhdQty(attendee) - currentPkgQty) : 0;
+    const perPlayerLimit = phdInventory?.perPlayerLimit || 2;
+    const perPlayerBase = isRegularBingo ? otherPhdQty : (requiredPhdIncluded ? 1 : 0) + otherPhdQty;
+    const inventoryLimit = Math.max(0, perPlayerLimit - perPlayerBase);
     return Math.min(packageLimit, inventoryLimit);
   };
 
   const getTotalPhdSelected = () => {
-    const optionalCount = attendees.reduce((sum, att) => {
-      return sum + (att.addons || []).reduce((aSum, addon) => {
-        const pkg = optionalPkgs.find(p => p.id === addon.packageId);
-        return aSum + (pkg?.is_phd ? addon.quantity : 0);
-      }, 0);
+    const optionalDeviceCount = attendees.reduce((sum, attendee) => {
+      const optionalQty = getAttendeeOptionalPhdQty(attendee);
+      return sum + (isRegularBingo ? (optionalQty > 0 ? 1 : 0) : optionalQty);
     }, 0);
-    return getIncludedPhdTotal() + optionalCount;
+    return getIncludedPhdTotal() + optionalDeviceCount;
   };
 
   const updateAddon = (attendeeIdx, packageId, quantity) => {
     const pkg = optionalPkgs.find(p => p.id === packageId);
 
     // Enforce PHD per-player limit
-    if (pkg?.is_phd && quantity > getOptionalPhdLimit(pkg)) {
+    if (pkg?.is_phd && quantity > getOptionalPhdLimit(pkg, attendeeIdx)) {
       return;
     }
 
     // Enforce PHD total stock limit
     if (pkg?.is_phd && phdInventory && quantity > getAddonQty(attendeeIdx, packageId)) {
-      const increase = quantity - getAddonQty(attendeeIdx, packageId);
+      const attendeeHadPhd = getAttendeeOptionalPhdQty(attendees[attendeeIdx]) > 0;
+      const increase = isRegularBingo && attendeeHadPhd ? 0 : quantity - getAddonQty(attendeeIdx, packageId);
       const totalPhdUsed = getTotalPhdSelected();
       if (totalPhdUsed + increase > phdInventory.remaining) {
         return;
@@ -445,7 +456,9 @@ export default function BookingPanel({
                       {phdInventory.remaining} available
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Max {phdInventory.perPlayerLimit} per player</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Max {phdInventory.perPlayerLimit} PHD package{phdInventory.perPlayerLimit === 1 ? '' : 's'} per player. Multiple PHD packages for one player use one device.
+                  </p>
                 </div>
               )}
 
@@ -467,12 +480,12 @@ export default function BookingPanel({
                       </div>
 
                       {/* Required package */}
-                      {requiredPkg && (
-                        <div className="bg-blue-50 rounded-lg px-3 py-2 mb-2 flex justify-between text-sm">
-                          <span className="font-medium text-brand-blue">{requiredPkg.name} <span className="text-xs text-gray-400">(included)</span></span>
-                          <span className="font-bold">{formatPrice(requiredPkg.price)}</span>
+                      {requiredPackageList.map(pkg => (
+                        <div key={pkg.id} className="bg-blue-50 rounded-lg px-3 py-2 mb-2 flex justify-between text-sm">
+                          <span className="font-medium text-brand-blue">{pkg.name} <span className="text-xs text-gray-400">(required)</span></span>
+                          <span className="font-bold">{formatPrice(pkg.price)}</span>
                         </div>
-                      )}
+                      ))}
 
                       {/* Add-ons dropdown */}
                       {optionalPkgs.length > 0 && (
@@ -484,7 +497,7 @@ export default function BookingPanel({
                                 const pkgId = e.target.value;
                                 const currentQty = getAddonQty(i, pkgId);
                                 const pkg = optionalPkgs.find(p => p.id === pkgId);
-                                const maxQty = getOptionalPhdLimit(pkg);
+                                const maxQty = getOptionalPhdLimit(pkg, i);
                                 if (pkg && currentQty < maxQty) {
                                   updateAddon(i, pkgId, currentQty + 1);
                                 }
@@ -494,7 +507,9 @@ export default function BookingPanel({
                           >
                             <option value="">+ Add optional items...</option>
                             {optionalPkgs.map(pkg => {
-                              const soldOut = pkg.is_phd && phdInventory && (getOptionalPhdLimit(pkg) <= 0 || phdInventory.remaining - getTotalPhdSelected() <= 0) && getAddonQty(i, pkg.id) === 0;
+                              const attendeeHasPhd = getAttendeeOptionalPhdQty(attendees[i]) > 0;
+                              const stockBlocked = !isRegularBingo || !attendeeHasPhd;
+                              const soldOut = pkg.is_phd && phdInventory && (getOptionalPhdLimit(pkg, i) <= 0 || (stockBlocked && phdInventory.remaining - getTotalPhdSelected() <= 0)) && getAddonQty(i, pkg.id) === 0;
                               return (
                                 <option key={pkg.id} value={pkg.id} disabled={soldOut}>
                                   {pkg.name} - {formatPrice(pkg.price)}{pkg.is_phd ? ' (PHD)' : ''}{soldOut ? ' - SOLD OUT' : ''}
@@ -506,8 +521,9 @@ export default function BookingPanel({
                           {/* Selected add-ons */}
                           {optionalPkgs.filter(pkg => getAddonQty(i, pkg.id) > 0).map(pkg => {
                             const qty = getAddonQty(i, pkg.id);
-                            const maxQty = getOptionalPhdLimit(pkg);
-                            const atStockLimit = pkg.is_phd && phdInventory && (phdInventory.remaining - getTotalPhdSelected() + qty) <= qty;
+                            const maxQty = getOptionalPhdLimit(pkg, i);
+                            const attendeeHasOtherPhd = getAttendeeOptionalPhdQty(attendees[i]) - qty > 0;
+                            const atStockLimit = pkg.is_phd && phdInventory && (!isRegularBingo || !attendeeHasOtherPhd) && (phdInventory.remaining - getTotalPhdSelected() + qty) <= qty;
                             return (
                               <div key={pkg.id} className={`flex items-center justify-between rounded-lg px-3 py-2 mt-1 text-sm ${pkg.is_phd ? 'bg-purple-50' : 'bg-brand-gold/10'}`}>
                                 <div className="flex-1 min-w-0">
@@ -550,7 +566,8 @@ export default function BookingPanel({
 
           {/* ========== STEP 2: Review & Pay ========== */}
           {step === 2 && (() => {
-            const subtotal = partySize * (requiredPkg?.price || 0);
+            const requiredTotal = requiredPackageList.reduce((sum, pkg) => sum + (pkg?.price || 0), 0);
+            const subtotal = partySize * requiredTotal;
             const addonsTotal = attendees.reduce((sum, att) => {
               return sum + (att.addons || []).reduce((aSum, addon) => {
                 const pkg = optionalPkgs.find(p => p.id === addon.packageId);
@@ -586,12 +603,12 @@ export default function BookingPanel({
                         </div>
 
                         {/* Required package line */}
-                        {requiredPkg && (
-                          <div className="flex justify-between text-sm ml-8 py-1">
-                            <span className="text-gray-600">{requiredPkg.name}</span>
-                            <span className="font-medium text-gray-800">{formatPrice(requiredPkg.price)}</span>
+                        {requiredPackageList.map(pkg => (
+                          <div key={pkg.id} className="flex justify-between text-sm ml-8 py-1">
+                            <span className="text-gray-600">{pkg.name}</span>
+                            <span className="font-medium text-gray-800">{formatPrice(pkg.price)}</span>
                           </div>
-                        )}
+                        ))}
 
                         {/* Add-on lines */}
                         {playerAddons.map(addon => {

@@ -256,7 +256,8 @@ export default function App() {
     setLoading(false);
   };
 
-  const requiredPkg = packages.find(pkg => pkg.type === 'required');
+  const requiredPkgs = packages.filter(pkg => pkg.type === 'required');
+  const requiredPkg = requiredPkgs[0];
   const optionalPkgs = packages.filter(pkg => pkg.type === 'optional');
   const allNamesValid = attendees.length > 0 && attendees.every(attendee => attendee.firstName.trim() && attendee.lastName.trim());
   const allSeatsSelected = selectedSeats.length === partySize && partySize > 0;
@@ -288,6 +289,7 @@ export default function App() {
         seats={seats}
         selectedSeats={selectedSeats}
         requiredPkg={requiredPkg}
+        requiredPkgs={requiredPkgs}
         optionalPkgs={optionalPkgs}
       />
     );
@@ -328,7 +330,8 @@ export default function App() {
     return { hasMyChairs, allSold, allVacant, vacantChairs, total: chairs.length };
   };
 
-  const total = partySize * (requiredPkg?.price || 0) + attendees.reduce((sum, attendee) => {
+  const requiredTotal = requiredPkgs.reduce((sum, pkg) => sum + (pkg?.price || 0), 0);
+  const total = partySize * requiredTotal + attendees.reduce((sum, attendee) => {
     return sum + (attendee.addons || []).reduce((addonSum, addon) => {
       const pkg = optionalPkgs.find(item => item.id === addon.packageId);
       return pkg ? addonSum + pkg.price * addon.quantity : addonSum;
@@ -458,6 +461,7 @@ export default function App() {
         selectedSeats={selectedSeats}
         seats={seats}
         requiredPkg={requiredPkg}
+        requiredPkgs={requiredPkgs}
         optionalPkgs={optionalPkgs}
         total={total}
         allNamesValid={allNamesValid}

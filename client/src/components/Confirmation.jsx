@@ -3,7 +3,8 @@ import { formatDateLong, formatTime, formatPrice } from '../utils/formatters';
 
 const BOOKING_THANK_YOU_MESSAGE = 'Thank you for booking with us. We look forward to seeing you there!';
 
-export default function Confirmation({ booking, session, attendees, seats, selectedSeats, requiredPkg, optionalPkgs = [] }) {
+export default function Confirmation({ booking, session, attendees, seats, selectedSeats, requiredPkg, requiredPkgs, optionalPkgs = [] }) {
+  const requiredPackageList = requiredPkgs?.length ? requiredPkgs : (requiredPkg ? [requiredPkg] : []);
 
   const getSeatInfo = (seatId) => {
     const seat = seats.find(s => s.id === seatId);
@@ -83,7 +84,9 @@ export default function Confirmation({ booking, session, attendees, seats, selec
                     </div>
                   )}
                   <div className="ml-9 mt-1 text-sm text-gray-500 space-y-0.5">
-                    {requiredPkg && <p>{requiredPkg.name} - {formatPrice(requiredPkg.price)}</p>}
+                    {requiredPackageList.map(pkg => (
+                      <p key={pkg.id}>{pkg.name} - {formatPrice(pkg.price)}</p>
+                    ))}
                     {addonDetails.map((a, j) => (
                       <p key={j}>{a.name} x{a.qty} - {formatPrice(a.price)}</p>
                     ))}

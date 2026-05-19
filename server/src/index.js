@@ -231,12 +231,16 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
     return { ok: false, statusCode: 400, error: 'Live Event / Venue does not allow add-ons.' };
   }
 
-  // Session-specific packages override the global package list when present.
-  const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [sessionId]);
+  // Session-specific packages are only for special bingo and live events.
+  // Regular bingo always uses the approved global package list.
+  const sessionPkgs = currentSessionType === 'regular_bingo'
+    ? []
+    : all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [sessionId]);
   const useSessionPkgs = sessionPkgs.length > 0;
-  const requiredPkg = useSessionPkgs
-    ? sessionPkgs.find(p => p.type === 'required')
-    : get("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 LIMIT 1");
+  const requiredPkgs = useSessionPkgs
+    ? sessionPkgs.filter(p => p.type === 'required')
+    : all("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC");
+  const requiredPkg = requiredPkgs[0];
   if (!requiredPkg) return { ok: false, statusCode: 500, error: 'No required package configured' };
 
   // Every seat must currently be held by THIS holder. Prevents booking seats
@@ -262,7 +266,8 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
       sessionType: currentSessionType,
       useSessionPkgs,
       sessionPkgs,
-      requiredPkg
+      requiredPkg,
+      requiredPkgs
     }
   };
 }
@@ -274,6 +279,7 @@ function insertBookingRecord({
   sessionId,
   attendees,
   requiredPkg,
+  requiredPkgs = [requiredPkg].filter(Boolean),
   sessionPkgs,
   useSessionPkgs,
   email,
@@ -290,10 +296,18 @@ function insertBookingRecord({
     const itemId = uuid();
     const itemRef = generateRef();
     itemRefs.push(itemRef);
-    totalAmount += requiredPkg.price;
+    const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg];
+    const primaryRequiredPkg = includedRequiredPkgs[0];
+    totalAmount += primaryRequiredPkg.price;
 
     run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [itemId, bookingId, att.firstName, att.lastName, att.seatId, requiredPkg.id, requiredPkg.price, itemRef]);
+      [itemId, bookingId, att.firstName, att.lastName, att.seatId, primaryRequiredPkg.id, primaryRequiredPkg.price, itemRef]);
+
+    for (const requiredAddonPkg of includedRequiredPkgs.slice(1)) {
+      totalAmount += requiredAddonPkg.price;
+      run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)',
+        [uuid(), itemId, requiredAddonPkg.id, 1, requiredAddonPkg.price]);
+    }
 
     if (att.addons) {
       for (const addon of att.addons) {
@@ -806,10 +820,14 @@ app.get('/api/sessions', (req, res) => {
 
 // --- Session-specific packages (public) ---
 app.get('/api/sessions/:sessionId/packages', (req, res) => {
-  // If the session has its own override list (special events use this), return it as-is.
-  const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.sessionId]);
-  if (sessionPkgs.length > 0) {
-    return res.json(sessionPkgs);
+  const session = get('SELECT is_special_event, session_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.sessionId]);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  const sessionType = normalizeSessionType(session.session_type, session.is_special_event);
+  if (sessionType !== 'regular_bingo') {
+    const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.sessionId]);
+    if (sessionPkgs.length > 0) {
+      return res.json(sessionPkgs);
+    }
   }
   // Otherwise fall back to the global active package list, including PHD packages.
   // PHD availability is enforced per session by /api/phd-inventory?sessionId=...
@@ -1039,10 +1057,12 @@ app.post('/api/bookings', adminAuth, (req, res) => {
     emailVerifiedAt,
     useSessionPkgs,
     sessionPkgs,
-    requiredPkg
+    requiredPkg,
+    requiredPkgs,
+    sessionType
   } = validation.data;
 
-  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg);
+  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType, requiredPkgs);
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
   try {
@@ -1050,6 +1070,7 @@ app.post('/api/bookings', adminAuth, (req, res) => {
       sessionId,
       attendees,
       requiredPkg,
+      requiredPkgs,
       sessionPkgs,
       useSessionPkgs,
       email: trimmedEmail,
@@ -1098,10 +1119,12 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     emailVerifiedAt,
     useSessionPkgs,
     sessionPkgs,
-    requiredPkg
+    requiredPkg,
+    requiredPkgs,
+    sessionType
   } = validation.data;
 
-  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg);
+  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType, requiredPkgs);
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
   let bookingId, refNumber, totalAmount, itemRefs;
@@ -1110,6 +1133,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
       sessionId,
       attendees,
       requiredPkg,
+      requiredPkgs,
       sessionPkgs,
       useSessionPkgs,
       email: trimmedEmail,

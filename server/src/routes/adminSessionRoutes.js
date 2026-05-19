@@ -287,6 +287,10 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
   });
 
   app.get('/api/admin/sessions/:id/packages', adminAuth, (req, res) => {
+    const session = get('SELECT is_special_event, session_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    const sessionType = normalizeSessionType(session.session_type, session.is_special_event);
+    if (sessionType === 'regular_bingo') return res.json([]);
     res.json(all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.id]));
   });
 
@@ -296,6 +300,11 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     const session = get('SELECT is_special_event, session_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
     if (!session) return res.status(404).json({ error: 'Session not found' });
     const sessionType = normalizeSessionType(session.session_type, session.is_special_event);
+    if (sessionType === 'regular_bingo') {
+      run('DELETE FROM session_packages WHERE session_id = ?', [req.params.id]);
+      saveDb();
+      return res.json({ success: true, count: 0 });
+    }
     const packageDrafts = sessionType === 'special_bingo' && pkgs.length === 0
       ? getDefaultSpecialBingoPackages()
       : pkgs;

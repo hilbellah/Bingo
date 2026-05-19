@@ -356,7 +356,7 @@ export default function AdminDashboard() {
       ? defaultSpecialEventPackages(specialBingoConfig)
       : sessionType === 'event'
         ? defaultEventPackages()
-        : [{ name: '', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false }];
+        : [];
     setSessionPkgList(pkgs.length > 0 ? pkgs : [
       ...fallbackPkgs
     ]);

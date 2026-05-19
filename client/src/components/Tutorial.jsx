@@ -230,7 +230,7 @@ export default function Tutorial() {
           <ul style={styles.ul}>
             <li style={styles.li}>After selecting a seat, the <strong>booking panel</strong> opens on the right side.</li>
             <li style={styles.li}>For each player, enter <strong>First Name</strong> and <strong>Last Name</strong>.</li>
-            <li style={styles.li}>The <strong>base package</strong> (e.g., "12up / Toonie") is automatically included.</li>
+            <li style={styles.li}>The required <strong>9 up</strong> and <strong>Toonie Ball</strong> items are automatically included.</li>
             <li style={styles.li}>Optional <strong>add-ons</strong> can be selected with quantity controls (+/-).</li>
             <li style={styles.li}>Some packages are <strong>PHD (Personal Handheld Device)</strong> items with limited stock.</li>
             <li style={styles.li}>A <strong style={styles.gold}>running subtotal</strong> is shown for each player.</li>

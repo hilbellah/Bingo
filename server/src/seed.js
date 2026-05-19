@@ -1,5 +1,6 @@
 import { getDb, exec, run, saveDb } from './database.js';
 import { v4 as uuid } from 'uuid';
+import { REGULAR_BINGO_PACKAGE_DEFINITIONS } from './services/sessionPackages.js';
 
 // Venue table numbers (1-73)
 const TABLE_NUMBERS = [];
@@ -203,21 +204,19 @@ async function seed() {
   db.run('BEGIN TRANSACTION');
 
   // --- Packages ---
-  const requiredPkg = uuid();
-  const opt1 = uuid(), opt2 = uuid(), opt3 = uuid(), opt4 = uuid();
-  const opt5 = uuid(), opt6 = uuid(), opt7 = uuid(), phdPkg = uuid();
-
-  const pkgs = [
-    [requiredPkg, '12up / Toonie', 1800, 'required', 1, 1, 0, 0],
-    [phdPkg, 'Personal Handheld Device', 5000, 'optional', 2, 1, 0, 1],
-    [opt1, '3 Special Books (1 Free)', 1400, 'optional', 4, 1, 1, 0],
-    [opt2, 'Single Special Book', 700, 'optional', 7, 1, 2, 0],
-    [opt3, '6-up Admission Book', 500, 'optional', 4, 1, 3, 0],
-    [opt4, '3-up Admission Book', 300, 'optional', 4, 1, 4, 0],
-    [opt5, 'Letter "W" Card', 200, 'optional', 4, 1, 5, 0],
-    [opt6, 'Mega Jackpot', 200, 'optional', 12, 1, 6, 0],
-    [opt7, 'Winner Take All', 100, 'optional', 12, 1, 7, 0],
-  ];
+  const requiredPkg = 'pkg-regular-required-9-up';
+  const tooniePkg = 'pkg-regular-required-toonie-ball';
+  const optional9UpPkg = 'pkg-regular-optional-9-up';
+  const pkgs = REGULAR_BINGO_PACKAGE_DEFINITIONS.map(pkg => [
+    pkg.id,
+    pkg.name,
+    pkg.price,
+    pkg.type,
+    pkg.max_quantity,
+    1,
+    pkg.sort_order,
+    pkg.is_phd,
+  ]);
   for (const p of pkgs) {
     db.run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', p);
   }
@@ -268,7 +267,7 @@ async function seed() {
         (id, session_id, reference_number, total_amount, payment_status, created_at, email,
          customer_first_name, customer_last_name, email_verified_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [b1, fs, ref(), 5000, 'paid', new Date(Date.now() - 86400000).toISOString(), 'john.smith@example.com', 'John', 'Smith', new Date(Date.now() - 86400000).toISOString()]
+      [b1, fs, ref(), 9400, 'paid', new Date(Date.now() - 86400000).toISOString(), 'john.smith@example.com', 'John', 'Smith', new Date(Date.now() - 86400000).toISOString()]
     );
     db.run(
       `INSERT INTO customers
@@ -276,10 +275,12 @@ async function seed() {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [uuid(), 'john.smith@example.com', 'John', 'Smith', new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString()]
     );
-    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi1, b1, 'John', 'Smith', s[1][1], requiredPkg, 1800, ref()]);
-    db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi1, opt1, 1, 1400]);
+    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi1, b1, 'John', 'Smith', s[1][1], requiredPkg, 3000, ref()]);
+    db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi1, tooniePkg, 1, 200]);
+    db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi1, optional9UpPkg, 1, 3000]);
     db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][1]]);
-    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi2, b1, 'Jane', 'Smith', s[1][2], requiredPkg, 1800, ref()]);
+    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi2, b1, 'Jane', 'Smith', s[1][2], requiredPkg, 3000, ref()]);
+    db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi2, tooniePkg, 1, 200]);
     db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[1][2]]);
 
     // Booking 2: Party of 3 at Table 5 (chairs 1, 2, 3)
@@ -289,7 +290,7 @@ async function seed() {
         (id, session_id, reference_number, total_amount, payment_status, created_at, email,
          customer_first_name, customer_last_name, email_verified_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [b2, fs, ref(), 5400, 'paid', new Date(Date.now() - 43200000).toISOString(), 'mike.johnson@example.com', 'Mike', 'Johnson', new Date(Date.now() - 43200000).toISOString()]
+      [b2, fs, ref(), 9600, 'paid', new Date(Date.now() - 43200000).toISOString(), 'mike.johnson@example.com', 'Mike', 'Johnson', new Date(Date.now() - 43200000).toISOString()]
     );
     db.run(
       `INSERT INTO customers
@@ -299,8 +300,10 @@ async function seed() {
     );
     const names = [['Mike', 'Johnson'], ['Sarah', 'Johnson'], ['Tom', 'Johnson']];
     for (let i = 0; i < 3; i++) {
+      const itemId = uuid();
       db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [uuid(), b2, names[i][0], names[i][1], s[5][i + 1], requiredPkg, 1800, ref()]);
+        [itemId, b2, names[i][0], names[i][1], s[5][i + 1], requiredPkg, 3000, ref()]);
+      db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), itemId, tooniePkg, 1, 200]);
       db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[5][i + 1]]);
     }
 
@@ -311,7 +314,7 @@ async function seed() {
         (id, session_id, reference_number, total_amount, payment_status, created_at, email,
          customer_first_name, customer_last_name, email_verified_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [b3, fs, ref(), 3200, 'paid', new Date(Date.now() - 7200000).toISOString(), 'alice.williams@example.com', 'Alice', 'Williams', new Date(Date.now() - 7200000).toISOString()]
+      [b3, fs, ref(), 6200, 'paid', new Date(Date.now() - 7200000).toISOString(), 'alice.williams@example.com', 'Alice', 'Williams', new Date(Date.now() - 7200000).toISOString()]
     );
     db.run(
       `INSERT INTO customers
@@ -319,8 +322,9 @@ async function seed() {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [uuid(), 'alice.williams@example.com', 'Alice', 'Williams', new Date(Date.now() - 7200000).toISOString(), new Date(Date.now() - 7200000).toISOString(), new Date(Date.now() - 7200000).toISOString(), new Date(Date.now() - 7200000).toISOString(), new Date(Date.now() - 7200000).toISOString()]
     );
-    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi6, b3, 'Alice', 'Williams', s[42][1], requiredPkg, 1800, ref()]);
-    db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi6, opt1, 1, 1400]);
+    db.run('INSERT INTO booking_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [bi6, b3, 'Alice', 'Williams', s[42][1], requiredPkg, 3000, ref()]);
+    db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi6, tooniePkg, 1, 200]);
+    db.run('INSERT INTO booking_addons VALUES (?, ?, ?, ?, ?)', [uuid(), bi6, optional9UpPkg, 1, 3000]);
     db.run("UPDATE seats SET status = 'sold' WHERE id = ?", [s[42][1]]);
   }
 
