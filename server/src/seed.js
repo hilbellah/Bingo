@@ -2,9 +2,9 @@ import { getDb, exec, run, saveDb } from './database.js';
 import { v4 as uuid } from 'uuid';
 import { REGULAR_BINGO_PACKAGE_DEFINITIONS } from './services/sessionPackages.js';
 
-// Venue table numbers (1-73)
+// Venue table numbers (1-75)
 const TABLE_NUMBERS = [];
-for (let i = 1; i <= 73; i++) {
+for (let i = 1; i <= 75; i++) {
   TABLE_NUMBERS.push(i);
 }
 const CHAIRS_PER_TABLE = 6;
@@ -237,7 +237,7 @@ async function seed() {
       [sid, dateStr, '18:30', '12:00', 1]);
   }
 
-  // --- Chairs for each session (73 tables x 6 chairs = 438 per session) ---
+  // --- Chairs for each session (75 tables x 6 chairs = 450 per session) ---
   const seatLookup = {};
   let totalChairs = 0;
   for (const sid of sessionIds) {

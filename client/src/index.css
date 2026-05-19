@@ -369,7 +369,7 @@ html {
   .no-print { display: none; }
 }
 
-/* ── Unified floor-plan grid (13 columns) ──
+/* -- Unified floor-plan grid (13 columns) --
    Each cell holds one "table unit" = left chair col (14px) + table (40px)
    + right chair col (14px) = 68px wide. Horizontal gap gives breathing room
    between adjacent tables; vertical gap separates rows. */

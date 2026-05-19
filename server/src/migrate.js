@@ -1,4 +1,4 @@
-import { getDb, exec, all, run } from './database.js';
+import { getDb, exec, all, run, saveDb } from './database.js';
 import { v4 as uuid } from 'uuid';
 import { REGULAR_BINGO_PACKAGE_DEFINITIONS } from './services/sessionPackages.js';
 
@@ -68,8 +68,50 @@ function removeRegularSessionPackageOverrides() {
   );
 }
 
+function migrateVenueTo75Tables(db) {
+  const sessions = all(`
+    SELECT session_id, COUNT(DISTINCT table_number) as table_count, MAX(table_number) as max_table
+    FROM seats
+    GROUP BY session_id
+    HAVING table_count = 73 AND max_table = 73
+  `);
+
+  if (sessions.length === 0) {
+    return;
+  }
+
+  console.log(`Migrating ${sessions.length} session(s) from 73 tables to 75 tables...`);
+  db.run('BEGIN TRANSACTION');
+  try {
+    for (const session of sessions) {
+      const sessionId = session.session_id;
+
+      // Insert new table 41 and new table 47 by shifting the existing ranges:
+      // old 41-45 -> 42-46, old 46-73 -> 48-75.
+      db.run('UPDATE seats SET table_number = table_number + 1000 WHERE session_id = ? AND table_number >= 46', [sessionId]);
+      db.run('UPDATE seats SET table_number = table_number + 100 WHERE session_id = ? AND table_number BETWEEN 41 AND 45', [sessionId]);
+      db.run('UPDATE seats SET table_number = table_number - 998 WHERE session_id = ? AND table_number >= 1046', [sessionId]);
+      db.run('UPDATE seats SET table_number = table_number - 99 WHERE session_id = ? AND table_number BETWEEN 141 AND 145', [sessionId]);
+
+      for (const tableNumber of [41, 47]) {
+        for (let chairNumber = 1; chairNumber <= 6; chairNumber++) {
+          db.run(
+            'INSERT OR IGNORE INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
+            [uuid(), sessionId, tableNumber, chairNumber, 'vacant']
+          );
+        }
+      }
+    }
+    db.run('COMMIT');
+    saveDb();
+  } catch (e) {
+    db.run('ROLLBACK');
+    throw e;
+  }
+}
+
 async function migrate() {
-  await getDb();
+  const db = await getDb();
   console.log('Running migrations...');
 
   exec(`
@@ -146,6 +188,11 @@ async function migrate() {
   try { exec('CREATE INDEX idx_booking_items_booking ON booking_items(booking_id)'); } catch(e) {}
   try { exec('CREATE INDEX idx_booking_items_seat ON booking_items(seat_id)'); } catch(e) {}
   try { exec('CREATE INDEX idx_bookings_reference ON bookings(reference_number)'); } catch(e) {}
+
+  // --- Venue table-count migration ---
+  // Adds the two new stage-front tables requested by the venue. Existing 73-table
+  // sessions are renumbered so the new tables occupy 41 and 47, giving 75 total.
+  migrateVenueTo75Tables(db);
 
   // --- Special Events & Announcements migration ---
   console.log('Running special events & announcements migration...');

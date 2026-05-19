@@ -82,7 +82,7 @@ export function listRecurringSchedules() {
 
 // `ensureFutureSessions` is the heart of the auto-generator.
 // For every day in the look-ahead window, it consults the recurring_schedules
-// table and creates any missing sessions (plus the 73x6 seat grid for each).
+// table and creates any missing sessions (plus the 75x6 seat grid for each).
 // It is idempotent: a (date, hour) pair that already has a non-deleted session
 // is left alone, so this can run on every server boot and every hourly tick
 // without risk of duplicates.
@@ -142,7 +142,7 @@ export function ensureFutureSessions() {
         [id, dateStr, schedule.time, schedule.cutoff_time || '12:00', isAvailable, isSpecialEvent, sessionType]
       );
 
-      for (let tableNum = 1; tableNum <= 73; tableNum++) {
+      for (let tableNum = 1; tableNum <= 75; tableNum++) {
         for (let chair = 1; chair <= 6; chair++) {
           batchRun(
             'INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
@@ -156,7 +156,7 @@ export function ensureFutureSessions() {
         date: dateStr,
         time: schedule.time,
         session_type: sessionType,
-        seats: 438
+        seats: 450
       });
       created++;
     }

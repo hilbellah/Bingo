@@ -208,7 +208,7 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair }) {
       <div className="floorplan-room">
         <div className="floorplan-interior">
           <div className="floorplan-grid floorplan-grid-upper">
-            <div className="floorplan-stage-cell" style={{ gridColumn: '7 / span 3', gridRow: '1 / span 2' }}>
+            <div className="floorplan-stage-cell" style={{ gridColumn: '7 / span 3', gridRow: 1 }}>
               <span className="text-white/40 font-bold text-base tracking-wide">Stage</span>
             </div>
 
@@ -226,7 +226,9 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair }) {
               ))
             )}
 
-            <AdminTableCell tableNum={45} gridColumn={9} gridRow={3} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} />
+            <AdminTableCell tableNum={41} gridColumn={7} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} />
+            <AdminTableCell tableNum={47} gridColumn={9} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} />
+            <AdminTableCell tableNum={46} gridColumn={9} gridRow={3} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} />
 
             {sectionsById['upper-right'].seats.flatMap((row, rowIndex) =>
               row.map((num, colIndex) => (

@@ -41,7 +41,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       [id, date, time, cutoff_time || '12:00', is_available !== false ? 1 : 0, isSpecialType ? 1 : 0, event_title || null, event_description || null, sessionType]);
 
     let chairCount = 0;
-    for (let tableNumber = 1; tableNumber <= 73; tableNumber++) {
+    for (let tableNumber = 1; tableNumber <= 75; tableNumber++) {
       for (let chairNumber = 1; chairNumber <= 6; chairNumber++) {
         run('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
           [uuid(), id, tableNumber, chairNumber, 'vacant']);

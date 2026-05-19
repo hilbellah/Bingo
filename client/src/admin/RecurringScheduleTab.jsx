@@ -197,7 +197,7 @@ export default function RecurringScheduleTab() {
               Define which days of the week the app should auto-create regular bingo sessions for.
               The generator runs on server start and every hour, keeping a rolling{' '}
               <span className="font-semibold">{config.lookAheadDays}-day</span> window of upcoming sessions ready.
-              Each generated session gets the full 73-table × 6-chair seat grid.
+              Each generated session gets the full 75-table x 6-chair seat grid.
             </p>
           </div>
           <button

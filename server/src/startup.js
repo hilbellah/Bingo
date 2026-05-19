@@ -1,25 +1,12 @@
 import bcrypt from 'bcryptjs';
-import { v4 as uuid } from 'uuid';
-import { all, get, run, saveDb } from './database.js';
+import { get, run, saveDb } from './database.js';
 import { releaseExpiredHolds } from './services/holds.js';
 import { archivePastSessions } from './services/sessionArchive.js';
 import { cleanupOldData, ensureFutureSessions, openWeeklySessions } from './services/scheduler.js';
 
 export function migrateSeatLayout() {
-  const sessions = all('SELECT id FROM sessions');
-  for (const session of sessions) {
-    const has41 = get('SELECT id FROM seats WHERE session_id = ? AND table_number = 41', [session.id]);
-    if (!has41) {
-      for (let chair = 1; chair <= 6; chair++) {
-        run('INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
-          [uuid(), session.id, 41, chair, 'vacant']);
-      }
-    }
-    const has74 = get('SELECT id FROM seats WHERE session_id = ? AND table_number = 74', [session.id]);
-    if (has74) {
-      run('DELETE FROM seats WHERE session_id = ? AND table_number IN (74, 75) AND status = ?', [session.id, 'vacant']);
-    }
-  }
+  // Legacy startup hook kept for compatibility. Current venue seat layout
+  // migrations run in migrate.js so they happen before maintenance jobs start.
 }
 
 export function seedInitialAdminFromEnv(logger) {

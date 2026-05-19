@@ -1,12 +1,12 @@
-// Floor plan layout matching the venue blueprint (73 tables, 6 chairs each).
+// Floor plan layout matching the venue blueprint (75 tables, 6 chairs each).
 //
 // Layout (looking down at the room with the stage at the top):
 //
 //   FRONT OF ROOM - STAGE
-//   +---------------------------+   +-----+   +----------------+
-//   |  upper-left (6 cols x 3   |   |Stage|   |  upper-right   |
-//   |  rows + col 7 has only    |   |  +  |   |  (4 cols x 3   |
-//   |  table 40 in bottom row)  |   | 45  |   |   rows)        |
+//   +---------------------------+   +-----------+   +----------------+
+//   |  upper-left (6 cols x 3   |   | Stage     |   |  upper-right   |
+//   |  rows + col 7 has 41      |   | between   |   |  (4 cols x 3   |
+//   |  over 40)                 |   | 41/40 + 47/46 | rows)        |
 //   +---------------------------+   +-----+   +----------------+
 //
 //   +---------------------------+   +-----------------------------+
@@ -31,18 +31,20 @@ export const SECTIONS = [
     label: '',
     area: 'upper',
     seats: [
+      [54, 61, 68, 75],
+      [53, 60, 67, 74],
       [52, 59, 66, 73],
-      [51, 58, 65, 72],
-      [50, 57, 64, 71],
     ]
   },
   {
-    // Single table that sits below the stage, between the upper and lower halves.
+    // Stage-front tables. 41 and 47 are the two added tables. They render as
+    // vertical pairs: 41 above 40, and 47 above 46.
     id: 'stage-bridge',
     label: '',
     area: 'middle',
     seats: [
-      [45],
+      [41, 47],
+      [46],
     ]
   },
   {
@@ -56,16 +58,16 @@ export const SECTIONS = [
     ]
   },
   {
-    // Leftmost column of this section (44/43/42/41) sits directly under the stage area
-    // and aligns with table 45 above. Cols 2-5 (49-46, 56-53, 63-60, 70-67) align with upper-right.
+    // Leftmost column of this section (45/44/43/42) sits directly under the stage area.
+    // Cols 2-5 (51-48, 58-55, 65-62, 72-69) align with upper-right.
     id: 'lower-right',
     label: '',
     area: 'lower',
     seats: [
-      [44, 49, 56, 63, 70],
-      [43, 48, 55, 62, 69],
-      [42, 47, 54, 61, 68],
-      [41, 46, 53, 60, 67],
+      [45, 51, 58, 65, 72],
+      [44, 50, 57, 64, 71],
+      [43, 49, 56, 63, 70],
+      [42, 48, 55, 62, 69],
     ]
   },
 ];
@@ -80,4 +82,4 @@ for (const section of SECTIONS) {
 }
 ALL_SEAT_NUMBERS.sort((a, b) => a - b);
 
-export const TOTAL_SEATS = ALL_SEAT_NUMBERS.length; // 73 tables
+export const TOTAL_SEATS = ALL_SEAT_NUMBERS.length; // 75 tables

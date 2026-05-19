@@ -47,7 +47,7 @@ export default function FloorPlan({
 
         <div className="floorplan-interior">
           <div className="floorplan-grid floorplan-grid-upper">
-            <div className="floorplan-stage-cell" style={{ gridColumn: '7 / span 3', gridRow: '1 / span 2' }}>
+            <div className="floorplan-stage-cell" style={{ gridColumn: '7 / span 3', gridRow: 1 }}>
               <span className="text-white/40 font-bold text-base tracking-wide">Stage</span>
             </div>
 
@@ -57,7 +57,9 @@ export default function FloorPlan({
               ))
             )}
 
-            <TableCell tableNum={45} gridColumn={9} gridRow={3} {...tableProps} />
+            <TableCell tableNum={41} gridColumn={7} gridRow={2} {...tableProps} />
+            <TableCell tableNum={47} gridColumn={9} gridRow={2} {...tableProps} />
+            <TableCell tableNum={46} gridColumn={9} gridRow={3} {...tableProps} />
 
             {sectionsById['upper-right'].seats.flatMap((row, rowIndex) =>
               row.map((num, colIndex) => (
