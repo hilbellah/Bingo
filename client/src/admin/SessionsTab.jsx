@@ -222,6 +222,10 @@ export default function SessionsTab() {
                             className="text-xs text-brand-blue hover:underline font-medium">
                             Edit
                           </button>
+                          <button onClick={() => handleStartEdit(s)}
+                            className="text-xs text-blue-600 hover:underline font-semibold">
+                            Move Date
+                          </button>
                           <button onClick={() => handleToggleSession(s.id, s.is_available)}
                             className="text-xs text-brand-blue hover:underline">
                             {s.is_available ? 'Disable' : 'Enable'}
@@ -248,7 +252,10 @@ export default function SessionsTab() {
             {editingSession && (
               <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
-                  <h3 className="font-semibold text-brand-blue mb-4">Edit Session</h3>
+                  <h3 className="font-semibold text-brand-blue mb-2">Edit / Move Session</h3>
+                  <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    Change the date or time here to move this session. Existing bookings, seats, and ticket references stay attached.
+                  </div>
                   <div className="space-y-3">
                     <div className="grid grid-cols-3 gap-3">
                       <div>

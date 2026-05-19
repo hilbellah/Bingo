@@ -151,6 +151,7 @@ export default function EventSalesTab() {
                       </td>
                       <td className="py-2 flex gap-2">
                         <button onClick={() => handleStartEdit(session)} className="text-xs text-brand-blue hover:underline font-medium">Edit</button>
+                        <button onClick={() => handleStartEdit(session)} className="text-xs text-blue-600 hover:underline font-semibold">Move Date</button>
                         <button onClick={() => handleToggleSession(session.id, session.is_available)} className="text-xs text-brand-blue hover:underline">
                           {session.is_available ? 'Disable' : 'Enable'}
                         </button>
@@ -208,7 +209,10 @@ export default function EventSalesTab() {
       {editingSession && (editingSession.session_type === 'event') && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-6 max-w-lg w-full">
-            <h3 className="font-semibold text-brand-blue mb-4">Edit Live Event / Venue</h3>
+            <h3 className="font-semibold text-brand-blue mb-2">Edit / Move Live Event</h3>
+            <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+              Change the date or time here to move this event. Existing ticket sales and bookings stay attached.
+            </div>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Live Event / Venue Name</label>
