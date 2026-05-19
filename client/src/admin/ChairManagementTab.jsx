@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { fetchSeats, toggleAdminSeat } from '../api';
+import SessionWeekPicker from '../components/SessionWeekPicker';
 import { SECTIONS } from '../seatLayout';
 
 const sectionsById = SECTIONS.reduce((acc, section) => {
@@ -23,6 +24,7 @@ export default function ChairManagementTab() {
     token,
   } = useAdminDashboard();
 
+  const [weekOffset, setWeekOffset] = useState(0);
   const selectedSession = sessions.find(session => session.id === chairMgmtSession);
 
   const loadSessionSeats = async (sessionId) => {
@@ -65,20 +67,18 @@ export default function ChairManagementTab() {
             Disable broken or unavailable chairs directly on the venue floor plan.
           </p>
 
-          <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Select Session</label>
-            <select
-              value={chairMgmtSession}
-              onChange={(e) => loadSessionSeats(e.target.value)}
-              className="w-full sm:w-96 border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            >
-              <option value="">-- Choose a session --</option>
-              {sessions.map(session => (
-                <option key={session.id} value={session.id}>
-                  {session.date} @ {session.time}{session.is_special_event ? ` - ${session.event_title}` : ''}
-                </option>
-              ))}
-            </select>
+          <div className="bg-brand-blue rounded-xl shadow-sm p-3 mb-6 overflow-hidden">
+            {sessions.length > 0 ? (
+              <SessionWeekPicker
+                sessions={sessions}
+                selectedSession={selectedSession}
+                weekOffset={weekOffset}
+                onWeekOffsetChange={setWeekOffset}
+                onSelectSession={(session) => loadSessionSeats(session.id)}
+              />
+            ) : (
+              <div className="text-sm text-white/60 px-2 py-1">No sessions available.</div>
+            )}
           </div>
 
           {chairMgmtLoading && (
