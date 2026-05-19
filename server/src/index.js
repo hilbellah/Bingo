@@ -165,31 +165,31 @@ function csvCell(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
 
-function archiveFinishedEvents() {
+function archivePastSessions() {
   const today = formatLocalDate(new Date());
-  const finishedEvents = all(`
-    SELECT s.id, s.date, s.time, s.event_title
+  const pastSessions = all(`
+    SELECT s.id, s.date, s.time, s.event_title, ${sessionTypeSql('s')} as session_type
     FROM sessions s
     WHERE s.deleted_at IS NULL
-      AND ${sessionTypeSql('s')} = 'event'
       AND s.date < ?
   `, [today]);
 
-  if (finishedEvents.length === 0) return { archived: 0 };
+  if (pastSessions.length === 0) return { archived: 0 };
 
   const archivedAt = new Date().toISOString();
-  for (const event of finishedEvents) {
-    run('UPDATE sessions SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', [archivedAt, event.id]);
-    logAudit('session_auto_archived', 'session', event.id, {
-      date: event.date,
-      time: event.time,
-      event_title: event.event_title,
-      reason: 'finished_live_event_venue',
+  for (const session of pastSessions) {
+    run('UPDATE sessions SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', [archivedAt, session.id]);
+    logAudit('session_auto_archived', 'session', session.id, {
+      date: session.date,
+      time: session.time,
+      event_title: session.event_title,
+      session_type: session.session_type,
+      reason: 'past_session_date',
     });
   }
   saveDb();
-  logger.info('Auto-archived finished live events / venues', { count: finishedEvents.length });
-  return { archived: finishedEvents.length };
+  logger.info('Auto-archived past sessions', { count: pastSessions.length });
+  return { archived: pastSessions.length };
 }
 
 // ============ BOOKING + PAYMENT HELPERS ============
@@ -1058,7 +1058,7 @@ async function sendBookingConfirmationEmail(bookingId) {
 
 // --- Sessions ---
 app.get('/api/sessions', (req, res) => {
-  archiveFinishedEvents();
+  archivePastSessions();
   const today = formatLocalDate(new Date());
   const sessions = all(
     `SELECT s.*,
@@ -2474,7 +2474,7 @@ app.get('/api/admin/customers/export', adminAuth, (req, res) => {
 });
 
 app.get('/api/admin/sessions', adminAuth, (req, res) => {
-  archiveFinishedEvents();
+  archivePastSessions();
   const includeDeleted = req.query.includeDeleted === 'true';
   const where = includeDeleted ? '' : 'WHERE deleted_at IS NULL';
   res.json(all(`SELECT * FROM sessions ${where} ORDER BY date ASC, time ASC`));
@@ -3092,7 +3092,7 @@ app.post('/api/admin/bookings/:id/refund', adminAuth, async (req, res) => {
 // ============ ADMIN: DELETED SESSIONS & AUDIT LOG ============
 
 app.get('/api/admin/sessions/deleted', adminAuth, (req, res) => {
-  archiveFinishedEvents();
+  archivePastSessions();
   const sessions = all(`
     SELECT s.*,
       (SELECT COUNT(*) FROM bookings WHERE session_id = s.id AND payment_status = 'paid') as paid_bookings,
@@ -3710,8 +3710,8 @@ async function start() {
   // gap from downtime, then hourly to keep the rolling window full.
   openWeeklySessions();
   ensureFutureSessions();
-  archiveFinishedEvents();
-  setInterval(() => { openWeeklySessions(); ensureFutureSessions(); archiveFinishedEvents(); }, 60 * 60 * 1000);
+  archivePastSessions();
+  setInterval(() => { openWeeklySessions(); ensureFutureSessions(); archivePastSessions(); }, 60 * 60 * 1000);
 
   // Release expired holds every 30 seconds
   setInterval(() => releaseExpiredHolds(io), 30000);
