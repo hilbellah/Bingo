@@ -15,6 +15,7 @@ import { v4 as uuid } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { adminAuth, authenticateAdminToken, requireSuperUser, isSuperUser } from './middleware/adminAuth.js';
 import { releaseExpiredHolds } from './services/holds.js';
+import { archivePastSessions } from './services/sessionArchive.js';
 import {
   cleanupOldData,
   ensureFutureSessions,
@@ -163,34 +164,6 @@ function logAudit(action, entityType, entityId, details) {
 
 function csvCell(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
-}
-
-function archivePastSessions() {
-  const today = formatLocalDate(new Date());
-  const pastSessions = all(`
-    SELECT s.id, s.date, s.time, s.event_title, ${sessionTypeSql('s')} as session_type
-    FROM sessions s
-    WHERE s.deleted_at IS NULL
-      AND s.date < ?
-  `, [today]);
-
-  if (pastSessions.length === 0) return { archived: 0 };
-
-  const archivedAt = new Date().toISOString();
-  run('UPDATE sessions SET deleted_at = ? WHERE deleted_at IS NULL AND date < ?', [archivedAt, today]);
-
-  for (const session of pastSessions) {
-    logAudit('session_auto_archived', 'session', session.id, {
-      date: session.date,
-      time: session.time,
-      event_title: session.event_title,
-      session_type: session.session_type,
-      reason: 'past_session_date',
-    });
-  }
-  saveDb();
-  logger.info('Auto-archived past sessions', { count: pastSessions.length });
-  return { archived: pastSessions.length };
 }
 
 // ============ BOOKING + PAYMENT HELPERS ============
@@ -3523,7 +3496,7 @@ app.post('/api/admin/bookings/bulk-tickets/mark-printed', adminAuth, (req, res) 
 // ============ SOCKET.IO ============
 
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
+  logger.debug('Socket client connected', { socketId: socket.id });
 
   socket.on('join:session', (sessionId) => {
     socket.join(`session:${sessionId}`);
@@ -3554,7 +3527,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
+    logger.debug('Socket client disconnected', { socketId: socket.id });
   });
 });
 
