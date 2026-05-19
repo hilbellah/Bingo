@@ -177,8 +177,9 @@ function archivePastSessions() {
   if (pastSessions.length === 0) return { archived: 0 };
 
   const archivedAt = new Date().toISOString();
+  run('UPDATE sessions SET deleted_at = ? WHERE deleted_at IS NULL AND date < ?', [archivedAt, today]);
+
   for (const session of pastSessions) {
-    run('UPDATE sessions SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', [archivedAt, session.id]);
     logAudit('session_auto_archived', 'session', session.id, {
       date: session.date,
       time: session.time,
@@ -3700,6 +3701,10 @@ async function start() {
   // Optional first-run admin seed, configured through env vars only.
   seedInitialAdminFromEnv();
 
+  server.listen(PORT, () => {
+    logger.info('Server started', { port: PORT, url: `http://localhost:${PORT}` });
+  });
+
   // Clean up old data and reclaim memory
   cleanupOldData();
   // Re-check daily (every 24 hours)
@@ -3717,10 +3722,6 @@ async function start() {
   setInterval(() => releaseExpiredHolds(io), 30000);
   releaseExpiredHolds(io);
   reconcileReversedBookingSeats();
-
-  server.listen(PORT, () => {
-    logger.info('Server started', { port: PORT, url: `http://localhost:${PORT}` });
-  });
 
   // Graceful shutdown: flush pending database writes
   const gracefulShutdown = async (signal) => {
