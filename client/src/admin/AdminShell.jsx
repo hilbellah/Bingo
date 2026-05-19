@@ -118,6 +118,7 @@ export default function AdminShell({
   const renderLeaf = (tab, { indented = false, parentGroupId = null } = {}) => {
     const isActive = activeTab === tab.id && (!activeGroupId || !parentGroupId || parentGroupId === activeGroupId);
     const theme = getGroupTheme(parentGroupId);
+    const leafPadding = collapsed ? 'justify-center px-2' : indented ? 'pl-10 pr-4' : 'px-4';
     return (
       <button
         key={`${parentGroupId || 'root'}-${tab.id}`}
@@ -125,16 +126,18 @@ export default function AdminShell({
           setActiveGroupId(parentGroupId);
           onTabChange(tab.id);
         }}
-        className={`w-full flex items-center gap-3 ${indented ? 'pl-10 pr-4' : 'px-4'} py-2.5 text-sm transition-colors ${
+        className={`w-full flex items-center ${collapsed ? '' : 'gap-3'} ${leafPadding} py-2.5 text-sm transition-colors ${
           isActive
             ? theme.childActive
             : `text-gray-300 ${theme.childHover}`
         }`}
         title={collapsed ? tab.label : undefined}
       >
-        <span className={`flex h-5 w-5 items-center justify-center rounded text-[11px] font-bold ${isActive ? theme.childIcon : 'bg-white/10'}`}>
-          {tab.icon}
-        </span>
+        {collapsed && (
+          <span className={`flex h-5 w-5 items-center justify-center rounded text-[11px] font-bold ${isActive ? theme.childIcon : 'bg-white/10'}`}>
+            {tab.icon}
+          </span>
+        )}
         {!collapsed && <span>{tab.label}</span>}
       </button>
     );
@@ -149,16 +152,18 @@ export default function AdminShell({
       <div key={group.id} className="px-2 py-1">
         <button
           onClick={() => toggleGroup(group.id)}
-          className={`w-full flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors ${
+          className={`w-full flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} rounded-lg py-3 text-sm transition-colors ${
             hasActiveChild
               ? theme.activeGroup
               : `text-gray-300 ${theme.groupHover}`
           }`}
           title={collapsed ? group.label : undefined}
         >
-          <span className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold ${theme.icon}`}>
-            {group.icon}
-          </span>
+          {collapsed && (
+            <span className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold ${theme.icon}`}>
+              {group.icon}
+            </span>
+          )}
           {!collapsed && (
             <>
               <span className="flex-1 text-left">
