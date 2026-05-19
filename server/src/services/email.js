@@ -494,6 +494,105 @@ export async function sendBookingRefundNotification({ to, booking, session, acti
   return { ok: false, status: 0, error: 'no_provider_configured' };
 }
 
+function renderRescheduleHtml({ booking, session, previousSession }) {
+  const presentation = getBookingPresentation(session);
+  const ticketUrl = `${process.env.PUBLIC_SITE_URL || 'https://bingo-jk2h.onrender.com'}/tickets/${encodeURIComponent(booking.reference_number)}`;
+  const title = session?.event_title || presentation.brandLabel;
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${escapeHtml(title)} Rescheduled</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+        <tr><td style="background:linear-gradient(135deg,#0a1628 0%,#1a3a5c 100%);padding:28px 32px;color:#ffffff;text-align:center;">
+          <div style="font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:${presentation.headerAccent};font-weight:700;">${escapeHtml(presentation.brandLabel)}</div>
+          <div style="margin-top:6px;font-size:22px;font-weight:700;">Schedule Update</div>
+          <div style="margin-top:4px;font-size:14px;color:#cbd5e1;">${escapeHtml(title)} has been moved</div>
+        </td></tr>
+        <tr><td style="padding:24px 32px 8px;">
+          <div style="background:${presentation.referenceBg};border:2px solid ${presentation.referenceBorder};border-radius:12px;padding:16px;text-align:center;">
+            <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.1em;">Booking Reference</div>
+            <div style="margin-top:6px;font-family:monospace;font-size:22px;font-weight:700;color:#1a3a5c;letter-spacing:.08em;">${escapeHtml(booking.reference_number)}</div>
+          </div>
+        </td></tr>
+        <tr><td style="padding:8px 32px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border-radius:10px;padding:14px 16px;">
+            ${session?.event_title ? `<tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Event</td><td style="padding:6px 0;font-size:14px;color:#1a3a5c;font-weight:700;text-align:right;">${escapeHtml(session.event_title)}</td></tr>` : ''}
+            <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Previous Date</td><td style="padding:6px 0;font-size:14px;text-align:right;">${escapeHtml(formatDateLong(previousSession?.date))}</td></tr>
+            <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Previous Time</td><td style="padding:6px 0;font-size:14px;text-align:right;">${escapeHtml(formatTime12h(previousSession?.time))}</td></tr>
+            <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">New Date</td><td style="padding:6px 0;font-size:15px;color:#1a3a5c;font-weight:700;text-align:right;">${escapeHtml(formatDateLong(session?.date))}</td></tr>
+            <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">New Time</td><td style="padding:6px 0;font-size:15px;color:#1a3a5c;font-weight:700;text-align:right;">${escapeHtml(formatTime12h(session?.time))}</td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="padding:12px 32px 16px;">
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:13px 14px;font-size:14px;color:#1e40af;line-height:1.5;">
+            Your booking, seats, ticket references, and payment remain the same. Please use the new date and time above.
+          </div>
+        </td></tr>
+        <tr><td style="padding:8px 32px 24px;text-align:center;">
+          <a href="${escapeHtml(ticketUrl)}" style="display:inline-block;background:#1a3a5c;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;">View Tickets Online</a>
+        </td></tr>
+        <tr><td style="padding:16px 32px;background:#f9fafb;text-align:center;font-size:11px;color:#9ca3af;line-height:1.5;">
+          This email was sent because a Wolastoq Bingo event or session was rescheduled.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+function renderRescheduleText({ booking, session, previousSession }) {
+  const presentation = getBookingPresentation(session);
+  const title = session?.event_title || presentation.brandLabel;
+  const siteUrl = process.env.PUBLIC_SITE_URL || 'https://bingo-jk2h.onrender.com';
+  return [
+    `${title} has been rescheduled.`,
+    '',
+    `Booking reference: ${booking.reference_number}`,
+    `Previous: ${formatDateLong(previousSession?.date)} at ${formatTime12h(previousSession?.time)}`,
+    `New: ${formatDateLong(session?.date)} at ${formatTime12h(session?.time)}`,
+    '',
+    'Your booking, seats, ticket references, and payment remain the same.',
+    `View tickets: ${siteUrl}/tickets/${booking.reference_number}`,
+    '',
+    'Wolastoq Bingo',
+  ].join('\n');
+}
+
+export async function sendSessionRescheduleNotification({ to, booking, session, previousSession }) {
+  const bccRaw = process.env.EMAIL_BCC || '';
+  const bcc = bccRaw
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
+
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    console.warn('[email] reschedule notification has no valid recipient; skipping. ref=' + booking?.reference_number);
+    return { ok: false, status: 0, error: 'no_recipient' };
+  }
+
+  const presentation = getBookingPresentation(session);
+  const title = session?.event_title || presentation.brandLabel;
+  const subject = `${title} Rescheduled - ${formatDateLong(session?.date)} - ${booking.reference_number}`;
+  const html = renderRescheduleHtml({ booking, session, previousSession });
+  const text = renderRescheduleText({ booking, session, previousSession });
+  const emailBooking = { referenceNumber: booking.reference_number };
+
+  const transporter = getGmailTransporter();
+  if (transporter) {
+    return sendViaGmail({ transporter, to, bcc, subject, html, text, booking: emailBooking });
+  }
+
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) {
+    return sendViaResend({ apiKey, to, bcc, subject, html, text, booking: emailBooking });
+  }
+
+  console.warn('[email] No email provider configured. Reschedule notification cannot be sent.');
+  return { ok: false, status: 0, error: 'no_provider_configured' };
+}
+
 function renderVerificationHtml({ code, firstName }) {
   const greeting = firstName ? `Hi ${escapeHtml(firstName)},` : 'Hi,';
   return `<!DOCTYPE html>

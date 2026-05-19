@@ -7,6 +7,7 @@ import {
   normalizeSessionType,
   validateSessionPackagesForType,
 } from '../services/sessionPackages.js';
+import { sendSessionRescheduleNotification } from '../services/email.js';
 import { formatPrice } from '../utils/format.js';
 
 export function registerAdminSessionRoutes(app, { io, logAudit }) {
@@ -66,6 +67,8 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, session_type } = req.body;
     const updates = [];
     const values = [];
+    const currentSession = get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+    if (!currentSession) return res.status(404).json({ error: 'Session not found' });
     const nextSessionType = session_type !== undefined ? normalizeSessionType(session_type, is_special_event) : null;
     if (date !== undefined) { updates.push('date = ?'); values.push(date); }
     if (time !== undefined) { updates.push('time = ?'); values.push(time); }
@@ -88,24 +91,64 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
 
     if (date !== undefined || time !== undefined) {
-      const current = get('SELECT date, time FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
-      if (current) {
-        const checkDate = date !== undefined ? date : current.date;
-        const checkTime = time !== undefined ? time : current.time;
-        const checkHour = checkTime.split(':')[0];
-        const conflict = get(
-          `SELECT id, date, time FROM sessions WHERE date = ? AND SUBSTR(time, 1, 2) = ? AND id != ? AND deleted_at IS NULL`,
-          [checkDate, checkHour, req.params.id]
-        );
-        if (conflict) {
-          return res.status(409).json({ error: `A bingo session already exists on ${checkDate} at ${conflict.time}. Cannot have another session in the same hour.` });
-        }
+      const checkDate = date !== undefined ? date : currentSession.date;
+      const checkTime = time !== undefined ? time : currentSession.time;
+      const checkHour = checkTime.split(':')[0];
+      const conflict = get(
+        `SELECT id, date, time FROM sessions WHERE date = ? AND SUBSTR(time, 1, 2) = ? AND id != ? AND deleted_at IS NULL`,
+        [checkDate, checkHour, req.params.id]
+      );
+      if (conflict) {
+        return res.status(409).json({ error: `A bingo session already exists on ${checkDate} at ${conflict.time}. Cannot have another session in the same hour.` });
       }
     }
 
+    const nextDate = date !== undefined ? date : currentSession.date;
+    const nextTime = time !== undefined ? time : currentSession.time;
+    const wasRescheduled = nextDate !== currentSession.date || nextTime !== currentSession.time;
+    const shouldNotifyReschedule = !!req.body.notify_reschedule && wasRescheduled;
+
     values.push(req.params.id);
     run(`UPDATE sessions SET ${updates.join(', ')} WHERE id = ?`, values);
-    res.json({ success: true });
+
+    let notifiedBookings = 0;
+    if (shouldNotifyReschedule) {
+      const updatedSession = get('SELECT * FROM sessions WHERE id = ?', [req.params.id]);
+      const paidBookings = all(`
+        SELECT id, reference_number, email, customer_first_name, customer_last_name
+        FROM bookings
+        WHERE session_id = ?
+          AND payment_status IN ('paid', 'partially_refunded')
+          AND email IS NOT NULL
+          AND TRIM(email) <> ''
+        ORDER BY created_at ASC
+      `, [req.params.id]);
+      notifiedBookings = paidBookings.length;
+
+      setImmediate(async () => {
+        for (const booking of paidBookings) {
+          const result = await sendSessionRescheduleNotification({
+            to: booking.email,
+            booking,
+            session: updatedSession,
+            previousSession: currentSession,
+          });
+          if (!result.ok) {
+            console.error('[email] reschedule notification failed:', booking.reference_number, result.error || result.status);
+          }
+        }
+      });
+
+      logAudit('session_rescheduled', 'session', req.params.id, {
+        previousDate: currentSession.date,
+        previousTime: currentSession.time,
+        newDate: updatedSession.date,
+        newTime: updatedSession.time,
+        notifiedBookings,
+      });
+    }
+
+    res.json({ success: true, rescheduled: wasRescheduled, notifiedBookings });
   });
 
   app.delete('/api/admin/sessions/:id', adminAuth, (req, res) => {

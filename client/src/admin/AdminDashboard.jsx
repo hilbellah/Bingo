@@ -403,6 +403,7 @@ export default function AdminDashboard() {
       date: session.date || '',
       time: session.time || '',
       cutoff_time: session.cutoff_time || '12:00',
+      notify_reschedule: true,
       is_special_event: !!session.is_special_event,
       session_type: session.session_type || (session.is_special_event ? 'special_bingo' : 'regular_bingo'),
       event_title: session.event_title || '',

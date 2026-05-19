@@ -240,6 +240,18 @@ export default function EventSalesTab() {
                 <textarea value={editForm.event_description} onChange={e => setEditForm({ ...editForm, event_description: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg text-sm" rows={2} />
               </div>
+              <label className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editForm.notify_reschedule !== false}
+                  onChange={e => setEditForm({ ...editForm, notify_reschedule: e.target.checked })}
+                  className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-700">Email customers if date or time changes</span>
+                  <span className="block text-xs text-gray-500">Existing ticket sales and bookings stay attached to this event.</span>
+                </span>
+              </label>
               <div className="flex gap-3 pt-2">
                 <button onClick={handleSaveEdit} className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90">
                   Save Changes

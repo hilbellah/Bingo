@@ -306,6 +306,19 @@ export default function SessionsTab() {
                     </div>
 
                     <div className="border-t pt-3">
+                      <label className="flex items-start gap-2 mb-3 rounded-lg bg-blue-50 border border-blue-100 p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={editForm.notify_reschedule !== false}
+                          onChange={e => setEditForm({ ...editForm, notify_reschedule: e.target.checked })}
+                          className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
+                        />
+                        <span>
+                          <span className="block text-sm font-medium text-gray-700">Email customers if date or time changes</span>
+                          <span className="block text-xs text-gray-500">Bookings, seats, ticket references, and sales stay on this same session.</span>
+                        </span>
+                      </label>
+
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={editForm.is_special_event}
                           onChange={e => setEditForm({...editForm, is_special_event: e.target.checked})}
