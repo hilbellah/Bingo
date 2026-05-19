@@ -534,3 +534,12 @@ export async function updateAdminPhdInventory(token, data) {
   });
   return res.json();
 }
+
+export async function updateAdminSessionPhdInventory(token, sessionId, data) {
+  const res = await fetch(`${API}/admin/phd-inventory/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PUT', headers: adminHeaders(token), body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to update session PHD stock');
+  return json;
+}

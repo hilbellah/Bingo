@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
-import { fetchAdminPhdInventory, updateAdminPhdInventory } from '../api';
+import { fetchAdminPhdInventory, updateAdminPhdInventory, updateAdminSessionPhdInventory } from '../api';
 
 export default function InventoryTab() {
   const {
@@ -13,12 +13,59 @@ export default function InventoryTab() {
     setPhdSaving,
     setPhdInventory,
   } = useAdminDashboard();
+  const [sessionStockDrafts, setSessionStockDrafts] = useState({});
+  const [sessionStockSaving, setSessionStockSaving] = useState(null);
+  const [sessionStockError, setSessionStockError] = useState('');
+
+  useEffect(() => {
+    if (!phdInventory?.perSession) return;
+    setSessionStockDrafts(Object.fromEntries(
+      phdInventory.perSession.map(session => [session.id, String(session.totalStock ?? phdInventory.totalStock ?? 0)])
+    ));
+  }, [phdInventory]);
+
+  const refreshInventory = async () => {
+    const data = await fetchAdminPhdInventory(token);
+    setPhdInventory(data);
+  };
+
+  const saveSessionStock = async (sessionId) => {
+    const totalStock = Number(sessionStockDrafts[sessionId]);
+    if (!Number.isFinite(totalStock) || totalStock < 0) {
+      setSessionStockError('Session stock must be 0 or higher.');
+      return;
+    }
+
+    setSessionStockSaving(sessionId);
+    setSessionStockError('');
+    try {
+      await updateAdminSessionPhdInventory(token, sessionId, { totalStock });
+      await refreshInventory();
+    } catch (err) {
+      setSessionStockError(err.message || 'Failed to update session stock.');
+    } finally {
+      setSessionStockSaving(null);
+    }
+  };
+
+  const resetSessionStock = async (sessionId) => {
+    setSessionStockSaving(sessionId);
+    setSessionStockError('');
+    try {
+      await updateAdminSessionPhdInventory(token, sessionId, { totalStock: null });
+      await refreshInventory();
+    } catch (err) {
+      setSessionStockError(err.message || 'Failed to reset session stock.');
+    } finally {
+      setSessionStockSaving(null);
+    }
+  };
 
   return (
     <>
         {/* PHD INVENTORY TAB */}
         {tab === 'inventory' && phdInventory && (
-          <div className="max-w-4xl">
+          <div className="max-w-6xl">
             <h3 className="text-xl font-bold text-brand-blue mb-6">PHD (Personal Handheld Device) Inventory</h3>
 
             {/* Inventory Overview */}
@@ -92,8 +139,7 @@ export default function InventoryTab() {
                 onClick={async () => {
                   setPhdSaving(true);
                   await updateAdminPhdInventory(token, phdEditForm);
-                  const data = await fetchAdminPhdInventory(token);
-                  setPhdInventory(data);
+                  await refreshInventory();
                   setPhdSaving(false);
                 }}
                 disabled={phdSaving}
@@ -106,7 +152,15 @@ export default function InventoryTab() {
             {/* Per-Session Breakdown */}
             {phdInventory.perSession && phdInventory.perSession.length > 0 && (
               <div className="bg-white rounded-xl p-5 shadow-sm">
-                <h4 className="font-semibold text-brand-blue mb-4">PHD Usage by Session</h4>
+                <div className="flex flex-col gap-1 mb-4 sm:flex-row sm:items-center sm:justify-between">
+                  <h4 className="font-semibold text-brand-blue">PHD Stock by Session</h4>
+                  <p className="text-xs text-gray-500">Use default removes a custom stock override.</p>
+                </div>
+                {sessionStockError && (
+                  <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {sessionStockError}
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -115,6 +169,9 @@ export default function InventoryTab() {
                         <th className="text-left py-2 px-3 text-gray-500">Time</th>
                         <th className="text-left py-2 px-3 text-gray-500">Live Event / Venue</th>
                         <th className="text-right py-2 px-3 text-gray-500">PHDs Used</th>
+                        <th className="text-right py-2 px-3 text-gray-500">Available</th>
+                        <th className="text-left py-2 px-3 text-gray-500">Stock for This Session</th>
+                        <th className="text-right py-2 px-3 text-gray-500">Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -124,6 +181,45 @@ export default function InventoryTab() {
                           <td className="py-2 px-3">{s.time}</td>
                           <td className="py-2 px-3">{s.is_special_event && s.event_title ? s.event_title : '-'}</td>
                           <td className="py-2 px-3 text-right font-bold text-brand-blue">{s.phd_count}</td>
+                          <td className={`py-2 px-3 text-right font-bold ${s.remaining <= 10 ? 'text-red-600' : 'text-green-700'}`}>{s.remaining}</td>
+                          <td className="py-2 px-3">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min="0"
+                                value={sessionStockDrafts[s.id] ?? ''}
+                                onChange={e => setSessionStockDrafts(drafts => ({ ...drafts, [s.id]: e.target.value }))}
+                                className="w-24 border rounded-lg px-3 py-2 text-right focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none"
+                              />
+                              {s.hasSessionStockOverride ? (
+                                <span className="rounded bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700">Custom</span>
+                              ) : (
+                                <span className="rounded bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-500">Default {s.defaultStock}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => saveSessionStock(s.id)}
+                                disabled={sessionStockSaving === s.id}
+                                className="rounded-lg bg-brand-blue px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {sessionStockSaving === s.id ? 'Saving...' : 'Save'}
+                              </button>
+                              {s.hasSessionStockOverride && (
+                                <button
+                                  type="button"
+                                  onClick={() => resetSessionStock(s.id)}
+                                  disabled={sessionStockSaving === s.id}
+                                  className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                                >
+                                  Use Default
+                                </button>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

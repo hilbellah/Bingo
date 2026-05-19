@@ -1,9 +1,83 @@
-import { all, get } from '../database.js';
+import { all, get, run } from '../database.js';
 import { formatLocalDate } from '../utils/format.js';
+
+const DEFAULT_PHD_CONFIG = { totalStock: 200, perPlayerLimit: 2, sessionStockOverrides: {} };
+
+function normalizePhdConfig(rawConfig = {}) {
+  const totalStock = Number(rawConfig.totalStock);
+  const perPlayerLimit = Number(rawConfig.perPlayerLimit);
+  const rawOverrides = rawConfig.sessionStockOverrides && typeof rawConfig.sessionStockOverrides === 'object'
+    ? rawConfig.sessionStockOverrides
+    : {};
+  const sessionStockOverrides = {};
+
+  for (const [sessionId, value] of Object.entries(rawOverrides)) {
+    const stock = Number(value);
+    if (sessionId && Number.isFinite(stock) && stock >= 0) {
+      sessionStockOverrides[sessionId] = Math.floor(stock);
+    }
+  }
+
+  return {
+    totalStock: Number.isFinite(totalStock) && totalStock >= 0 ? Math.floor(totalStock) : DEFAULT_PHD_CONFIG.totalStock,
+    perPlayerLimit: Number.isFinite(perPlayerLimit) && perPlayerLimit >= 1 ? Math.floor(perPlayerLimit) : DEFAULT_PHD_CONFIG.perPlayerLimit,
+    sessionStockOverrides,
+  };
+}
+
+export function savePhdConfig(config) {
+  const normalized = normalizePhdConfig(config);
+  const existing = get("SELECT key FROM settings WHERE key = 'phd_inventory'");
+  if (existing) {
+    run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'phd_inventory'", [JSON.stringify(normalized)]);
+  } else {
+    run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [JSON.stringify(normalized)]);
+  }
+  return normalized;
+}
 
 export function getPhdConfig() {
   const phdSettingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
-  return phdSettingsRow ? JSON.parse(phdSettingsRow.value) : { totalStock: 200, perPlayerLimit: 2 };
+  if (!phdSettingsRow) return { ...DEFAULT_PHD_CONFIG };
+
+  try {
+    return normalizePhdConfig(JSON.parse(phdSettingsRow.value));
+  } catch {
+    return { ...DEFAULT_PHD_CONFIG };
+  }
+}
+
+export function updateGlobalPhdConfig({ totalStock, perPlayerLimit }) {
+  const existing = getPhdConfig();
+  return savePhdConfig({
+    ...existing,
+    totalStock: totalStock != null ? Number(totalStock) : existing.totalStock,
+    perPlayerLimit: perPlayerLimit != null ? Number(perPlayerLimit) : existing.perPlayerLimit,
+  });
+}
+
+export function updatePhdSessionStock(sessionId, totalStock) {
+  const cleanSessionId = String(sessionId || '').trim();
+  if (!cleanSessionId) throw new Error('Session ID is required');
+
+  const config = getPhdConfig();
+  const nextOverrides = { ...config.sessionStockOverrides };
+
+  if (totalStock == null || totalStock === '') {
+    delete nextOverrides[cleanSessionId];
+  } else {
+    const stock = Number(totalStock);
+    if (!Number.isFinite(stock) || stock < 0) throw new Error('Stock must be 0 or higher');
+    nextOverrides[cleanSessionId] = Math.floor(stock);
+  }
+
+  return savePhdConfig({ ...config, sessionStockOverrides: nextOverrides });
+}
+
+export function getPhdTotalStockForSession(sessionId, config = getPhdConfig()) {
+  const cleanSessionId = String(sessionId || '').trim();
+  const override = cleanSessionId ? config.sessionStockOverrides?.[cleanSessionId] : undefined;
+  return Number.isFinite(Number(override)) ? Number(override) : config.totalStock;
 }
 
 export function getPhdUsedForSession(sessionId) {
@@ -34,18 +108,23 @@ export function getPhdUsedForSession(sessionId) {
 
 export function getPhdInventoryForSession(sessionId) {
   const config = getPhdConfig();
+  const totalStock = getPhdTotalStockForSession(sessionId, config);
   const totalUsed = getPhdUsedForSession(sessionId);
   return {
     sessionId: sessionId || null,
-    totalStock: config.totalStock,
+    totalStock,
+    defaultStock: config.totalStock,
+    hasSessionStockOverride: !!String(sessionId || '').trim() && Object.prototype.hasOwnProperty.call(config.sessionStockOverrides, String(sessionId).trim()),
     totalUsed,
-    remaining: Math.max(0, config.totalStock - totalUsed),
+    remaining: Math.max(0, totalStock - totalUsed),
     perPlayerLimit: config.perPlayerLimit,
   };
 }
 
 export function getPhdUsageBySession() {
-  return all(`
+  const today = formatLocalDate(new Date());
+  const config = getPhdConfig();
+  const rows = all(`
     SELECT * FROM (
       SELECT s.id, s.date, s.time, s.event_title, s.is_special_event,
         (
@@ -72,9 +151,22 @@ export function getPhdUsageBySession() {
       FROM sessions s
       WHERE s.deleted_at IS NULL
     )
-    WHERE phd_count > 0
-    ORDER BY date DESC
-  `);
+    WHERE date >= ? OR phd_count > 0
+    ORDER BY date ASC, time ASC
+    LIMIT 120
+  `, [today]);
+
+  return rows.map(row => {
+    const totalStock = getPhdTotalStockForSession(row.id, config);
+    const hasSessionStockOverride = Object.prototype.hasOwnProperty.call(config.sessionStockOverrides, row.id);
+    return {
+      ...row,
+      totalStock,
+      defaultStock: config.totalStock,
+      hasSessionStockOverride,
+      remaining: Math.max(0, totalStock - Number(row.phd_count || 0)),
+    };
+  });
 }
 
 export function getNextPhdSessionId() {
@@ -127,7 +219,8 @@ export function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessi
 
   if (totalPhdInBooking > 0) {
     const totalUsed = getPhdUsedForSession(sessionId);
-    const remaining = phdConfig.totalStock - totalUsed;
+    const totalStock = getPhdTotalStockForSession(sessionId, phdConfig);
+    const remaining = Math.max(0, totalStock - totalUsed);
 
     if (totalPhdInBooking > remaining) {
       return { ok: false, error: `Only ${remaining} handheld device${remaining !== 1 ? 's' : ''} remaining in stock. You requested ${totalPhdInBooking}.` };

@@ -30,6 +30,8 @@ import {
   getNextPhdSessionId,
   getPhdInventoryForSession,
   getPhdUsageBySession,
+  updateGlobalPhdConfig,
+  updatePhdSessionStock,
   validatePhdInventory
 } from './services/phdInventory.js';
 import { registerAdminBookingRoutes } from './routes/adminBookingRoutes.js';
@@ -1848,20 +1850,28 @@ app.get('/api/admin/phd-inventory', adminAuth, (req, res) => {
 
 app.put('/api/admin/phd-inventory', adminAuth, (req, res) => {
   const { totalStock, perPlayerLimit } = req.body;
-  const config = {
-    totalStock: totalStock != null ? Number(totalStock) : 200,
-    perPlayerLimit: perPlayerLimit != null ? Number(perPlayerLimit) : 2
-  };
-
-  const existing = get("SELECT key FROM settings WHERE key = 'phd_inventory'");
-  if (existing) {
-    run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'phd_inventory'", [JSON.stringify(config)]);
-  } else {
-    run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [JSON.stringify(config)]);
-  }
-
+  const config = updateGlobalPhdConfig({ totalStock, perPlayerLimit });
   logAudit('phd_inventory_updated', 'settings', 'phd_inventory', config);
   res.json({ ok: true, ...config });
+});
+
+app.put('/api/admin/phd-inventory/sessions/:sessionId', adminAuth, (req, res) => {
+  const sessionId = String(req.params.sessionId || '').trim();
+  const session = get('SELECT id FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  try {
+    const config = updatePhdSessionStock(sessionId, req.body?.totalStock);
+    const inventory = getPhdInventoryForSession(sessionId);
+    logAudit('phd_session_inventory_updated', 'session', sessionId, {
+      sessionId,
+      totalStock: inventory.totalStock,
+      hasSessionStockOverride: inventory.hasSessionStockOverride,
+    });
+    res.json({ ok: true, config, inventory });
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Failed to update session PHD stock' });
+  }
 });
 
 registerAdminReportRoutes(app);
