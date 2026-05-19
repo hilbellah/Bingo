@@ -253,11 +253,18 @@ export default function AdminDashboard() {
   // Socket.IO connection for auto-print receipts
   useEffect(() => {
     if (!token) return;
-    const socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
+    const socket = io(window.location.origin, {
+      transports: ['websocket', 'polling'],
+      auth: { adminToken: token },
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      socket.emit('join:admin-receipts');
+      socket.emit('join:admin-receipts', { token });
+    });
+
+    socket.on('admin:receipts:unauthorized', () => {
+      socket.disconnect();
     });
 
     socket.on('booking:new', (receiptData) => {
@@ -281,6 +288,7 @@ export default function AdminDashboard() {
 
     return () => {
       socket.emit('leave:admin-receipts');
+      socket.off('admin:receipts:unauthorized');
       socket.disconnect();
     };
   }, [token]);

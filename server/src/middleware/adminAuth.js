@@ -14,36 +14,45 @@ export function isSuperUser(email, source, dbUser = null) {
   return getSuperUserEmails().includes((email || '').toLowerCase());
 }
 
-export function adminAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Basic ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+export function authenticateAdminToken(auth) {
+  if (!auth || !auth.startsWith('Basic ')) return null;
 
-  const decoded = Buffer.from(auth.split(' ')[1], 'base64').toString();
-  const [user, pass] = decoded.split(':');
+  const decoded = Buffer.from(auth.split(' ')[1] || '', 'base64').toString();
+  const separatorIndex = decoded.indexOf(':');
+  if (separatorIndex === -1) return null;
+
+  const user = decoded.slice(0, separatorIndex);
+  const pass = decoded.slice(separatorIndex + 1);
 
   if (
     user.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() &&
     pass === process.env.ADMIN_PASSWORD
   ) {
-    req.adminUser = { email: user, source: 'env', isSuperUser: true };
-    return next();
+    return { email: user, source: 'env', isSuperUser: true };
   }
 
   const dbUser = get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [user]);
   if (dbUser && bcrypt.compareSync(pass, dbUser.password_hash)) {
-    req.adminUser = {
+    return {
       id: dbUser.id,
       email: dbUser.email,
       displayName: dbUser.display_name,
       source: 'db',
       isSuperUser: isSuperUser(dbUser.email, 'db', dbUser),
     };
+  }
+
+  return null;
+}
+
+export function adminAuth(req, res, next) {
+  const adminUser = authenticateAdminToken(req.headers.authorization);
+  if (adminUser) {
+    req.adminUser = adminUser;
     return next();
   }
 
-  res.status(401).json({ error: 'Invalid credentials' });
+  res.status(401).json({ error: req.headers.authorization ? 'Invalid credentials' : 'Unauthorized' });
 }
 
 export function requireSuperUser(req, res, next) {
