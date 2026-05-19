@@ -17,6 +17,7 @@ import CountdownTimer from './components/CountdownTimer';
 import EmbeddedAuthorizeNetPayment from './components/EmbeddedAuthorizeNetPayment';
 import FloorPlan from './components/FloorPlan';
 import SessionWeekPicker from './components/SessionWeekPicker';
+import VenueClock from './components/VenueClock';
 import { useSocket } from './useSocket';
 
 // Detect payment-related URLs at app mount. Returns null for the normal
@@ -392,7 +393,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="bg-brand-blue-dark border-b border-white/10 px-4 py-3 flex items-center justify-between flex-shrink-0">
+      <header className="bg-brand-blue-dark border-b border-white/10 px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-brand-gold flex items-center justify-center">
             <span className="text-white text-lg font-bold">B</span>
@@ -403,7 +404,9 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end md:w-auto md:gap-3">
+          <VenueClock className="w-full sm:w-auto" />
+
           {holdExpiry && selectedSeats.length > 0 && (
             <div className="hidden sm:flex items-center gap-2 bg-white/10 rounded-full px-3 py-1.5 text-sm">
               <svg className="w-4 h-4 text-brand-gold" fill="currentColor" viewBox="0 0 20 20">
@@ -423,7 +426,7 @@ export default function App() {
               setPanelOpen(true);
             }}
             disabled={bookingClosed}
-            className={`relative px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
+            className={`relative px-4 py-2 rounded-xl font-semibold text-sm transition-all whitespace-nowrap ${
               bookingClosed
                 ? 'bg-white/10 text-white/40 border border-white/10 cursor-not-allowed'
                 : allSeatsSelected && allNamesValid

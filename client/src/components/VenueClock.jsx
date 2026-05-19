@@ -1,0 +1,51 @@
+import React, { useEffect, useMemo, useState } from 'react';
+
+const VENUE_TIME_ZONE = 'America/Moncton';
+
+function getVenueDateTime() {
+  return new Date();
+}
+
+export default function VenueClock({ tone = 'dark', className = '' }) {
+  const [now, setNow] = useState(getVenueDateTime);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(getVenueDateTime()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const formatted = useMemo(() => {
+    const date = new Intl.DateTimeFormat('en-CA', {
+      timeZone: VENUE_TIME_ZONE,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(now);
+    const time = new Intl.DateTimeFormat('en-CA', {
+      timeZone: VENUE_TIME_ZONE,
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    }).format(now);
+    return { date, time };
+  }, [now]);
+
+  const styles = tone === 'light'
+    ? 'bg-white border border-gray-200 text-brand-blue shadow-sm'
+    : 'bg-white/10 border border-white/15 text-white';
+  const muted = tone === 'light' ? 'text-gray-500' : 'text-white/60';
+  const accent = tone === 'light' ? 'text-brand-gold' : 'text-brand-gold';
+
+  return (
+    <div className={`rounded-xl px-3 py-2 ${styles} ${className}`} aria-label={`Venue time: ${formatted.date}, ${formatted.time}`}>
+      <div className={`text-[10px] font-bold uppercase ${muted}`}>Venue Time - Fredericton, NB</div>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className={`text-sm font-bold tabular-nums ${accent}`}>{formatted.time}</span>
+        <span className={`text-xs font-semibold ${muted}`}>{formatted.date}</span>
+      </div>
+    </div>
+  );
+}

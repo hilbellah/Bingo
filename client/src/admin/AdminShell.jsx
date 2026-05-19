@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import VenueClock from '../components/VenueClock';
 import { ADMIN_TABS, getAdminTabLabel, getAdminTabParentGroup } from './adminNavigation';
 
 const EXPANDED_STORAGE_KEY = 'admin_sidebar_expanded_groups_v1';
@@ -217,9 +218,12 @@ export default function AdminShell({
       </aside>
 
       <div className="flex-1 flex flex-col min-h-screen overflow-auto">
-        <header className="bg-white border-b px-6 py-3 flex items-center justify-between">
+        <header className="bg-white border-b px-6 py-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h2 className="text-lg font-bold text-brand-blue">{headerLabel}</h2>
-          {rightActions}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <VenueClock tone="light" />
+            {rightActions}
+          </div>
         </header>
 
         {children}
