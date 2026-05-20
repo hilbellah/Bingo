@@ -7,6 +7,10 @@ export default function PackagesTab() {
     packages,
     newPackage,
     setNewPackage,
+    bookingConfig,
+    setBookingConfig,
+    bookingConfigSaved,
+    handleSaveBookingConfig,
     handleCreatePackage,
     handleTogglePackage,
     editingPackage,
@@ -23,6 +27,38 @@ export default function PackagesTab() {
         {/* PACKAGES TAB */}
         {tab === 'packages' && (
           <div>
+            <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="font-semibold text-brand-blue mb-1">Booking Package Limit</h3>
+                  <p className="text-xs text-gray-500">
+                    Applies to non-PHD optional packages per player. PHD stays controlled by the PHD inventory max per player.
+                  </p>
+                </div>
+                <div className="flex items-end gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Non-PHD Max Per Player</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={bookingConfig.maxOptionalPackagesPerPlayer}
+                      onChange={e => setBookingConfig({ ...bookingConfig, maxOptionalPackagesPerPlayer: e.target.value })}
+                      className="w-28 px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSaveBookingConfig}
+                    className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800"
+                  >
+                    Save Limit
+                  </button>
+                </div>
+              </div>
+              {bookingConfigSaved && (
+                <p className="mt-3 text-sm text-green-700">Booking package limit saved.</p>
+              )}
+            </div>
+
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
               <h3 className="font-semibold text-brand-blue mb-3">Add Ticket Package</h3>
               <div className="space-y-3">
@@ -57,6 +93,16 @@ export default function PackagesTab() {
                     <input type="number" min="0" value={newPackage.sort_order} onChange={e => setNewPackage({...newPackage, sort_order: e.target.value})}
                       className="w-full px-3 py-2 border rounded-lg text-sm" />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Backend Note / Customer Help Text</label>
+                  <textarea
+                    value={newPackage.description}
+                    onChange={e => setNewPackage({...newPackage, description: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    rows={2}
+                    placeholder="Explain what this package includes or when to choose it."
+                  />
                 </div>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={newPackage.is_phd} onChange={e => setNewPackage({...newPackage, is_phd: e.target.checked})}
@@ -112,6 +158,13 @@ export default function PackagesTab() {
                             />
                             PHD device
                           </label>
+                          <textarea
+                            value={editingPackage.description}
+                            onChange={e => setEditingPackage({ ...editingPackage, description: e.target.value })}
+                            className="mt-2 w-full px-2 py-1 border rounded text-xs"
+                            rows={2}
+                            placeholder="Package note"
+                          />
                         </td>
                         <td className="py-2 pr-2 align-top">
                           <input
@@ -180,6 +233,7 @@ export default function PackagesTab() {
                       <td className="py-2 font-medium">
                         {p.name}
                         {p.is_phd ? <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">PHD</span> : null}
+                        {p.description ? <p className="mt-1 max-w-xs text-xs font-normal text-gray-500">{p.description}</p> : null}
                       </td>
                       <td className="py-2">{formatPrice(p.price)}</td>
                       <td className="py-2">

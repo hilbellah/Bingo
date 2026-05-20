@@ -52,8 +52,8 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
 
     if (packageValidation.packages.length > 0) {
       for (const pkg of packageValidation.packages) {
-        run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [uuid(), id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0]);
+        run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [uuid(), id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0, pkg.description || '']);
       }
     }
 
@@ -189,15 +189,15 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
   });
 
   app.post('/api/admin/packages', adminAuth, (req, res) => {
-    const { name, price, type, max_quantity, sort_order, is_phd } = req.body;
+    const { name, price, type, max_quantity, sort_order, is_phd, description } = req.body;
     const id = uuid();
-    run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
-      [id, name, price, type, max_quantity || 1, sort_order || 0, is_phd ? 1 : 0]);
-    res.json({ id, name, price, type, is_phd: is_phd ? 1 : 0 });
+    run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd, description) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)',
+      [id, name, price, type, max_quantity || 1, sort_order || 0, is_phd ? 1 : 0, description || '']);
+    res.json({ id, name, price, type, is_phd: is_phd ? 1 : 0, description: description || '' });
   });
 
   app.patch('/api/admin/packages/:id', adminAuth, (req, res) => {
-    const { name, price, type, max_quantity, is_active, sort_order } = req.body;
+    const { name, price, type, max_quantity, is_active, sort_order, description } = req.body;
     const updates = [];
     const values = [];
     if (name !== undefined) { updates.push('name = ?'); values.push(name); }
@@ -207,6 +207,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     if (is_active !== undefined) { updates.push('is_active = ?'); values.push(is_active ? 1 : 0); }
     if (sort_order !== undefined) { updates.push('sort_order = ?'); values.push(sort_order); }
     if (req.body.is_phd !== undefined) { updates.push('is_phd = ?'); values.push(req.body.is_phd ? 1 : 0); }
+    if (description !== undefined) { updates.push('description = ?'); values.push(description || ''); }
     if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
     values.push(req.params.id);
     run(`UPDATE packages SET ${updates.join(', ')} WHERE id = ?`, values);
@@ -356,8 +357,8 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
 
     run('DELETE FROM session_packages WHERE session_id = ?', [req.params.id]);
     for (const pkg of packageValidation.packages) {
-      run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [uuid(), req.params.id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0]);
+      run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [uuid(), req.params.id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0, pkg.description || '']);
     }
     res.json({ success: true, count: packageValidation.packages.length });
   });

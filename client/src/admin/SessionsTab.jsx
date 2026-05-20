@@ -159,6 +159,11 @@ export default function SessionsTab() {
                             pkgs[i] = {...pkgs[i], max_quantity: parseInt(e.target.value) || 1};
                             setNewSession({...newSession, packages: pkgs});
                           }} className="w-16 px-2 py-1.5 border rounded text-sm" placeholder="Max" min="1" />
+                          <input value={pkg.description || ''} onChange={e => {
+                            const pkgs = [...newSession.packages];
+                            pkgs[i] = {...pkgs[i], description: e.target.value};
+                            setNewSession({...newSession, packages: pkgs});
+                          }} className="w-36 px-2 py-1.5 border rounded text-sm" placeholder="Note" />
                           <label className="flex items-center gap-1 text-xs text-purple-600" title="PHD (Handheld Device)">
                             <input type="checkbox" checked={!!pkg.is_phd} onChange={e => {
                               const pkgs = [...newSession.packages];
@@ -173,7 +178,7 @@ export default function SessionsTab() {
                           }} className="text-red-400 hover:text-red-600 text-sm">Remove</button>
                         </div>
                       ))}
-                      <button onClick={() => setNewSession({...newSession, packages: [...newSession.packages, { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: newSession.packages.length, is_phd: false }]})}
+                      <button onClick={() => setNewSession({...newSession, packages: [...newSession.packages, { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: newSession.packages.length, is_phd: false, description: '' }]})}
                         className="text-xs text-amber-600 hover:text-amber-800 font-medium">
                         + Add Package
                       </button>
@@ -395,6 +400,11 @@ export default function SessionsTab() {
                         list[i] = {...list[i], max_quantity: parseInt(e.target.value) || 1};
                         setSessionPkgList(list);
                       }} className="w-16 px-2 py-1.5 border rounded text-sm" min="1" />
+                      <input value={pkg.description || ''} onChange={e => {
+                        const list = [...sessionPkgList];
+                        list[i] = {...list[i], description: e.target.value};
+                        setSessionPkgList(list);
+                      }} className="w-32 px-2 py-1.5 border rounded text-sm" placeholder="Note" />
                       <label className="flex items-center gap-1 text-xs text-purple-600" title="PHD (Handheld Device)">
                         <input type="checkbox" checked={!!pkg.is_phd} onChange={e => {
                           const list = [...sessionPkgList];
@@ -407,7 +417,7 @@ export default function SessionsTab() {
                         className="text-red-400 hover:text-red-600 text-sm">X</button>
                     </div>
                   ))}
-                  <button onClick={() => setSessionPkgList([...sessionPkgList, { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: sessionPkgList.length, is_phd: false }])}
+                  <button onClick={() => setSessionPkgList([...sessionPkgList, { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: sessionPkgList.length, is_phd: false, description: '' }])}
                     className="text-xs text-brand-blue hover:underline mb-4 block">
                     + Add Package
                   </button>

@@ -523,6 +523,11 @@ export async function fetchPhdInventory(sessionId) {
   return res.json();
 }
 
+export async function fetchBookingConfig() {
+  const res = await fetch(`${API}/booking-config`);
+  return res.json();
+}
+
 export async function fetchAdminPhdInventory(token) {
   const res = await fetch(`${API}/admin/phd-inventory`, { headers: adminHeaders(token) });
   return res.json();

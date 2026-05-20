@@ -54,6 +54,7 @@ import { formatLocalDate, formatPrice, generateRef } from './utils/format.js';
 import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode } from './services/email.js';
 import { createHostedPaymentPage, verifyTransaction, verifyWebhookSignature } from './services/payments.js';
 import {
+  getBookingConfig,
   normalizeSessionType,
 } from './services/sessionPackages.js';
 
@@ -187,6 +188,51 @@ function logAudit(action, entityType, entityId, details) {
     [uuid(), action, entityType, entityId, typeof details === 'string' ? details : JSON.stringify(details), new Date().toISOString()]);
 }
 
+function validateAttendeeAddons(attendees, optionalPkgs, bookingConfig) {
+  const optionalById = new Map(optionalPkgs.map(pkg => [pkg.id, pkg]));
+  const maxNonPhd = bookingConfig.maxOptionalPackagesPerPlayer;
+  const normalizedAttendees = [];
+
+  for (const attendee of attendees) {
+    const addonTotals = new Map();
+    for (const addon of attendee.addons || []) {
+      const packageId = String(addon?.packageId || '').trim();
+      const quantity = Number(addon?.quantity);
+      if (!packageId || !Number.isInteger(quantity) || quantity < 1) {
+        return { ok: false, statusCode: 400, error: 'Add-on quantities must be whole numbers of 1 or more.' };
+      }
+      addonTotals.set(packageId, (addonTotals.get(packageId) || 0) + quantity);
+    }
+
+    let nonPhdQty = 0;
+    const normalizedAddons = [];
+    for (const [packageId, quantity] of addonTotals.entries()) {
+      const pkg = optionalById.get(packageId);
+      if (!pkg) {
+        return { ok: false, statusCode: 400, error: 'One of the selected add-ons is no longer available.' };
+      }
+      const packageLimit = Math.max(1, parseInt(pkg.max_quantity || 1, 10));
+      if (quantity > packageLimit) {
+        return { ok: false, statusCode: 400, error: `${pkg.name} is limited to ${packageLimit} per player.` };
+      }
+      if (!pkg.is_phd) nonPhdQty += quantity;
+      normalizedAddons.push({ packageId, quantity });
+    }
+
+    if (nonPhdQty > maxNonPhd) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: `Each player can add up to ${maxNonPhd} non-PHD optional package${maxNonPhd === 1 ? '' : 's'}. PHD packages are limited separately.`,
+      };
+    }
+
+    normalizedAttendees.push({ ...attendee, addons: normalizedAddons });
+  }
+
+  return { ok: true, attendees: normalizedAttendees };
+}
+
 // ============ BOOKING + PAYMENT HELPERS ============
 //
 // Shared building blocks for:
@@ -257,6 +303,12 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
   const requiredPkg = requiredPkgs[0];
   if (!requiredPkg) return { ok: false, statusCode: 500, error: 'No required package configured' };
 
+  const optionalPkgs = useSessionPkgs
+    ? sessionPkgs.filter(p => p.type === 'optional')
+    : all("SELECT * FROM packages WHERE type = 'optional' AND is_active = 1 ORDER BY sort_order ASC");
+  const addonCheck = validateAttendeeAddons(attendees, optionalPkgs, getBookingConfig());
+  if (!addonCheck.ok) return addonCheck;
+
   // Every seat must currently be held by THIS holder. Prevents booking seats
   // that someone else has held, or seats that aren't held at all.
   for (const att of attendees) {
@@ -271,13 +323,13 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
     data: {
       sessionId,
       holderId,
-      attendees,
       trimmedEmail: normalizedEmail,
       customerFirstName: trimmedCustomerFirstName,
       customerLastName: trimmedCustomerLastName,
       emailVerifiedAt: emailCheck.verifiedAt || null,
       session,
       sessionType: currentSessionType,
+      attendees: addonCheck.attendees,
       useSessionPkgs,
       sessionPkgs,
       requiredPkg,
@@ -876,6 +928,10 @@ app.get('/api/sessions/:sessionId/packages', (req, res) => {
 app.get('/api/phd-inventory', (req, res) => {
   const sessionId = String(req.query.sessionId || '').trim();
   res.json(getPhdInventoryForSession(sessionId));
+});
+
+app.get('/api/booking-config', (req, res) => {
+  res.json(getBookingConfig());
 });
 
 // --- Theme settings (public) ---

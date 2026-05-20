@@ -11,6 +11,7 @@ const BASELINE_PACKAGES = REGULAR_BINGO_PACKAGE_DEFINITIONS.map(pkg => [
   1,
   pkg.sort_order,
   pkg.is_phd,
+  pkg.description || '',
 ]);
 
 function ensureBaselinePackages() {
@@ -24,16 +25,20 @@ function ensureBaselinePackages() {
 
   for (const pkg of BASELINE_PACKAGES) {
     run(
-      `INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd, description)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name,
          price = excluded.price,
          type = excluded.type,
-         max_quantity = excluded.max_quantity,
+         max_quantity = CASE
+           WHEN packages.max_quantity = 1 AND excluded.max_quantity > 1 THEN excluded.max_quantity
+           ELSE packages.max_quantity
+         END,
          is_active = excluded.is_active,
          sort_order = excluded.sort_order,
-         is_phd = excluded.is_phd`,
+         is_phd = excluded.is_phd,
+         description = COALESCE(NULLIF(packages.description, ''), excluded.description)`,
       pkg
     );
   }
@@ -144,7 +149,8 @@ async function migrate() {
       type TEXT NOT NULL,
       max_quantity INTEGER NOT NULL DEFAULT 1,
       is_active INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER NOT NULL DEFAULT 0
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      description TEXT DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS bookings (
@@ -214,6 +220,7 @@ async function migrate() {
       type TEXT NOT NULL,
       max_quantity INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,
+      description TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
@@ -314,6 +321,8 @@ async function migrate() {
   // Add is_phd flag to packages and session_packages to identify handheld devices
   try { exec('ALTER TABLE packages ADD COLUMN is_phd INTEGER DEFAULT 0'); } catch(e) {}
   try { exec('ALTER TABLE session_packages ADD COLUMN is_phd INTEGER DEFAULT 0'); } catch(e) {}
+  try { exec("ALTER TABLE packages ADD COLUMN description TEXT DEFAULT ''"); } catch(e) {}
+  try { exec("ALTER TABLE session_packages ADD COLUMN description TEXT DEFAULT ''"); } catch(e) {}
 
   // Default PHD inventory settings (total_stock=200, per_player_limit=2)
   const defaultPhdInventory = JSON.stringify({
@@ -383,6 +392,11 @@ async function migrate() {
     additionalPhdMaxQuantity: 1
   });
   try { run("INSERT INTO settings (key, value) VALUES ('special_bingo_config', ?)", [defaultSpecialBingoConfig]); } catch(e) {}
+
+  const defaultBookingConfig = JSON.stringify({
+    maxOptionalPackagesPerPlayer: 3
+  });
+  try { run("INSERT INTO settings (key, value) VALUES ('booking_config', ?)", [defaultBookingConfig]); } catch(e) {}
 
   // Keep regular bingo on the approved package list. Old package rows that
   // are still referenced by bookings are disabled instead of deleted so

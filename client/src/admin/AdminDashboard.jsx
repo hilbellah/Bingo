@@ -49,17 +49,21 @@ const DEFAULT_SPECIAL_BINGO_CONFIG = {
   additionalPhdMaxQuantity: 1,
 };
 
+const DEFAULT_BOOKING_CONFIG = {
+  maxOptionalPackagesPerPlayer: 3,
+};
+
 function defaultSpecialEventPackages(config = DEFAULT_SPECIAL_BINGO_CONFIG) {
   const resolved = { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...(config || {}) };
   return [
-    { name: resolved.admissionName, price: resolved.admissionPrice, type: 'required', max_quantity: 1, sort_order: 0, is_phd: true },
-    { name: resolved.additionalPhdName, price: resolved.additionalPhdPrice, type: 'optional', max_quantity: resolved.additionalPhdMaxQuantity, sort_order: 1, is_phd: true },
+    { name: resolved.admissionName, price: resolved.admissionPrice, type: 'required', max_quantity: 1, sort_order: 0, is_phd: true, description: 'Special bingo admission with one included handheld device.' },
+    { name: resolved.additionalPhdName, price: resolved.additionalPhdPrice, type: 'optional', max_quantity: resolved.additionalPhdMaxQuantity, sort_order: 1, is_phd: true, description: 'Additional handheld device for special bingo.' },
   ];
 }
 
 function defaultEventPackages() {
   return [
-    { name: 'Live Event / Venue Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false },
+    { name: 'Live Event / Venue Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false, description: 'Admission ticket for the live event or venue booking.' },
   ];
 }
 
@@ -76,11 +80,13 @@ export default function AdminDashboard() {
   const [bookings, setBookings] = useState([]);
   const [reportSession, setReportSession] = useState('');
   const [specialBingoConfig, setSpecialBingoConfig] = useState(DEFAULT_SPECIAL_BINGO_CONFIG);
+  const [bookingConfig, setBookingConfig] = useState(DEFAULT_BOOKING_CONFIG);
+  const [bookingConfigSaved, setBookingConfigSaved] = useState(false);
   const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages() });
   const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
-  const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false });
+  const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false, description: '' });
   const [editingPackage, setEditingPackage] = useState(null); // { id, name, price, type, max_quantity, sort_order, is_phd } — null when not editing
   const [editingSessionPkgs, setEditingSessionPkgs] = useState(null); // session id being edited
   const [sessionPkgList, setSessionPkgList] = useState([]);
@@ -160,6 +166,10 @@ export default function AdminDashboard() {
         ...prev,
         packages: defaultSpecialEventPackages(merged),
       }));
+    }).catch(() => {});
+    fetchSettings(token, 'booking_config').then(config => {
+      if (!config) return;
+      setBookingConfig({ ...DEFAULT_BOOKING_CONFIG, ...config });
     }).catch(() => {});
   }, []);
 
@@ -443,9 +453,10 @@ export default function AdminDashboard() {
       type: newPackage.type,
       max_quantity: parseInt(newPackage.max_quantity) || 1,
       sort_order: parseInt(newPackage.sort_order) || 0,
-      is_phd: newPackage.is_phd
+      is_phd: newPackage.is_phd,
+      description: newPackage.description
     });
-    setNewPackage({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false });
+    setNewPackage({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false, description: '' });
     loadPackages();
   };
 
@@ -462,6 +473,7 @@ export default function AdminDashboard() {
       max_quantity: pkg.max_quantity ?? 1,
       sort_order: pkg.sort_order ?? 0,
       is_phd: !!pkg.is_phd,
+      description: pkg.description || '',
     });
   };
 
@@ -486,6 +498,7 @@ export default function AdminDashboard() {
         max_quantity: parseInt(editingPackage.max_quantity) || 1,
         sort_order: parseInt(editingPackage.sort_order) || 0,
         is_phd: editingPackage.is_phd,
+        description: editingPackage.description,
       });
       setEditingPackage(null);
       loadPackages();
@@ -537,6 +550,16 @@ export default function AdminDashboard() {
     if (!confirm('Cancel this booking and release seats?')) return;
     await cancelAdminBooking(token, id);
     loadBookings(reportSession);
+  };
+
+  const handleSaveBookingConfig = async () => {
+    const next = {
+      maxOptionalPackagesPerPlayer: Math.max(0, parseInt(bookingConfig.maxOptionalPackagesPerPlayer, 10) || 0),
+    };
+    await saveSettings(token, 'booking_config', next);
+    setBookingConfig(next);
+    setBookingConfigSaved(true);
+    setTimeout(() => setBookingConfigSaved(false), 3000);
   };
 
   const handleCreateEvent = async () => {
@@ -748,6 +771,10 @@ export default function AdminDashboard() {
     packages,
     newPackage,
     setNewPackage,
+    bookingConfig,
+    setBookingConfig,
+    bookingConfigSaved,
+    handleSaveBookingConfig,
     handleCreatePackage,
     handleTogglePackage,
     editingPackage,

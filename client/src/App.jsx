@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  fetchBookingConfig,
   initiateBooking,
   fetchPhdInventory,
   fetchSeats,
@@ -91,6 +92,7 @@ export default function App() {
 
   const [sessions, setSessions] = useState([]);
   const [packages, setPackages] = useState([]);
+  const [bookingConfig, setBookingConfig] = useState({ maxOptionalPackagesPerPlayer: 3 });
   const [phdInventory, setPhdInventory] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
   const [partySize, setPartySize] = useState(0);
@@ -127,6 +129,10 @@ export default function App() {
       if (theme.seatHeld) root.style.setProperty('--color-seat-held', theme.seatHeld);
       if (theme.seatSold) root.style.setProperty('--color-seat-sold', theme.seatSold);
       if (theme.seatSelected) root.style.setProperty('--color-seat-selected', theme.seatSelected);
+    }).catch(() => {});
+
+    fetchBookingConfig().then(config => {
+      if (config) setBookingConfig({ maxOptionalPackagesPerPlayer: config.maxOptionalPackagesPerPlayer ?? 3 });
     }).catch(() => {});
   }, []);
 
@@ -533,6 +539,7 @@ export default function App() {
         requiredPkg={requiredPkg}
         requiredPkgs={requiredPkgs}
         optionalPkgs={optionalPkgs}
+        maxOptionalPackagesPerPlayer={bookingConfig.maxOptionalPackagesPerPlayer}
         total={total}
         allNamesValid={allNamesValid}
         allSeatsSelected={allSeatsSelected}
