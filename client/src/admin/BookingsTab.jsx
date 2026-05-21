@@ -116,8 +116,22 @@ export default function BookingsTab() {
                         </tr>
                       </thead>
                       <tbody>
-                        {bingoSales.map((sale, idx) => (
-                          <tr key={sale.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                        {bingoSales.map((sale, idx) => {
+                          const canOpen = sale.quantity > 0;
+                          return (
+                          <tr
+                            key={sale.id}
+                            onClick={() => canOpen && handleSalesDrilldown(sale)}
+                            onKeyDown={e => {
+                              if (canOpen && (e.key === 'Enter' || e.key === ' ')) {
+                                e.preventDefault();
+                                handleSalesDrilldown(sale);
+                              }
+                            }}
+                            role={canOpen ? 'button' : undefined}
+                            tabIndex={canOpen ? 0 : undefined}
+                            className={`border-b border-gray-50 hover:bg-gray-50/50 ${canOpen ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-blue/30' : ''}`}
+                          >
                             <td className="py-2.5 pl-2 text-gray-400 text-xs">{idx + 1}</td>
                             <td className="py-2.5">
                               <span className="font-medium text-gray-800">{sale.description}</span>
@@ -128,7 +142,10 @@ export default function BookingsTab() {
                             <td className="py-2.5 text-center">
                               {sale.quantity > 0 ? (
                                 <button
-                                  onClick={() => handleSalesDrilldown(sale)}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    handleSalesDrilldown(sale);
+                                  }}
                                   className="text-brand-blue underline hover:text-blue-800 font-semibold cursor-pointer min-w-[32px] inline-block"
                                 >
                                   {sale.quantity}
@@ -139,7 +156,8 @@ export default function BookingsTab() {
                             </td>
                             <td className="py-2.5 text-right pr-2 font-medium text-gray-800">{sale.totalFormatted}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-gray-200">

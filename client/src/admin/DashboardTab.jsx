@@ -25,10 +25,25 @@ export default function DashboardTab() {
     recentReceipts,
     setRecentReceipts,
     printBookingReceipt,
-    handleSoldClick,
+    handleSalesDrilldown,
     bookings,
     phdInventory,
   } = useAdminDashboard();
+
+  const openSessionSales = (session) => {
+    const quantity = Number(session.sold || session.quantity || 0);
+    if (!quantity || !handleSalesDrilldown) return;
+    handleSalesDrilldown({
+      ...session,
+      quantity,
+      bookingCount: session.bookingCount || session.booking_count || quantity,
+      totalAmount: session.totalAmount || session.total_amount || 0,
+      totalFormatted: session.totalFormatted || '',
+      description: session.description || session.event_title || `${session.date} - ${session.time}`,
+      sessionType: session.session_type,
+      isSpecialEvent: !!session.is_special_event,
+    });
+  };
 
   return (
     <>
@@ -248,7 +263,7 @@ export default function DashboardTab() {
                         <td className="py-2 text-green-600">{s.available}</td>
                         <td className="py-2">
                           {s.sold > 0 ? (
-                            <button onClick={() => handleSoldClick(s)} className="text-brand-blue underline hover:text-blue-800 font-medium cursor-pointer">{s.sold}</button>
+                            <button onClick={() => openSessionSales(s)} className="text-brand-blue underline hover:text-blue-800 font-medium cursor-pointer">{s.sold}</button>
                           ) : (
                             <span className="text-gray-500">0</span>
                           )}
