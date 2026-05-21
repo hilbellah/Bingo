@@ -28,6 +28,7 @@ import {
   savePurchasersCsv,
   saveSalesDrilldownCsv,
 } from './adminPrintUtils';
+import { confirmAdminAction } from './adminConfirm';
 import { formatDateShort, formatTime } from '../utils/formatters';
 
 function formatPrice(cents) {
@@ -314,18 +315,18 @@ export default function AdminDashboard() {
   const handleCreateSession = async () => {
     if (!newSession.date) return;
     const payload = { ...newSession, session_type: newSession.is_special_event ? 'special_bingo' : 'regular_bingo' };
-    if (payload.is_special_event) {
-      const proceed = window.confirm(
-        `Create this special bingo event?\n\n` +
-        `Title: ${payload.event_title || 'Special Bingo'}\n` +
-        `Date: ${formatDateShort(payload.date)}\n` +
-        `Time: ${formatTime(payload.time)}\n` +
-        `Sales cutoff: ${formatTime(payload.cutoff_time)}\n` +
-        `Packages: ${packageSummary(payload.packages) || 'No packages configured'}\n\n` +
-        `This will make the special bingo event available for booking.`
-      );
-      if (!proceed) return;
-    }
+    const proceed = confirmAdminAction({
+      action: payload.is_special_event ? 'Create this special bingo event' : 'Create this regular bingo session',
+      details: [
+        payload.is_special_event ? `Title: ${payload.event_title || 'Special Bingo'}` : 'Type: Regular Bingo',
+        `Date: ${formatDateShort(payload.date)}`,
+        `Time: ${formatTime(payload.time)}`,
+        `Sales cutoff: ${formatTime(payload.cutoff_time)}`,
+        payload.is_special_event ? `Packages: ${packageSummary(payload.packages) || 'No packages configured'}` : '',
+      ],
+      warning: 'This will make the session available for booking.',
+    });
+    if (!proceed) return;
     if (!payload.is_special_event) {
       delete payload.event_title;
       delete payload.event_description;
@@ -342,6 +343,16 @@ export default function AdminDashboard() {
 
   const handleCreateAnnouncement = async () => {
     if (!newAnnouncement.message) return;
+    if (!confirmAdminAction({
+      action: 'Create this announcement',
+      details: [
+        `Title: ${newAnnouncement.title || '(no title)'}`,
+        `Type: ${newAnnouncement.type}`,
+        `Start: ${newAnnouncement.start_date || 'Immediately'}`,
+        `End: ${newAnnouncement.end_date || 'No end date'}`,
+      ],
+      warning: 'This will be shown on the public site while active.',
+    })) return;
     let imageUrl = newAnnouncement.image_url || '';
     // Upload image file if selected
     if (announcementImageFile) {
@@ -363,11 +374,19 @@ export default function AdminDashboard() {
   };
 
   const handleToggleAnnouncement = async (id, currentActive) => {
+    if (!confirmAdminAction({
+      action: `${currentActive ? 'Deactivate' : 'Activate'} this announcement`,
+      warning: 'This changes whether customers can see it.',
+    })) return;
     await updateAdminAnnouncement(token, id, { is_active: !currentActive });
     loadAnnouncements();
   };
 
   const handleDeleteAnnouncement = async (id) => {
+    if (!confirmAdminAction({
+      action: 'Delete this announcement',
+      warning: 'This cannot be undone.',
+    })) return;
     await deleteAdminAnnouncement(token, id);
     loadAnnouncements();
   };
@@ -389,6 +408,15 @@ export default function AdminDashboard() {
 
   const handleSaveSessionPkgs = async () => {
     const valid = sessionPkgList.filter(p => p.name && p.price > 0);
+    const session = sessions.find(s => s.id === editingSessionPkgs);
+    if (!confirmAdminAction({
+      action: 'Save package/pricing changes for this session',
+      details: [
+        session ? `Session: ${formatDateShort(session.date)} at ${formatTime(session.time)}` : '',
+        `Packages: ${packageSummary(valid) || 'No valid packages'}`,
+      ],
+      warning: 'This affects new bookings for this session.',
+    })) return;
     try {
       await setAdminSessionPackages(token, editingSessionPkgs, valid);
       setEditingSessionPkgs(null);
@@ -412,12 +440,27 @@ export default function AdminDashboard() {
   };
 
   const handleToggleSession = async (id, currentAvail) => {
+    const session = sessions.find(s => s.id === id);
+    if (!confirmAdminAction({
+      action: `${currentAvail ? 'Disable' : 'Enable'} this session`,
+      details: [
+        session ? `Session: ${formatDateShort(session.date)} at ${formatTime(session.time)}` : '',
+        session?.event_title ? `Title: ${session.event_title}` : '',
+      ],
+      warning: currentAvail
+        ? 'Customers will not be able to book this session while it is disabled.'
+        : 'Customers will be able to book this session again.',
+    })) return;
     await updateAdminSession(token, id, { is_available: !currentAvail });
     loadSessions();
   };
 
   const handleDeleteSession = async (id, date, time) => {
-    if (!window.confirm(`Delete session on ${date} at ${time}? This will soft-delete it (can be restored later).`)) return;
+    if (!confirmAdminAction({
+      action: 'Delete this session',
+      details: [`Session: ${formatDateShort(date)} at ${formatTime(time)}`],
+      warning: 'This will soft-delete the session so it can be restored later.',
+    })) return;
     await deleteAdminSession(token, id);
     loadSessions();
   };
@@ -446,6 +489,18 @@ export default function AdminDashboard() {
       payload.event_title = '';
       payload.event_description = '';
     }
+    if (!confirmAdminAction({
+      action: 'Save changes to this session',
+      details: [
+        `Date: ${formatDateShort(payload.date)}`,
+        `Time: ${formatTime(payload.time)}`,
+        `Sales cutoff: ${formatTime(payload.cutoff_time)}`,
+        payload.event_title ? `Title: ${payload.event_title}` : '',
+      ],
+      warning: payload.notify_reschedule === false
+        ? 'Reschedule emails are turned off for this change.'
+        : 'This can affect booking availability and customer tickets.',
+    })) return;
     try {
       await updateAdminSession(token, editingSession.id, payload);
       setEditingSession(null);
@@ -456,12 +511,30 @@ export default function AdminDashboard() {
   };
 
   const handleTogglePackage = async (id, currentActive) => {
+    const pkg = packages.find(p => p.id === id);
+    if (!confirmAdminAction({
+      action: `${currentActive ? 'Disable' : 'Enable'} this package`,
+      details: [pkg ? `Package: ${pkg.name}` : ''],
+      warning: currentActive
+        ? 'Customers will not be able to add this package to new bookings.'
+        : 'Customers will be able to add this package to new bookings.',
+    })) return;
     await updateAdminPackage(token, id, { is_active: !currentActive });
     loadPackages();
   };
 
   const handleCreatePackage = async () => {
     if (!newPackage.name || !newPackage.price) return;
+    if (!confirmAdminAction({
+      action: 'Create this package',
+      details: [
+        `Name: ${newPackage.name}`,
+        `Price: $${Number.parseFloat(newPackage.price || 0).toFixed(2)}`,
+        `Type: ${newPackage.type}`,
+        `Max quantity: ${parseInt(newPackage.max_quantity) || 1}`,
+      ],
+      warning: 'This package can be used for new bookings once active.',
+    })) return;
     await createAdminPackage(token, {
       name: newPackage.name,
       price: Math.round(parseFloat(newPackage.price) * 100),
@@ -505,6 +578,16 @@ export default function AdminDashboard() {
       alert('Price must be a non-negative number.');
       return;
     }
+    if (!confirmAdminAction({
+      action: 'Save package changes',
+      details: [
+        `Name: ${editingPackage.name}`,
+        `Price: ${formatPrice(priceCents)}`,
+        `Type: ${editingPackage.type}`,
+        `Max quantity: ${parseInt(editingPackage.max_quantity) || 1}`,
+      ],
+      warning: 'This affects new bookings that use this package.',
+    })) return;
     try {
       await updateAdminPackage(token, editingPackage.id, {
         name: editingPackage.name,
@@ -526,11 +609,10 @@ export default function AdminDashboard() {
   // booking_addons reference the package; otherwise it returns 409 with a
   // friendly message and the admin sees a guidance alert (use Disable instead).
   const handleDeletePackage = async (pkg) => {
-    const confirmMsg =
-      `Delete package "${pkg.name}"?\n\nThis will permanently remove it. ` +
-      `If this package has ever been used in a booking, the system will block the delete and ` +
-      `you'll be told to disable it instead.\n\nThis cannot be undone.`;
-    if (!window.confirm(confirmMsg)) return;
+    if (!confirmAdminAction({
+      action: `Delete package "${pkg.name}"`,
+      warning: `This will permanently remove it. If this package has ever been used in a booking, the system will block the delete and you'll be told to disable it instead. This cannot be undone.`,
+    })) return;
     try {
       const result = await deleteAdminPackage(token, pkg.id);
       if (!result.ok) {
@@ -550,7 +632,10 @@ export default function AdminDashboard() {
   };
 
   const handleRestoreSession = async (id) => {
-    if (!window.confirm('Restore this deleted session?')) return;
+    if (!confirmAdminAction({
+      action: 'Restore this deleted session',
+      warning: 'The restored session will appear in admin session lists again.',
+    })) return;
     await restoreSession(token, id);
     loadDeletedSessions();
     loadAuditLogs();
@@ -562,7 +647,10 @@ export default function AdminDashboard() {
   };
 
   const handleCancelBooking = async (id) => {
-    if (!confirm('Cancel this booking and release seats?')) return;
+    if (!confirmAdminAction({
+      action: 'Cancel this booking and release seats',
+      warning: 'This should only be used for bookings that should no longer hold seats.',
+    })) return;
     await cancelAdminBooking(token, id);
     loadBookings(reportSession);
   };
@@ -571,6 +659,11 @@ export default function AdminDashboard() {
     const next = {
       maxOptionalPackagesPerPlayer: Math.max(0, parseInt(bookingConfig.maxOptionalPackagesPerPlayer, 10) || 0),
     };
+    if (!confirmAdminAction({
+      action: 'Save booking package limit',
+      details: [`Max optional packages per player: ${next.maxOptionalPackagesPerPlayer}`],
+      warning: 'This affects the customer booking form immediately.',
+    })) return;
     await saveSettings(token, 'booking_config', next);
     setBookingConfig(next);
     setBookingConfigSaved(true);
@@ -584,15 +677,17 @@ export default function AdminDashboard() {
       session_type: 'event',
       is_special_event: true,
     };
-    const proceed = window.confirm(
-      `Create this live event / venue?\n\n` +
-      `Live Event / Venue: ${payload.event_title}\n` +
-      `Date: ${formatDateShort(payload.date)}\n` +
-      `Time: ${formatTime(payload.time)}\n` +
-      `Sales cutoff: ${formatTime(payload.cutoff_time)}\n` +
-      `Ticket: ${packageSummary(payload.packages) || 'No ticket price configured'}\n\n` +
-      `This will make the live event / venue available for booking.`
-    );
+    const proceed = confirmAdminAction({
+      action: 'Create this live event / venue',
+      details: [
+        `Live Event / Venue: ${payload.event_title}`,
+        `Date: ${formatDateShort(payload.date)}`,
+        `Time: ${formatTime(payload.time)}`,
+        `Sales cutoff: ${formatTime(payload.cutoff_time)}`,
+        `Ticket: ${packageSummary(payload.packages) || 'No ticket price configured'}`,
+      ],
+      warning: 'This will make the live event / venue available for booking.',
+    });
     if (!proceed) return;
 
     try {
@@ -606,12 +701,10 @@ export default function AdminDashboard() {
   };
 
   const handleClearTestBookings = async () => {
-    const proceed = window.confirm(
-      'Clear ALL sandbox booking test data?\n\n' +
-      'This deletes booking records, ticket rows, add-ons, and payment event logs, then releases all seats. ' +
-      'It keeps sessions, packages, admin users, settings, theme, announcements, and PHD inventory.\n\n' +
-      'This action is blocked once Authorize.Net is set to production. Continue?'
-    );
+    const proceed = confirmAdminAction({
+      action: 'Clear ALL sandbox booking test data',
+      warning: 'This deletes booking records, ticket rows, add-ons, and payment event logs, then releases all seats. It keeps sessions, packages, admin users, settings, theme, announcements, and PHD inventory. This action is blocked once Authorize.Net is set to production.',
+    });
     if (!proceed) return;
 
     const result = await clearAdminTestBookings(token);
@@ -635,11 +728,10 @@ export default function AdminDashboard() {
   // refund and releases seats. /cancel is for legacy/admin bookings with no
   // payment processor; /refund is for real Authorize.Net transactions.
   const handleRefundBooking = async (id, refNumber) => {
-    const proceed = window.confirm(
-      `Refund booking ${refNumber || id}?\n\n` +
-      `This will return the customer's money via Authorize.Net and release the seats. ` +
-      `Cannot be undone. Proceed?`
-    );
+    const proceed = confirmAdminAction({
+      action: `Refund booking ${refNumber || id}`,
+      warning: `This will return the customer's money via Authorize.Net and release the seats. Cannot be undone.`,
+    });
     if (!proceed) return;
 
     const result = await refundAdminBooking(token, id);
@@ -665,11 +757,10 @@ export default function AdminDashboard() {
 
   const handleRefundBookingItem = async (item, booking) => {
     const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
-    const proceed = window.confirm(
-      `Refund ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}?\n\n` +
-      `Only this ticket will be refunded and its seat will be released. The rest of booking ${booking?.referenceNumber || ''} will remain active. ` +
-      `Cannot be undone. Proceed?`
-    );
+    const proceed = confirmAdminAction({
+      action: `Refund ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`,
+      warning: `Only this ticket will be refunded and its seat will be released. The rest of booking ${booking?.referenceNumber || ''} will remain active. Cannot be undone.`,
+    });
     if (!proceed) return;
 
     const result = await refundAdminBookingItem(token, item.id);
@@ -737,6 +828,12 @@ export default function AdminDashboard() {
             <button
               onClick={() => {
                 const next = !autoPrint;
+                if (!confirmAdminAction({
+                  action: `${next ? 'Enable' : 'Disable'} auto-print`,
+                  warning: next
+                    ? 'New paid bookings will automatically print a receipt in this browser.'
+                    : 'New paid bookings will no longer automatically print in this browser.',
+                })) return;
                 setAutoPrint(next);
                 const updated = { ...receiptConfig, autoPrintEnabled: next };
                 setReceiptConfig(updated);

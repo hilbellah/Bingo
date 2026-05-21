@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { fetchAdminPhdInventory, updateAdminPhdInventory, updateAdminSessionPhdInventory } from '../api';
+import { confirmAdminAction } from './adminConfirm';
 
 export default function InventoryTab() {
   const {
@@ -36,6 +37,16 @@ export default function InventoryTab() {
       return;
     }
 
+    const session = phdInventory?.perSession?.find(s => s.id === sessionId);
+    if (!confirmAdminAction({
+      action: 'Save PHD stock for this session',
+      details: [
+        session ? `Session: ${session.date} at ${session.time}` : '',
+        `Stock for this session: ${totalStock}`,
+      ],
+      warning: 'This changes how many PHD units can be sold for this session.',
+    })) return;
+
     setSessionStockSaving(sessionId);
     setSessionStockError('');
     try {
@@ -49,6 +60,16 @@ export default function InventoryTab() {
   };
 
   const resetSessionStock = async (sessionId) => {
+    const session = phdInventory?.perSession?.find(s => s.id === sessionId);
+    if (!confirmAdminAction({
+      action: 'Use default PHD stock for this session',
+      details: [
+        session ? `Session: ${session.date} at ${session.time}` : '',
+        session ? `Default stock: ${session.defaultStock}` : '',
+      ],
+      warning: 'This removes the custom stock override for this session.',
+    })) return;
+
     setSessionStockSaving(sessionId);
     setSessionStockError('');
     try {
@@ -137,6 +158,14 @@ export default function InventoryTab() {
               </div>
               <button
                 onClick={async () => {
+                  if (!confirmAdminAction({
+                    action: 'Update PHD inventory settings',
+                    details: [
+                      `Stock per session: ${phdEditForm.totalStock}`,
+                      `Max per player: ${phdEditForm.perPlayerLimit}`,
+                    ],
+                    warning: 'This affects PHD availability and customer add-on limits.',
+                  })) return;
                   setPhdSaving(true);
                   await updateAdminPhdInventory(token, phdEditForm);
                   await refreshInventory();

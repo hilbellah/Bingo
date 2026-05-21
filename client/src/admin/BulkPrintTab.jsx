@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { markAdminBulkTicketsPrinted } from '../api';
 import { useAdminDashboard } from './AdminDashboardContext';
+import { confirmAdminAction } from './adminConfirm';
 
 export default function BulkPrintTab() {
   const {
@@ -87,6 +88,11 @@ export default function BulkPrintTab() {
 
   const handleMarkPrinted = async () => {
     if (selectedTickets.length === 0) return;
+    if (!confirmAdminAction({
+      action: 'Mark selected tickets as printed',
+      details: [`Tickets selected: ${selectedTickets.length}`],
+      warning: 'These tickets will be recorded as printed in the admin system.',
+    })) return;
     setMarkingPrinted(true);
     const result = await markAdminBulkTicketsPrinted(token, selectedTickets.map(ticket => ticket.id));
     setMarkingPrinted(false);

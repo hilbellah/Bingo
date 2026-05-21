@@ -9,6 +9,7 @@ import {
   updateAutoGenerateConfig,
   triggerScheduleGenerate,
 } from '../api';
+import { confirmAdminAction } from './adminConfirm';
 
 // JS Date.getDay() convention: Sunday = 0
 const DAY_LABELS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -86,6 +87,16 @@ export default function RecurringScheduleTab() {
   if (tab !== 'recurring') return null;
 
   const handleAdd = async () => {
+    if (!confirmAdminAction({
+      action: 'Add this recurring schedule slot',
+      details: [
+        `Day: ${DAY_LABELS_FULL[newSchedule.day_of_week]}`,
+        `Start time: ${newSchedule.time}`,
+        `Booking cutoff: ${newSchedule.cutoff_time}`,
+        `Type: ${newSchedule.session_type === 'special_bingo' ? 'Special Bingo' : 'Regular Bingo'}`,
+      ],
+      warning: 'Future sessions will be auto-created from this slot.',
+    })) return;
     try {
       await createRecurringSchedule(token, newSchedule);
       setNewSchedule({ day_of_week: 1, time: '18:30', cutoff_time: '12:00', session_type: 'regular_bingo' });
@@ -97,6 +108,16 @@ export default function RecurringScheduleTab() {
   };
 
   const handleToggleActive = async (schedule) => {
+    if (!confirmAdminAction({
+      action: `${schedule.is_active ? 'Pause' : 'Resume'} this recurring slot`,
+      details: [
+        `Day: ${DAY_LABELS_FULL[schedule.day_of_week]}`,
+        `Start time: ${schedule.time}`,
+      ],
+      warning: schedule.is_active
+        ? 'Future auto-generation will stop for this slot.'
+        : 'Future auto-generation will resume for this slot.',
+    })) return;
     try {
       await updateRecurringSchedule(token, schedule.id, { is_active: schedule.is_active ? 0 : 1 });
       await load();
@@ -117,6 +138,16 @@ export default function RecurringScheduleTab() {
 
   const handleSaveEdit = async () => {
     if (!editForm) return;
+    if (!confirmAdminAction({
+      action: 'Save changes to this recurring slot',
+      details: [
+        `Day: ${DAY_LABELS_FULL[editForm.day_of_week]}`,
+        `Start time: ${editForm.time}`,
+        `Booking cutoff: ${editForm.cutoff_time}`,
+        `Type: ${editForm.session_type === 'special_bingo' ? 'Special Bingo' : 'Regular Bingo'}`,
+      ],
+      warning: 'This affects future auto-generated sessions only.',
+    })) return;
     try {
       await updateRecurringSchedule(token, editingId, editForm);
       setEditingId(null);
@@ -144,6 +175,16 @@ export default function RecurringScheduleTab() {
   };
 
   const handleSaveConfig = async (patch) => {
+    const nextEnabled = patch.enabled ?? config.enabled;
+    const nextLookAheadDays = patch.lookAheadDays ?? config.lookAheadDays;
+    if (!confirmAdminAction({
+      action: 'Save auto-generation settings',
+      details: [
+        `Auto-generation: ${nextEnabled ? 'Enabled' : 'Disabled'}`,
+        `Look-ahead: ${nextLookAheadDays} days`,
+      ],
+      warning: 'This changes how far ahead regular bingo sessions are automatically created.',
+    })) return;
     setSavingConfig(true);
     try {
       const next = await updateAutoGenerateConfig(token, patch);
@@ -159,6 +200,10 @@ export default function RecurringScheduleTab() {
   };
 
   const handleGenerateNow = async () => {
+    if (!confirmAdminAction({
+      action: 'Generate scheduled sessions now',
+      warning: 'The server will create any missing future sessions based on the recurring schedule.',
+    })) return;
     setGenerating(true);
     try {
       const result = await triggerScheduleGenerate(token);

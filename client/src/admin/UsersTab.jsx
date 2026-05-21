@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createAdminUser, deactivateAdminUser, fetchAdminUsers, updateAdminUser } from '../api';
 import { useAdminDashboard } from './AdminDashboardContext';
+import { confirmAdminAction } from './adminConfirm';
 
 const emptyForm = { email: '', displayName: '', password: '', isSuperUser: false };
 
@@ -36,6 +37,15 @@ export default function UsersTab() {
 
   const handleCreate = async (event) => {
     event.preventDefault();
+    if (!confirmAdminAction({
+      action: 'Create this admin user',
+      details: [
+        `Email: ${form.email}`,
+        `Display name: ${form.displayName || '(none)'}`,
+        `Role: ${form.isSuperUser ? 'Super user' : 'Admin'}`,
+      ],
+      warning: 'This person will be able to access the admin dashboard.',
+    })) return;
     setSaving(true);
     setError('');
     try {
@@ -50,6 +60,13 @@ export default function UsersTab() {
   };
 
   const handleToggleActive = async (user) => {
+    if (!confirmAdminAction({
+      action: `${user.is_active ? 'Deactivate' : 'Reactivate'} this admin user`,
+      details: [`User: ${user.display_name || user.email}`],
+      warning: user.is_active
+        ? 'This user will no longer be able to sign in.'
+        : 'This user will be able to sign in again.',
+    })) return;
     setError('');
     try {
       if (user.is_active) {
@@ -64,6 +81,13 @@ export default function UsersTab() {
   };
 
   const handleToggleSuper = async (user) => {
+    if (!confirmAdminAction({
+      action: `${user.is_super_user ? 'Remove super user access from' : 'Grant super user access to'} this admin user`,
+      details: [`User: ${user.display_name || user.email}`],
+      warning: user.is_super_user
+        ? 'This user will lose super user permissions.'
+        : 'This user will be able to manage other admin users.',
+    })) return;
     setError('');
     try {
       await updateAdminUser(token, user.id, { isSuperUser: !user.is_super_user });

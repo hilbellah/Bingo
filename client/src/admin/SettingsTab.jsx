@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { saveSettings } from '../api';
+import { confirmAdminAction } from './adminConfirm';
 
 export default function SettingsTab() {
   const {
@@ -105,6 +106,15 @@ export default function SettingsTab() {
 
                 <div className="flex gap-3">
                   <button onClick={() => {
+                    if (!confirmAdminAction({
+                      action: 'Save receipt settings',
+                      details: [
+                        `Business name: ${receiptConfig.businessName}`,
+                        `Paper width: ${receiptConfig.paperWidth}`,
+                        `Auto-print: ${receiptConfig.autoPrintEnabled ? 'On' : 'Off'}`,
+                      ],
+                      warning: 'This changes how admin receipts print.',
+                    })) return;
                     saveSettings(token, 'receipt_config', receiptConfig).then(() => {
                       setReceiptSaved(true);
                       setTimeout(() => setReceiptSaved(false), 3000);

@@ -3,6 +3,7 @@ import { useAdminDashboard } from './AdminDashboardContext';
 import { fetchAdminSeats, toggleAdminSeat } from '../api';
 import SessionWeekPicker from '../components/SessionWeekPicker';
 import { SECTIONS } from '../seatLayout';
+import { confirmAdminAction } from './adminConfirm';
 
 const sectionsById = SECTIONS.reduce((acc, section) => {
   acc[section.id] = section;
@@ -47,6 +48,18 @@ export default function ChairManagementTab() {
     if (chair.status === 'sold') return;
 
     const nextDisabled = !chair.is_disabled;
+    if (!confirmAdminAction({
+      action: `${nextDisabled ? 'Disable' : 'Enable'} this chair`,
+      details: [
+        `Table: ${chair.table_number}`,
+        `Chair: ${chair.chair_number}`,
+        selectedSession ? `Session: ${selectedSession.date} at ${selectedSession.time}` : '',
+      ],
+      warning: nextDisabled
+        ? 'Customers will not be able to book this chair.'
+        : 'Customers will be able to book this chair again if it is available.',
+    })) return;
+
     const result = await toggleAdminSeat(token, chair.id, nextDisabled);
     if (result?.error) {
       window.alert(result.error);
