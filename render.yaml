@@ -30,9 +30,12 @@ services:
       - key: SESSION_HOLD_MINUTES
         value: "60"
       # === Authorize.Net Payment Integration ===
-      # Start in sandbox; flip to 'production' only after end-to-end testing.
+      # Live in production as of go-live. To revert to sandbox for testing,
+      # change value to 'sandbox' and also swap the credentials in the
+      # Render dashboard back to the sandbox values (the sandbox values
+      # are still in server/.env locally for reference).
       - key: ANET_ENV
-        value: sandbox
+        value: production
       # Secrets - actual values pasted in Render dashboard, NOT committed here.
       - key: ANET_API_LOGIN_ID
         sync: false
