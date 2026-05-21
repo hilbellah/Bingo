@@ -8,6 +8,7 @@ import {
   fetchRecurringScheduleSummary,
   updateAutoGenerateConfig,
   triggerScheduleGenerate,
+  pruneAdminSchedule,
 } from '../api';
 import { confirmAdminAction } from './adminConfirm';
 
@@ -41,12 +42,13 @@ function formatDateLabel(dateStr) {
 export default function RecurringScheduleTab() {
   const { tab, token } = useAdminDashboard();
   const [schedules, setSchedules] = useState([]);
-  const [config, setConfig] = useState({ lookAheadDays: 30, enabled: true, lastRunAt: null });
+  const [config, setConfig] = useState({ lookAheadDays: 7, enabled: true, lastRunAt: null });
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [pruning, setPruning] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
-  const [lookAheadInput, setLookAheadInput] = useState(30);
+  const [lookAheadInput, setLookAheadInput] = useState(7);
   const [statusMessage, setStatusMessage] = useState(null); // { kind: 'ok'|'err', text }
   const [newSchedule, setNewSchedule] = useState({
     day_of_week: 1,
@@ -62,8 +64,8 @@ export default function RecurringScheduleTab() {
     try {
       const data = await fetchRecurringSchedules(token);
       setSchedules(data.schedules || []);
-      setConfig(data.config || { lookAheadDays: 30, enabled: true, lastRunAt: null });
-      setLookAheadInput(data.config?.lookAheadDays ?? 30);
+      setConfig(data.config || { lookAheadDays: 7, enabled: true, lastRunAt: null });
+      setLookAheadInput(data.config?.lookAheadDays ?? 7);
       const sum = await fetchRecurringScheduleSummary(token);
       setSummary(sum);
     } catch (err) {
@@ -220,6 +222,31 @@ export default function RecurringScheduleTab() {
     }
   };
 
+  const handlePruneNow = async () => {
+    if (!confirmAdminAction({
+      action: 'Prune extra future regular bingo sessions',
+      details: [
+        `Keep through: ${summary?.lookAheadDateStr || `${config.lookAheadDays} day window`}`,
+        `Prunable sessions: ${summary?.prunableBeyondWindow ?? 0}`,
+      ],
+      warning: 'Only future regular bingo sessions with no bookings will be hidden. Sessions with bookings are kept.',
+    })) return;
+    setPruning(true);
+    try {
+      const result = await pruneAdminSchedule(token);
+      if (!result.ok) {
+        setStatusMessage({ kind: 'err', text: result.error || 'Prune failed' });
+      } else {
+        setStatusMessage({ kind: 'ok', text: result.message || 'Future sessions pruned.' });
+      }
+      await load();
+    } catch (err) {
+      setStatusMessage({ kind: 'err', text: err?.message || 'Prune failed' });
+    } finally {
+      setPruning(false);
+    }
+  };
+
   // Group schedule rows by day so the UI shows a stable Sun→Sat order even
   // if multiple slots exist on the same day.
   const schedulesByDay = {};
@@ -229,7 +256,61 @@ export default function RecurringScheduleTab() {
   }
 
   const activeDayCount = new Set(schedules.filter(s => s.is_active).map(s => s.day_of_week)).size;
+  const activeSessionCount = schedules.filter(s => s.is_active).length;
   const upcomingPreview = (summary?.upcomingInWindow || []).slice(0, 10);
+
+  const defaultTimeForDay = (dayOfWeek) => dayOfWeek === 0 ? '18:00' : '18:30';
+
+  const createDefaultSlotForDay = async (dayOfWeek) => {
+    const slot = {
+      day_of_week: dayOfWeek,
+      time: defaultTimeForDay(dayOfWeek),
+      cutoff_time: '12:00',
+      session_type: 'regular_bingo',
+      is_active: 1,
+    };
+    await createRecurringSchedule(token, slot);
+  };
+
+  const handleAddDaySlot = async (dayOfWeek) => {
+    if (!confirmAdminAction({
+      action: `Add another session on ${DAY_LABELS_FULL[dayOfWeek]}`,
+      details: [
+        `Start time: ${defaultTimeForDay(dayOfWeek)}`,
+        'Booking cutoff: 12:00',
+      ],
+      warning: 'You can edit the exact time after the slot is added.',
+    })) return;
+    try {
+      await createDefaultSlotForDay(dayOfWeek);
+      setStatusMessage({ kind: 'ok', text: `${DAY_LABELS_FULL[dayOfWeek]} session added.` });
+      await load();
+    } catch (err) {
+      setStatusMessage({ kind: 'err', text: err?.message || 'Failed to add session' });
+    }
+  };
+
+  const handleToggleDay = async (dayOfWeek, enabled) => {
+    const daySchedules = schedulesByDay[dayOfWeek] || [];
+    if (!confirmAdminAction({
+      action: `${enabled ? 'Enable' : 'Disable'} ${DAY_LABELS_FULL[dayOfWeek]} auto-scheduling`,
+      details: [`Current slots: ${daySchedules.length}`],
+      warning: enabled
+        ? 'Future sessions will be created for this day.'
+        : 'Future auto-generation will stop for this day. Existing sessions are not deleted.',
+    })) return;
+    try {
+      if (daySchedules.length === 0 && enabled) {
+        await createDefaultSlotForDay(dayOfWeek);
+      } else {
+        await Promise.all(daySchedules.map(s => updateRecurringSchedule(token, s.id, { is_active: enabled ? 1 : 0 })));
+      }
+      setStatusMessage({ kind: 'ok', text: `${DAY_LABELS_FULL[dayOfWeek]} ${enabled ? 'enabled' : 'disabled'}.` });
+      await load();
+    } catch (err) {
+      setStatusMessage({ kind: 'err', text: err?.message || 'Failed to update day' });
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -252,6 +333,13 @@ export default function RecurringScheduleTab() {
           >
             {generating ? 'Generating…' : '▶ Generate Now'}
           </button>
+            <button
+              onClick={handlePruneNow}
+              disabled={pruning || !summary?.prunableBeyondWindow}
+              className="bg-red-50 text-red-700 border border-red-200 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-100 disabled:opacity-50"
+            >
+              {pruning ? 'Pruning...' : `Prune Extra (${summary?.prunableBeyondWindow || 0})`}
+            </button>
         </div>
 
         {statusMessage && (
@@ -262,10 +350,14 @@ export default function RecurringScheduleTab() {
           </div>
         )}
 
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="text-xs text-gray-500">Active days</div>
             <div className="text-lg font-semibold text-brand-blue">{activeDayCount} / 7</div>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3">
+            <div className="text-xs text-gray-500">Active weekly sessions</div>
+            <div className="text-lg font-semibold text-brand-blue">{activeSessionCount}</div>
           </div>
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="text-xs text-gray-500">Upcoming auto sessions</div>
@@ -274,6 +366,10 @@ export default function RecurringScheduleTab() {
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="text-xs text-gray-500">Look-ahead</div>
             <div className="text-lg font-semibold text-brand-blue">{config.lookAheadDays} days</div>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3">
+            <div className="text-xs text-gray-500">Extra beyond window</div>
+            <div className="text-lg font-semibold text-red-700">{summary?.beyondWindow ?? 0}</div>
           </div>
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="text-xs text-gray-500">Last run</div>
@@ -303,7 +399,7 @@ export default function RecurringScheduleTab() {
               <input
                 type="number"
                 min="1"
-                max="180"
+                max="30"
                 value={lookAheadInput}
                 onChange={(e) => setLookAheadInput(e.target.value)}
                 className="px-3 py-2 border rounded-lg text-sm w-24"
@@ -315,9 +411,64 @@ export default function RecurringScheduleTab() {
               >
                 Save
               </button>
+              <button
+                onClick={() => handleSaveConfig({ lookAheadDays: 7 })}
+                disabled={savingConfig || config.lookAheadDays === 7}
+                className="text-xs bg-gray-100 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+              >
+                Next Week
+              </button>
             </div>
-            <p className="text-xs text-gray-400 mt-1">Max 180. Higher = more bookings can be made further ahead.</p>
+            <p className="text-xs text-gray-400 mt-1">Recommended: 7 days. Higher values show more future sessions to customers.</p>
           </div>
+        </div>
+      </div>
+
+      {/* Weekly pattern controls */}
+      <div className="bg-white rounded-xl p-5 shadow-sm">
+        <h4 className="font-semibold text-brand-blue mb-3">Days and Sessions Per Day</h4>
+        <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
+          {[0, 1, 2, 3, 4, 5, 6].map(day => {
+            const daySchedules = schedulesByDay[day] || [];
+            const activeCount = daySchedules.filter(s => s.is_active).length;
+            const isEnabled = activeCount > 0;
+            return (
+              <div key={day} className={`border rounded-lg p-3 ${isEnabled ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">{DAY_LABELS_FULL[day]}</div>
+                    <div className="text-xs text-gray-500">{activeCount} active / {daySchedules.length} total session(s)</div>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={isEnabled}
+                      onChange={e => handleToggleDay(day, e.target.checked)}
+                    />
+                    {isEnabled ? 'On' : 'Off'}
+                  </label>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAddDaySlot(day)}
+                    className="text-xs bg-white border border-gray-200 px-2 py-1 rounded hover:bg-gray-50"
+                  >
+                    Add Session
+                  </button>
+                  {daySchedules.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartEdit(daySchedules[daySchedules.length - 1])}
+                      className="text-xs bg-white border border-gray-200 px-2 py-1 rounded hover:bg-gray-50"
+                    >
+                      Edit Time
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

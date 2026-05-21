@@ -473,7 +473,7 @@ async function migrate() {
   //   - enabled: master switch (false stops auto-creation entirely)
   //   - lastRunAt: ISO timestamp of the most recent generator run (informational)
   const defaultAutoGenConfig = JSON.stringify({
-    lookAheadDays: 30,
+    lookAheadDays: 7,
     enabled: true,
     lastRunAt: null
   });

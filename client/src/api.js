@@ -317,9 +317,10 @@ export async function deleteAdminBooking(token, id) {
 }
 
 export async function clearAdminTestBookings(token) {
-  const res = await fetch(`${API}/admin/bookings/clear-test-data`, {
+  const res = await fetch(`${API}/admin/bookings/go-live-cleanup`, {
     method: 'POST',
-    headers: adminHeaders(token)
+    headers: adminHeaders(token),
+    body: JSON.stringify({ confirm: 'CLEAR TEST DATA' })
   });
   const json = await res.json();
   return { ok: res.ok, ...json };
@@ -443,6 +444,14 @@ export async function fetchAdminSchedule(token) {
 
 export async function triggerScheduleGenerate(token) {
   const res = await fetch(`${API}/admin/schedule/generate`, {
+    method: 'POST', headers: adminHeaders(token)
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
+export async function pruneAdminSchedule(token) {
+  const res = await fetch(`${API}/admin/schedule/prune`, {
     method: 'POST', headers: adminHeaders(token)
   });
   const json = await res.json();

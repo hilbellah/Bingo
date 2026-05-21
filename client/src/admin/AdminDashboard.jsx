@@ -702,8 +702,8 @@ export default function AdminDashboard() {
 
   const handleClearTestBookings = async () => {
     const proceed = confirmAdminAction({
-      action: 'Clear ALL sandbox booking test data',
-      warning: 'This deletes booking records, ticket rows, add-ons, and payment event logs, then releases all seats. It keeps sessions, packages, admin users, settings, theme, announcements, and PHD inventory. This action is blocked once Authorize.Net is set to production.',
+      action: 'Run go-live test cleanup',
+      warning: 'This deletes pending, failed, and cancelled test bookings, clears temporary held seats, and removes email verification codes. Paid, refunded, and voided Authorize.Net records are kept and must be handled with refund/void if needed.',
     });
     if (!proceed) return;
 
@@ -714,7 +714,7 @@ export default function AdminDashboard() {
     }
 
     window.alert(
-      `Cleared ${result.deletedBookings || 0} booking(s), released ${result.releasedSeats || 0} seat(s).`
+      result.message || `Cleared ${result.deletedBookings || 0} booking(s), released ${result.releasedSeats || 0} seat(s).`
     );
     loadBookingSales();
     loadDailySales(dailySalesDate, dailySalesSearch);

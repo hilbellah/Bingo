@@ -2,7 +2,13 @@ import bcrypt from 'bcryptjs';
 import { get, run, saveDb } from './database.js';
 import { releaseExpiredHolds } from './services/holds.js';
 import { archivePastSessions } from './services/sessionArchive.js';
-import { cleanupOldData, ensureFutureSessions, openWeeklySessions } from './services/scheduler.js';
+import {
+  cleanupOldData,
+  ensureFutureSessions,
+  normalizeAutoGenerateConfigForGoLive,
+  openWeeklySessions,
+  pruneFutureSessionsBeyondLookahead,
+} from './services/scheduler.js';
 
 export function migrateSeatLayout() {
   // Legacy startup hook kept for compatibility. Current venue seat layout
@@ -51,11 +57,14 @@ export function startMaintenanceTasks(io, { reconcileReversedBookingSeats }) {
   setInterval(cleanupOldData, 24 * 60 * 60 * 1000);
 
   openWeeklySessions();
+  normalizeAutoGenerateConfigForGoLive();
   ensureFutureSessions();
+  pruneFutureSessionsBeyondLookahead();
   archivePastSessions();
   setInterval(() => {
     openWeeklySessions();
     ensureFutureSessions();
+    pruneFutureSessionsBeyondLookahead();
     archivePastSessions();
   }, 60 * 60 * 1000);
 

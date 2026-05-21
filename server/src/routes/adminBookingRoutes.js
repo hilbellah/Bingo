@@ -226,6 +226,85 @@ export function registerAdminBookingRoutes(app, {
     });
   });
 
+  app.post('/api/admin/bookings/go-live-cleanup', adminAuth, (req, res) => {
+    if (req.body?.confirm !== 'CLEAR TEST DATA') {
+      return res.status(400).json({
+        error: 'confirmation_required',
+        message: 'Type CLEAR TEST DATA to run go-live cleanup.',
+      });
+    }
+
+    const deletableStatuses = ['pending', 'failed', 'cancelled'];
+    const placeholders = deletableStatuses.map(() => '?').join(',');
+    const bookings = all(
+      `SELECT id, reference_number, session_id, payment_status, total_amount
+       FROM bookings
+       WHERE payment_status IN (${placeholders})`,
+      deletableStatuses
+    );
+    const bookingIds = bookings.map(booking => booking.id);
+    const bookingPlaceholders = bookingIds.map(() => '?').join(',');
+    const items = bookingIds.length > 0
+      ? all(`SELECT seat_id FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`, bookingIds)
+      : [];
+    const paidCount = get(`
+      SELECT COUNT(*) as count
+      FROM bookings
+      WHERE payment_status NOT IN (${placeholders})
+    `, deletableStatuses)?.count || 0;
+
+    for (const item of items) {
+      run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
+    }
+
+    const heldCleared = run(
+      "UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE status = 'held'"
+    ).changes || 0;
+
+    if (bookingIds.length > 0) {
+      const itemIds = all(
+        `SELECT id FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`,
+        bookingIds
+      ).map(item => item.id);
+      if (itemIds.length > 0) {
+        const itemPlaceholders = itemIds.map(() => '?').join(',');
+        run(`DELETE FROM booking_addons WHERE booking_item_id IN (${itemPlaceholders})`, itemIds);
+      }
+      run(`DELETE FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`, bookingIds);
+      run(`DELETE FROM payment_events WHERE booking_id IN (${bookingPlaceholders})`, bookingIds);
+      run(`DELETE FROM bookings WHERE id IN (${bookingPlaceholders})`, bookingIds);
+    }
+
+    run('DELETE FROM email_verifications');
+
+    const sessionIds = [...new Set(bookings.map(booking => booking.session_id).filter(Boolean))];
+    for (const sessionId of sessionIds) {
+      io.to(`session:${sessionId}`).emit('seats:refresh');
+    }
+    io.to('admin:receipts').emit('bookings:cleared');
+
+    logAudit('go_live_test_data_cleaned', 'booking', 'go_live_cleanup', {
+      deletedBookings: bookings.length,
+      releasedBookingSeats: items.length,
+      clearedHeldSeats: heldCleared,
+      paidBookingsKept: paidCount,
+      statusesDeleted: deletableStatuses,
+      clearedBy: req.adminUser?.email || null,
+    });
+
+    saveDb();
+    res.json({
+      ok: true,
+      deletedBookings: bookings.length,
+      releasedSeats: items.length + heldCleared,
+      heldSeatsCleared: heldCleared,
+      paidBookingsKept: paidCount,
+      message: paidCount > 0
+        ? `Cleared ${bookings.length} pending/failed/cancelled test booking(s) and ${heldCleared} held seat(s). Kept ${paidCount} paid/refunded/voided booking(s).`
+        : `Cleared ${bookings.length} test booking(s) and ${heldCleared} held seat(s).`,
+    });
+  });
+
   app.delete('/api/admin/bookings/:id', adminAuth, (req, res) => {
     const identifier = req.params.id;
     const booking = get(

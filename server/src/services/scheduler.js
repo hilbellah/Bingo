@@ -4,7 +4,7 @@ import { logger } from '../logger.js';
 import { formatLocalDate } from '../utils/format.js';
 
 // Default fallback values if the auto_generate_config row is missing or unparseable.
-const DEFAULT_LOOK_AHEAD_DAYS = 30;
+const DEFAULT_LOOK_AHEAD_DAYS = 7;
 const DEFAULT_ENABLED = true;
 // Hard cap so a misconfigured value can't blow the DB up with hundreds of thousands of seat rows.
 const MAX_LOOK_AHEAD_DAYS = 180;
@@ -49,6 +49,18 @@ export function updateAutoGenerateConfig(patch = {}) {
   if (!updated || updated.changes === 0) {
     run("INSERT INTO settings (key, value) VALUES ('auto_generate_config', ?)", [json]);
   }
+  return next;
+}
+
+export function normalizeAutoGenerateConfigForGoLive() {
+  const alreadyNormalized = get("SELECT value FROM settings WHERE key = 'go_live_schedule_normalized_at'");
+  if (alreadyNormalized?.value) return getAutoGenerateConfig();
+
+  const current = getAutoGenerateConfig();
+  const next = current.lookAheadDays <= DEFAULT_LOOK_AHEAD_DAYS
+    ? current
+    : updateAutoGenerateConfig({ lookAheadDays: DEFAULT_LOOK_AHEAD_DAYS });
+  run("INSERT INTO settings (key, value) VALUES ('go_live_schedule_normalized_at', ?)", [new Date().toISOString()]);
   return next;
 }
 
@@ -169,6 +181,51 @@ export function ensureFutureSessions() {
   return { created, lookAheadDays: lookAhead };
 }
 
+export function pruneFutureSessionsBeyondLookahead() {
+  const config = getAutoGenerateConfig();
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setDate(now.getDate() + config.lookAheadDays - 1);
+  cutoff.setHours(12, 0, 0, 0);
+  const cutoffDateStr = formatLocalDate(cutoff);
+  const prunedAt = new Date().toISOString();
+
+  const sessions = all(
+    `SELECT id, date, time
+     FROM sessions s
+     WHERE s.date > ?
+       AND s.is_special_event = 0
+       AND COALESCE(s.session_type, 'regular_bingo') = 'regular_bingo'
+       AND s.deleted_at IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM bookings b WHERE b.session_id = s.id
+       )
+     ORDER BY s.date ASC, s.time ASC`,
+    [cutoffDateStr]
+  );
+
+  for (const session of sessions) {
+    run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [prunedAt, session.id]);
+  }
+
+  if (sessions.length > 0) {
+    logger.info('Pruned future generated sessions beyond look-ahead window', {
+      count: sessions.length,
+      cutoffDate: cutoffDateStr,
+      lookAheadDays: config.lookAheadDays,
+    });
+    scheduleSaveAfterBatch();
+  }
+
+  return {
+    ok: true,
+    pruned: sessions.length,
+    cutoffDate: cutoffDateStr,
+    lookAheadDays: config.lookAheadDays,
+    sessions,
+  };
+}
+
 // Legacy hook kept for backward compatibility with index.js. Previously this
 // flipped `is_available = 1` on Mon-Sun for the current week. Auto-generation
 // now creates sessions with is_available = 1 directly, so this is mostly a
@@ -262,12 +319,37 @@ export function getScheduleSummary() {
     [todayStr, lookAheadDateStr]
   );
 
+  const beyondWindow = all(
+    `SELECT COUNT(*) as count
+     FROM sessions s
+     WHERE s.date > ?
+       AND s.is_special_event = 0
+       AND COALESCE(s.session_type, 'regular_bingo') = 'regular_bingo'
+       AND s.deleted_at IS NULL`,
+    [lookAheadDateStr]
+  )[0]?.count || 0;
+
+  const prunableBeyondWindow = all(
+    `SELECT COUNT(*) as count
+     FROM sessions s
+     WHERE s.date > ?
+       AND s.is_special_event = 0
+       AND COALESCE(s.session_type, 'regular_bingo') = 'regular_bingo'
+       AND s.deleted_at IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM bookings b WHERE b.session_id = s.id
+       )`,
+    [lookAheadDateStr]
+  )[0]?.count || 0;
+
   return {
     config,
     schedules,
     activeDayLabels,
     upcomingAutoSessions,
     upcomingInWindow,
+    beyondWindow,
+    prunableBeyondWindow,
     lookAheadDateStr,
     todayStr,
     summaryText: schedules.length === 0

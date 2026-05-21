@@ -98,7 +98,7 @@ export default function BookingsTab() {
                   onClick={handleClearTestBookings}
                   className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700"
                 >
-                  Clear Test Bookings
+                  Go-Live Cleanup
                 </button>
               </div>
               {bingoSales.length === 0 ? (

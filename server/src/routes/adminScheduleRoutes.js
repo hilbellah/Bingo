@@ -8,6 +8,7 @@ import {
   getScheduleSummary,
   listRecurringSchedules,
   openWeeklySessions,
+  pruneFutureSessionsBeyondLookahead,
   updateAutoGenerateConfig,
 } from '../services/scheduler.js';
 
@@ -48,6 +49,22 @@ export function registerAdminScheduleRoutes(app, { logAudit }) {
     });
   });
 
+  app.post('/api/admin/schedule/prune', adminAuth, (req, res) => {
+    const result = pruneFutureSessionsBeyondLookahead();
+    logAudit('future_sessions_pruned', 'session', 'auto_schedule', {
+      pruned: result.pruned,
+      cutoffDate: result.cutoffDate,
+      lookAheadDays: result.lookAheadDays,
+      admin: req.adminUser?.email || null,
+    });
+    saveDb();
+    res.json({
+      success: true,
+      message: `Pruned ${result.pruned} future regular bingo session(s) beyond ${result.cutoffDate}. Sessions with bookings were kept.`,
+      ...result,
+    });
+  });
+
   app.get('/api/admin/recurring-schedules', adminAuth, (req, res) => {
     res.json({
       schedules: listRecurringSchedules(),
@@ -72,6 +89,16 @@ export function registerAdminScheduleRoutes(app, { logAudit }) {
     });
     saveDb();
     res.json({ id, day_of_week: norm.day, time: norm.time, cutoff_time: norm.cutoff, session_type: norm.sessionType, is_active: norm.isActive });
+  });
+
+  app.patch('/api/admin/recurring-schedules/config', adminAuth, (req, res) => {
+    const patch = {};
+    if (req.body.lookAheadDays !== undefined) patch.lookAheadDays = Number(req.body.lookAheadDays);
+    if (req.body.enabled !== undefined) patch.enabled = !!req.body.enabled;
+    const next = updateAutoGenerateConfig(patch);
+    logAudit('auto_generate_config_updated', 'settings', 'auto_generate_config', next);
+    saveDb();
+    res.json(next);
   });
 
   app.patch('/api/admin/recurring-schedules/:id', adminAuth, (req, res) => {
@@ -115,13 +142,4 @@ export function registerAdminScheduleRoutes(app, { logAudit }) {
     res.json(getScheduleSummary());
   });
 
-  app.patch('/api/admin/recurring-schedules/config', adminAuth, (req, res) => {
-    const patch = {};
-    if (req.body.lookAheadDays !== undefined) patch.lookAheadDays = Number(req.body.lookAheadDays);
-    if (req.body.enabled !== undefined) patch.enabled = !!req.body.enabled;
-    const next = updateAutoGenerateConfig(patch);
-    logAudit('auto_generate_config_updated', 'settings', 'auto_generate_config', next);
-    saveDb();
-    res.json(next);
-  });
 }
