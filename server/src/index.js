@@ -98,6 +98,14 @@ const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '10');
 const startTime = Date.now();
 
 const { uploadsDir, upload, saveUploadedImage } = createUploadMiddleware(__dirname);
+const clientBuild = path.join(__dirname, '../../client/dist');
+
+app.get('/IFrameCommunicator.html', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'self' https://accept.authorize.net https://test.authorize.net");
+  res.setHeader('Cache-Control', 'public, max-age=0');
+  res.sendFile(path.join(clientBuild, 'IFrameCommunicator.html'));
+});
 
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -156,7 +164,6 @@ app.use('/uploads', express.static(uploadsDir, {
 }));
 
 // Serve static build in production
-const clientBuild = path.join(__dirname, '../../client/dist');
 app.use(express.static(clientBuild));
 
 // ============ HEALTH CHECK ============

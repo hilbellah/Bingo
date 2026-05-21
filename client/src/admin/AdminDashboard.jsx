@@ -637,6 +637,12 @@ export default function AdminDashboard() {
       loadTransactions(transactionFilters);
       loadBookingSales();
       loadDailySales(dailySalesDate, dailySalesSearch);
+      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
+      if (soldModal?.session?.id) {
+        fetchAdminBookings(token, soldModal.session.id).then(data => {
+          setSoldModal({ session: soldModal.session, bookings: data });
+        });
+      }
     } else {
       window.alert('Refund failed: ' + (result.error || 'Unknown error'));
     }

@@ -3,7 +3,9 @@ import { useAdminDashboard } from './AdminDashboardContext';
 
 export default function SoldTicketsModal() {
   const {
-    bookings,
+    handlePrintBookingReceipt,
+    handleRefundBooking,
+    handleRefundBookingItem,
     soldModal,
     setSoldModal,
     handlePrintPurchasers,
@@ -19,7 +21,7 @@ export default function SoldTicketsModal() {
             <div className="flex items-center justify-between p-5 border-b">
               <div>
                 <h3 className="font-bold text-brand-blue text-lg">Ticket Purchasers</h3>
-                <p className="text-sm text-gray-500">{soldModal.session.date} at {soldModal.session.time} &mdash; {soldModal.session.sold} sold</p>
+                <p className="text-sm text-gray-500">{soldModal.session.date} at {soldModal.session.time} - {soldModal.session.sold} sold</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={handlePrintPurchasers} className="px-3 py-1.5 text-sm bg-brand-blue text-white rounded-lg hover:bg-blue-800" title="Print">Print</button>
@@ -33,12 +35,36 @@ export default function SoldTicketsModal() {
               ) : (
                 soldModal.bookings.map(b => (
                   <div key={b.id} className="mb-4 border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div className="min-w-0">
                         <span className="text-xs text-gray-400">Batch:</span>
                         <span className="font-mono text-sm font-semibold text-brand-blue ml-1">{b.referenceNumber}</span>
+                        <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                          b.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                          b.paymentStatus === 'partially_refunded' ? 'bg-amber-100 text-amber-700' :
+                          b.paymentStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>{b.paymentStatus}</span>
                       </div>
-                      <span className="text-sm font-medium">{b.totalFormatted}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-medium">{b.totalFormatted}</span>
+                        <button
+                          onClick={() => handlePrintBookingReceipt({...b, sessionDate: soldModal.session.date, sessionTime: soldModal.session.time})}
+                          className="px-2 py-0.5 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
+                          title="Print thermal receipt"
+                        >
+                          Receipt
+                        </button>
+                        {b.paymentStatus === 'paid' && b.items.every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
+                          <button
+                            onClick={() => handleRefundBooking(b.id, b.referenceNumber)}
+                            className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                            title="Refund the full booking batch via Authorize.Net"
+                          >
+                            Refund Batch
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <table className="w-full text-sm">
                       <thead>
@@ -49,12 +75,13 @@ export default function SoldTicketsModal() {
                           <th className="pb-1">Chair</th>
                           <th className="pb-1">Package</th>
                           <th className="pb-1">Add-ons</th>
+                          <th className="pb-1 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {b.items.map((item, i) => (
-                          <tr key={i} className="border-b border-gray-50">
-                            <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || '—'}</td>
+                          <tr key={item.id || i} className={`border-b border-gray-50 ${item.refundStatus === 'refunded' ? 'text-gray-400 bg-gray-50' : ''}`}>
+                            <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || '-'}</td>
                             <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
                             <td className="py-1">{item.tableNumber}</td>
                             <td className="py-1">{item.chairNumber}</td>
@@ -62,7 +89,24 @@ export default function SoldTicketsModal() {
                             <td className="py-1 text-xs text-gray-500">
                               {item.addons.length > 0
                                 ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
-                                : '—'}
+                                : '-'}
+                            </td>
+                            <td className="py-1 text-right">
+                              {item.refundStatus === 'refunded' ? (
+                                <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+                                  Refunded {item.refundAmountFormatted || ''}
+                                </span>
+                              ) : ['paid', 'partially_refunded'].includes(b.paymentStatus) && handleRefundBookingItem ? (
+                                <button
+                                  onClick={() => handleRefundBookingItem(item, b)}
+                                  className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                  title="Refund only this ticket"
+                                >
+                                  Refund Ticket
+                                </button>
+                              ) : (
+                                <span className="text-xs text-gray-400">-</span>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -78,5 +122,3 @@ export default function SoldTicketsModal() {
     </>
   );
 }
-
-
