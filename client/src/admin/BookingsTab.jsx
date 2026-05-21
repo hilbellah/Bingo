@@ -1,28 +1,16 @@
 import React, { useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 
-function CollapsibleBoard({ title, description, isOpen, onToggle, children }) {
+function SalesPanel({ title, description, children }) {
   return (
     <section className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-gray-50"
-        aria-expanded={isOpen}
-      >
-        <div>
-          <h3 className="font-semibold text-brand-blue">{title}</h3>
-          <p className="text-sm text-gray-500 mt-1">{description}</p>
-        </div>
-        <span className="shrink-0 w-8 h-8 rounded-full bg-brand-blue/10 text-brand-blue flex items-center justify-center text-lg leading-none">
-          {isOpen ? '-' : '+'}
-        </span>
-      </button>
-      {isOpen && (
-        <div className="px-5 pb-5 border-t border-gray-100">
-          {children}
-        </div>
-      )}
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h3 className="font-semibold text-brand-blue">{title}</h3>
+        <p className="text-sm text-gray-500 mt-1">{description}</p>
+      </div>
+      <div className="px-5 pb-5">
+        {children}
+      </div>
     </section>
   );
 }
@@ -30,7 +18,6 @@ function CollapsibleBoard({ title, description, isOpen, onToggle, children }) {
 export default function BookingsTab() {
   const {
     tab,
-    sessions,
     formatPrice,
     bookingSales,
     handleSalesDrilldown,
@@ -46,16 +33,28 @@ export default function BookingsTab() {
     loadTransactions,
     handlePrintDailySalesReceipt,
     handleClearTestBookings,
-    bookings,
   } = useAdminDashboard();
-  const [openBoards, setOpenBoards] = useState({
-    bookingSales: true,
-    transactions: true,
-    dailySales: false,
-  });
+  const [activeBoard, setActiveBoard] = useState('bookingSales');
   const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
   const transactionRows = transactions?.items || [];
   const transactionSummary = transactions?.summary || {};
+  const salesBoards = [
+    {
+      id: 'bookingSales',
+      label: 'Booking Sales',
+      description: `${bingoSales.reduce((sum, sale) => sum + sale.quantity, 0)} ticket(s)`,
+    },
+    {
+      id: 'transactions',
+      label: 'Transactions',
+      description: `${transactionSummary.totalTransactions || 0} transaction(s)`,
+    },
+    {
+      id: 'dailySales',
+      label: 'Daily Sales',
+      description: dailySales ? `${dailySales.totalTickets || 0} ticket(s) today` : 'Daily report',
+    },
+  ];
   const updateTransactionFilter = (key, value) => {
     const next = { ...transactionFilters, [key]: value };
     setTransactionFilters(next);
@@ -79,18 +78,40 @@ export default function BookingsTab() {
     if (status === 'pending') return 'bg-amber-100 text-amber-700';
     return 'bg-gray-100 text-gray-600';
   };
-  const toggleBoard = (key) => setOpenBoards(prev => ({ ...prev, [key]: !prev[key] }));
-
   return (
     <>
-        {/* BOOKINGS TAB — Booking Sales Summary */}
+        {/* BOOKINGS TAB - Sales & Transactions */}
         {tab === 'bookings' && (
           <div className="space-y-4">
-            <CollapsibleBoard
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2" role="tablist" aria-label="Sales and transactions views">
+                {salesBoards.map(board => {
+                  const active = activeBoard === board.id;
+                  return (
+                    <button
+                      key={board.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setActiveBoard(board.id)}
+                      className={`text-left rounded-lg px-4 py-3 border transition-colors ${
+                        active
+                          ? 'bg-brand-blue text-white border-brand-blue shadow-sm'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="block font-semibold text-sm">{board.label}</span>
+                      <span className={`block text-xs mt-1 ${active ? 'text-white/80' : 'text-gray-500'}`}>{board.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {activeBoard === 'bookingSales' && (
+            <SalesPanel
               title="Booking Sales"
               description="Session-by-session sales totals for bingo bookings, with ticket counts you can click to drill into purchasers."
-              isOpen={openBoards.bookingSales}
-              onToggle={() => toggleBoard('bookingSales')}
             >
               <div className="flex items-center justify-end gap-3 mb-4 pt-4">
                 <button
@@ -194,14 +215,14 @@ export default function BookingsTab() {
                   </div>
                 </>
               )}
-            </CollapsibleBoard>
+            </SalesPanel>
+            )}
 
             {/* Transactions Summary */}
-            <CollapsibleBoard
+            {activeBoard === 'transactions' && (
+            <SalesPanel
               title="Transactions & Refund Summary"
               description="All payment activity in one place, including paid bookings, refunds, voids, pending payments, failed payments, gross sales, and net total."
-              isOpen={openBoards.transactions}
-              onToggle={() => toggleBoard('transactions')}
             >
               <div className="flex items-center gap-2 flex-wrap mb-4 pt-4">
                   <input
@@ -315,14 +336,14 @@ export default function BookingsTab() {
                   </table>
                 </div>
               )}
-            </CollapsibleBoard>
+            </SalesPanel>
+            )}
 
             {/* Daily Sales Report */}
-            <CollapsibleBoard
+            {activeBoard === 'dailySales' && (
+            <SalesPanel
               title="Daily Sales"
               description="A ticket-level report for one selected day, including attendee names, seats, packages, add-ons, export, print, and receipt tools."
-              isOpen={openBoards.dailySales}
-              onToggle={() => toggleBoard('dailySales')}
             >
               <div className="flex items-center gap-3 flex-wrap mb-4 pt-4">
                   <input
@@ -491,7 +512,8 @@ export default function BookingsTab() {
                   </table>
                 </div>
               )}
-            </CollapsibleBoard>
+            </SalesPanel>
+            )}
           </div>
         )}
     </>
