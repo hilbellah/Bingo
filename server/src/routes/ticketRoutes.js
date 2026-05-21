@@ -1,6 +1,24 @@
+import crypto from 'crypto';
 import { all, get } from '../database.js';
+import { normalizeEmail } from '../services/customers.js';
 import { normalizeSessionType, sessionTypeSql } from '../services/sessionPackages.js';
 import { formatPrice } from '../utils/format.js';
+
+function safeEqual(a, b) {
+  const left = Buffer.from(String(a || ''), 'utf8');
+  const right = Buffer.from(String(b || ''), 'utf8');
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function hasTicketAccess(req, booking) {
+  const token = String(req.query.t || req.query.token || req.query.accessToken || '').trim();
+  if (token && booking.ticket_access_token && safeEqual(token, booking.ticket_access_token)) {
+    return true;
+  }
+
+  const email = normalizeEmail(req.query.email || req.get('X-Ticket-Email'));
+  return Boolean(email && booking.email && email === normalizeEmail(booking.email));
+}
 
 export function registerTicketRoutes(app) {
   app.get('/api/bookings/:ref/tickets', (req, res) => {
@@ -9,6 +27,12 @@ export function registerTicketRoutes(app) {
       ${sessionTypeSql('s')} as session_type
       FROM bookings b JOIN sessions s ON b.session_id = s.id WHERE b.reference_number = ?`, [ref]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (!hasTicketAccess(req, booking)) {
+      return res.status(403).json({
+        error: 'Enter the email address used for this booking to view tickets.',
+        code: 'ticket_verification_required',
+      });
+    }
     const currentSessionType = normalizeSessionType(booking.session_type, booking.is_special_event);
 
     const items = all(`
@@ -56,9 +80,6 @@ export function registerTicketRoutes(app) {
       totalAmount: booking.total_amount,
       totalFormatted: '$' + formatPrice(booking.total_amount),
       paymentStatus: booking.payment_status,
-      email: booking.email,
-      customerFirstName: booking.customer_first_name,
-      customerLastName: booking.customer_last_name,
       tickets: items.map(item => ({
         firstName: item.first_name,
         lastName: item.last_name,

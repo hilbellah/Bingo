@@ -104,6 +104,11 @@ function formatTime12h(timeStr) {
   return `${h12}:${String(mm).padStart(2, '0')} ${period}`;
 }
 
+function buildTicketUrl(siteUrl, referenceNumber, accessToken) {
+  const url = `${siteUrl}/tickets/${encodeURIComponent(referenceNumber)}`;
+  return accessToken ? `${url}?t=${encodeURIComponent(accessToken)}` : url;
+}
+
 function getBookingPresentation(session) {
   const sessionType = normalizeSessionType(session?.session_type, session?.is_special_event);
   if (sessionType === 'event') {
@@ -207,7 +212,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
     `;
   }).join('');
 
-  const ticketUrl = `${siteUrl}/tickets/${encodeURIComponent(booking.referenceNumber)}`;
+  const ticketUrl = buildTicketUrl(siteUrl, booking.referenceNumber, booking.ticketAccessToken);
   const eventTitleRow = session?.event_title ? `
             <tr>
               <td style="padding:6px 0;font-size:13px;color:#6b7280;">${presentation.sessionType === 'event' ? 'Event' : 'Title'}</td>
@@ -334,7 +339,7 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   });
   lines.push('');
   lines.push('Please arrive by 4:30 PM. Doors open one hour before the session.');
-  lines.push(`${presentation.ctaLabel}: ${siteUrl}/tickets/${booking.referenceNumber}`);
+  lines.push(`${presentation.ctaLabel}: ${buildTicketUrl(siteUrl, booking.referenceNumber, booking.ticketAccessToken)}`);
   lines.push(presentation.proofText);
   lines.push('If you found this email in spam or junk, mark it as not spam so future booking emails are easier to find.');
   lines.push('');
@@ -530,7 +535,8 @@ export async function sendBookingRefundNotification({ to, booking, session, item
 
 function renderRescheduleHtml({ booking, session, previousSession }) {
   const presentation = getBookingPresentation(session);
-  const ticketUrl = `${process.env.PUBLIC_SITE_URL || 'https://bingo-jk2h.onrender.com'}/tickets/${encodeURIComponent(booking.reference_number)}`;
+  const siteUrl = process.env.PUBLIC_SITE_URL || 'https://bingo-jk2h.onrender.com';
+  const ticketUrl = buildTicketUrl(siteUrl, booking.reference_number, booking.ticket_access_token);
   const title = session?.event_title || presentation.brandLabel;
 
   return `<!DOCTYPE html>
@@ -588,7 +594,7 @@ function renderRescheduleText({ booking, session, previousSession }) {
     `New: ${formatDateLong(session?.date)} at ${formatTime12h(session?.time)}`,
     '',
     'Your booking, seats, ticket references, and payment remain the same.',
-    `View tickets: ${siteUrl}/tickets/${booking.reference_number}`,
+    `View tickets: ${buildTicketUrl(siteUrl, booking.reference_number, booking.ticket_access_token)}`,
     '',
     'Wolastoq Bingo',
   ].join('\n');

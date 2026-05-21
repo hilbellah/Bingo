@@ -132,9 +132,13 @@ export async function fetchBookingStatus(bookingId) {
 }
 
 // Fetches the full ticket details (used to render the post-payment receipt).
-export async function fetchBookingTickets(referenceNumber) {
-  const res = await fetch(`${API}/bookings/${encodeURIComponent(referenceNumber)}/tickets`);
-  return res.json();
+export async function fetchBookingTickets(referenceNumber, options = {}) {
+  const params = new URLSearchParams();
+  if (options.ticketAccessToken) params.set('t', options.ticketAccessToken);
+  if (options.email) params.set('email', options.email);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API}/bookings/${encodeURIComponent(referenceNumber)}/tickets${qs}`);
+  return readJson(res, 'Could not load tickets');
 }
 
 // Admin API

@@ -115,7 +115,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     if (shouldNotifyReschedule) {
       const updatedSession = get('SELECT * FROM sessions WHERE id = ?', [req.params.id]);
       const paidBookings = all(`
-        SELECT id, reference_number, email, customer_first_name, customer_last_name
+        SELECT id, reference_number, email, customer_first_name, customer_last_name, ticket_access_token
         FROM bookings
         WHERE session_id = ?
           AND payment_status IN ('paid', 'partially_refunded')

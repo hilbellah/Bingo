@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { fetchBookingTickets } from '../api';
 import { formatDateShort, formatTime, formatPrice } from '../utils/formatters';
 
 function TicketCard({ ticket, sessionDate, sessionTime, referenceNumber, eventTitle }) {
@@ -218,25 +219,34 @@ function RegularReceipt({ data }) {
 export default function PrintableTickets() {
   const { ref } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const ticketAccessToken = searchParams.get('t') || '';
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [searchCode, setSearchCode] = useState('');
+  const [email, setEmail] = useState('');
+  const [needsVerification, setNeedsVerification] = useState(false);
 
-  const loadTickets = (refCode) => {
+  const loadTickets = (refCode, options = {}) => {
     setError(null);
     setData(null);
-    fetch(`/api/bookings/${refCode}/tickets`)
-      .then(r => {
-        if (!r.ok) throw new Error('Booking not found');
-        return r.json();
-      })
+    setNeedsVerification(false);
+    fetchBookingTickets(refCode, options)
       .then(setData)
-      .catch(e => setError(e.message));
+      .catch(e => {
+        const message = e?.message || 'Booking not found';
+        if (message.includes('email address used for this booking')) {
+          setNeedsVerification(true);
+          setError(null);
+          return;
+        }
+        setError(message);
+      });
   };
 
   useEffect(() => {
-    if (ref) loadTickets(ref);
-  }, [ref]);
+    if (ref) loadTickets(ref, { ticketAccessToken });
+  }, [ref, ticketAccessToken]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -244,6 +254,11 @@ export default function PrintableTickets() {
     if (code) {
       navigate(`/tickets/${code}`);
     }
+  };
+
+  const handleVerifyEmail = (e) => {
+    e.preventDefault();
+    if (ref && email.trim()) loadTickets(ref, { email: email.trim() });
   };
 
   if (!ref) {
@@ -265,6 +280,31 @@ export default function PrintableTickets() {
               Search
             </button>
           </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (needsVerification) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="bg-white rounded-xl p-8 shadow max-w-md w-full">
+          <h2 className="text-xl font-bold text-brand-blue mb-2">Verify Booking</h2>
+          <p className="text-sm text-gray-500 mb-4">Enter the email address used for this booking to view or print tickets.</p>
+          <form onSubmit={handleVerifyEmail} className="space-y-3">
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="email@example.com"
+              className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+              autoComplete="email"
+            />
+            <button type="submit" className="w-full bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-blue/90 transition">
+              View Tickets
+            </button>
+          </form>
+          <button onClick={() => navigate('/')} className="mt-4 text-brand-blue underline text-sm">Go Back Home</button>
         </div>
       </div>
     );

@@ -97,6 +97,10 @@ const PORT = process.env.PORT || 3001;
 const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '10');
 const startTime = Date.now();
 
+function generateTicketAccessToken() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
 const { uploadsDir, upload, saveUploadedImage } = createUploadMiddleware(__dirname);
 const clientBuild = path.join(__dirname, '../../client/dist');
 
@@ -363,6 +367,7 @@ function insertBookingRecord({
   let totalAmount = 0;
   const bookingId = uuid();
   const refNumber = generateRef();
+  const ticketAccessToken = generateTicketAccessToken();
   const itemRefs = [];
 
   for (const att of attendees) {
@@ -400,8 +405,8 @@ function insertBookingRecord({
   run(
     `INSERT INTO bookings
       (id, session_id, reference_number, total_amount, payment_status, created_at, email,
-       customer_first_name, customer_last_name, email_verified_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       customer_first_name, customer_last_name, email_verified_at, ticket_access_token)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       bookingId,
       sessionId,
@@ -413,6 +418,7 @@ function insertBookingRecord({
       customerFirstName,
       customerLastName,
       emailVerifiedAt,
+      ticketAccessToken,
     ]
   );
 
@@ -428,7 +434,7 @@ function insertBookingRecord({
     attendees: attendees.map(a => ({ firstName: a.firstName, lastName: a.lastName, seatId: a.seatId }))
   });
 
-  return { bookingId, refNumber, totalAmount, itemRefs };
+  return { bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken };
 }
 
 // Idempotently transition a booking from 'pending' to 'paid'. Performs the
@@ -894,6 +900,7 @@ async function sendBookingConfirmationEmail(bookingId) {
     booking: {
       referenceNumber: booking.reference_number,
       itemReferences: items.map(it => it.reference_number),
+      ticketAccessToken: booking.ticket_access_token,
       totalAmount: booking.total_amount,
       totalFormatted: '$' + formatPrice(booking.total_amount),
     },
@@ -1198,7 +1205,7 @@ app.post('/api/bookings', adminAuth, (req, res) => {
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
   try {
-    const { bookingId, refNumber, totalAmount, itemRefs } = insertBookingRecord({
+    const { bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken } = insertBookingRecord({
       sessionId,
       attendees,
       requiredPkg,
@@ -1223,7 +1230,8 @@ app.post('/api/bookings', adminAuth, (req, res) => {
       totalFormatted: '$' + formatPrice(totalAmount),
       email: trimmedEmail,
       customerFirstName,
-      customerLastName
+      customerLastName,
+      ticketAccessToken,
     });
   } catch (err) {
     console.error('Booking error:', err);
@@ -1259,9 +1267,9 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
   const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType, requiredPkgs);
   if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
 
-  let bookingId, refNumber, totalAmount, itemRefs;
+  let bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken;
   try {
-    ({ bookingId, refNumber, totalAmount, itemRefs } = insertBookingRecord({
+    ({ bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken } = insertBookingRecord({
       sessionId,
       attendees,
       requiredPkg,
@@ -1321,6 +1329,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     customerLastName,
     redirectUrl: result.redirectUrl,
     token: result.token,
+    ticketAccessToken,
   });
 });
 
@@ -1328,7 +1337,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
 // while waiting for /payment/return or the webhook to flip it to paid/failed.
 app.get('/api/bookings/:id/status', (req, res) => {
   const booking = get(
-    'SELECT id, reference_number, payment_status, total_amount, payment_failure_reason, transaction_id, auth_code FROM bookings WHERE id = ?',
+    'SELECT id, reference_number, payment_status, total_amount, payment_failure_reason, ticket_access_token FROM bookings WHERE id = ?',
     [req.params.id]
   );
   if (!booking) return res.status(404).json({ error: 'Booking not found' });
@@ -1339,7 +1348,7 @@ app.get('/api/bookings/:id/status', (req, res) => {
     totalAmount: booking.total_amount,
     totalFormatted: '$' + formatPrice(booking.total_amount),
     failureReason: booking.payment_failure_reason,
-    transactionId: booking.transaction_id,
+    ticketAccessToken: booking.payment_status === 'paid' ? booking.ticket_access_token : undefined,
   });
 });
 

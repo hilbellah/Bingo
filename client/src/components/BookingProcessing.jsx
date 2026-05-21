@@ -42,7 +42,7 @@ export default function BookingProcessing({ bookingId }) {
           setReferenceNumber(res.referenceNumber);
           // Fetch full receipt data
           try {
-            const t = await fetchBookingTickets(res.referenceNumber);
+            const t = await fetchBookingTickets(res.referenceNumber, { ticketAccessToken: res.ticketAccessToken });
             if (cancelled) return;
             if (t && t.tickets) {
               setTickets(t);

@@ -1,5 +1,6 @@
 import { getDb, exec, all, run, saveDb } from './database.js';
 import { v4 as uuid } from 'uuid';
+import crypto from 'crypto';
 import { REGULAR_BINGO_PACKAGE_DEFINITIONS } from './services/sessionPackages.js';
 
 const BASELINE_PACKAGES = REGULAR_BINGO_PACKAGE_DEFINITIONS.map(pkg => [
@@ -102,6 +103,10 @@ function correctFutureRegularSessionsForSchedule() {
         AND NOT EXISTS (SELECT 1 FROM bookings WHERE bookings.session_id = sessions.id)`,
     [today]
   );
+}
+
+function generateTicketAccessToken() {
+  return crypto.randomBytes(32).toString('base64url');
 }
 
 function ensureBaselinePackages() {
@@ -613,7 +618,7 @@ async function migrate() {
   if (itemsWithoutRef.length > 0) {
     console.log(`Backfilling ${itemsWithoutRef.length} booking items with unique reference numbers...`);
     for (let i = 0; i < itemsWithoutRef.length; i++) {
-      const ref = 'BNG-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      const ref = 'BNG-' + crypto.randomBytes(5).toString('hex').toUpperCase();
       run("UPDATE booking_items SET reference_number = ? WHERE id = ?", [ref, itemsWithoutRef[i].id]);
     }
   }
@@ -629,6 +634,13 @@ async function migrate() {
   try { exec('ALTER TABLE bookings ADD COLUMN payment_completed_at TEXT'); } catch(e) {}
   try { exec('ALTER TABLE bookings ADD COLUMN payment_failure_reason TEXT'); } catch(e) {}
   try { exec('ALTER TABLE bookings ADD COLUMN hosted_token TEXT'); } catch(e) {}
+  try { exec('ALTER TABLE bookings ADD COLUMN ticket_access_token TEXT'); } catch(e) {}
+  try {
+    const bookingsWithoutTicketToken = all("SELECT id FROM bookings WHERE ticket_access_token IS NULL OR ticket_access_token = ''");
+    for (const booking of bookingsWithoutTicketToken) {
+      run('UPDATE bookings SET ticket_access_token = ? WHERE id = ?', [generateTicketAccessToken(), booking.id]);
+    }
+  } catch(e) {}
 
   // Audit log for payment events - full lifecycle traceability
   // event_type:  'initiated' | 'redirected' | 'returned' | 'webhook' | 'approved' | 'declined' | 'refunded' | 'voided'
@@ -647,6 +659,7 @@ async function migrate() {
 
   try { exec('CREATE INDEX idx_bookings_transaction_id ON bookings(transaction_id)'); } catch(e) {}
   try { exec('CREATE INDEX idx_bookings_payment_status ON bookings(payment_status)'); } catch(e) {}
+  try { exec('CREATE INDEX idx_bookings_ticket_access_token ON bookings(ticket_access_token)'); } catch(e) {}
   try { exec('CREATE INDEX idx_payment_events_booking ON payment_events(booking_id)'); } catch(e) {}
   try { exec('CREATE INDEX idx_payment_events_type ON payment_events(event_type)'); } catch(e) {}
 
