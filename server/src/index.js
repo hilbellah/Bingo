@@ -669,16 +669,24 @@ function reconcileReversedBookingSeats() {
   return seatsToRelease.length;
 }
 
-function sendRefundNotificationAsync({ bookingId, action, refundTransactionId }) {
+function sendRefundNotificationAsync({ bookingId, action, refundTransactionId, bookingItemId = null }) {
   setImmediate(() => {
     try {
       const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
       if (!booking) return;
       const session = get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
+      const item = bookingItemId
+        ? get(`
+            SELECT id, first_name, last_name, reference_number, price, refund_amount, refund_action
+            FROM booking_items
+            WHERE id = ? AND booking_id = ?
+          `, [bookingItemId, bookingId])
+        : null;
       sendBookingRefundNotification({
         to: booking.email,
         booking,
         session,
+        item,
         action,
         refundTransactionId,
       }).catch(err => {
@@ -838,6 +846,12 @@ function markBookingItemRefunded({
   io.to('admin:receipts').emit('phd:updated', {
     ...getPhdInventoryForSession(booking.session_id),
     perSession: getPhdUsageBySession(),
+  });
+  sendRefundNotificationAsync({
+    bookingId,
+    action,
+    refundTransactionId: refundTransactionId || transactionId,
+    bookingItemId,
   });
   return { ok: true, releasedSeats: 1, remaining, bookingStatus: nextStatus };
 }

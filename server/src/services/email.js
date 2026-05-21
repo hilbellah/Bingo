@@ -386,17 +386,31 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
   return { ok: false, status: 0, error: 'no_provider_configured' };
 }
 
-function renderRefundHtml({ booking, session, actionLabel, refundTransactionId }) {
+function getRefundTicketName(item) {
+  if (!item) return '';
+  return [item.first_name, item.last_name].filter(Boolean).join(' ').trim();
+}
+
+function renderRefundHtml({ booking, session, actionLabel, refundTransactionId, item = null }) {
+  const isTicketRefund = Boolean(item);
+  const ticketName = getRefundTicketName(item);
+  const amountCents = isTicketRefund ? (item.refund_amount || item.price || 0) : booking.total_amount;
+  const title = isTicketRefund ? `Ticket ${actionLabel}` : `Booking ${actionLabel}`;
+  const subtitle = isTicketRefund ? 'One ticket has been released' : 'Your seats have been released';
+  const notice = isTicketRefund
+    ? `Ticket ${escapeHtml(item.reference_number)} has been ${escapeHtml(actionLabel.toLowerCase())}. That seat has been released. The rest of your booking remains active.`
+    : `Your booking has been ${escapeHtml(actionLabel.toLowerCase())}. Your seats have been released and may become available for other customers.`;
+
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Your Bingo Booking Refund</title></head>
+<html><head><meta charset="utf-8"><title>Your Bingo ${isTicketRefund ? 'Ticket' : 'Booking'} Refund</title></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
     <tr><td align="center">
       <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.06);">
         <tr><td style="background:linear-gradient(135deg,#0a1628 0%,#1a3a5c 100%);padding:28px 32px;color:#ffffff;text-align:center;">
           <div style="font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:#c5a55a;font-weight:700;">Wolastoq Bingo</div>
-          <div style="margin-top:6px;font-size:22px;font-weight:700;">Booking ${escapeHtml(actionLabel)}</div>
-          <div style="margin-top:4px;font-size:14px;color:#cbd5e1;">Your seats have been released</div>
+          <div style="margin-top:6px;font-size:22px;font-weight:700;">${escapeHtml(title)}</div>
+          <div style="margin-top:4px;font-size:14px;color:#cbd5e1;">${escapeHtml(subtitle)}</div>
         </td></tr>
 
         <tr><td style="padding:24px 32px 8px;">
@@ -418,16 +432,24 @@ function renderRefundHtml({ booking, session, actionLabel, refundTransactionId }
               <td style="padding:6px 0;font-size:13px;color:#6b7280;">Time</td>
               <td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(formatTime12h(session?.time))}</td>
             </tr>
+            ${isTicketRefund ? `<tr>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">Ticket</td>
+              <td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(item.reference_number)}</td>
+            </tr>` : ''}
+            ${ticketName ? `<tr>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">Attendee</td>
+              <td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(ticketName)}</td>
+            </tr>` : ''}
             <tr>
               <td style="padding:6px 0;font-size:13px;color:#6b7280;">Amount</td>
-              <td style="padding:6px 0;font-size:18px;font-weight:700;color:#c5a55a;text-align:right;">${escapeHtml(formatPriceDollars(booking.total_amount))}</td>
+              <td style="padding:6px 0;font-size:18px;font-weight:700;color:#c5a55a;text-align:right;">${escapeHtml(formatPriceDollars(amountCents))}</td>
             </tr>
           </table>
         </td></tr>
 
         <tr><td style="padding:12px 32px 24px;">
           <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:13px 14px;font-size:14px;color:#991b1b;line-height:1.5;">
-            Your booking has been ${escapeHtml(actionLabel.toLowerCase())}. Your seats have been released and may become available for other customers.
+            ${notice}
             ${refundTransactionId ? `<br><span style="font-size:12px;color:#7f1d1d;">Transaction reference: ${escapeHtml(refundTransactionId)}</span>` : ''}
           </div>
         </td></tr>
@@ -447,23 +469,33 @@ function renderRefundHtml({ booking, session, actionLabel, refundTransactionId }
 </body></html>`;
 }
 
-function renderRefundText({ booking, session, actionLabel, refundTransactionId }) {
+function renderRefundText({ booking, session, actionLabel, refundTransactionId, item = null }) {
+  const isTicketRefund = Boolean(item);
+  const ticketName = getRefundTicketName(item);
+  const amountCents = isTicketRefund ? (item.refund_amount || item.price || 0) : booking.total_amount;
+
   return [
-    `Your Wolastoq Bingo booking has been ${actionLabel.toLowerCase()}.`,
+    isTicketRefund
+      ? `Your Wolastoq Bingo ticket has been ${actionLabel.toLowerCase()}.`
+      : `Your Wolastoq Bingo booking has been ${actionLabel.toLowerCase()}.`,
     '',
     `Booking reference: ${booking.reference_number}`,
+    isTicketRefund ? `Ticket reference: ${item.reference_number}` : '',
+    ticketName ? `Attendee: ${ticketName}` : '',
     `Session: ${formatDateLong(session?.date)} at ${formatTime12h(session?.time)}`,
-    `Amount: ${formatPriceDollars(booking.total_amount)}`,
+    `Amount: ${formatPriceDollars(amountCents)}`,
     refundTransactionId ? `Transaction reference: ${refundTransactionId}` : '',
     '',
-    'Your seats have been released and may become available for other customers.',
+    isTicketRefund
+      ? 'That seat has been released. The rest of your booking remains active.'
+      : 'Your seats have been released and may become available for other customers.',
     'The payment reversal has been submitted through Authorize.Net. Refund timing depends on Authorize.Net processing and your card issuer or bank; it may take several business days before the credit appears on your statement.',
     '',
     'Wolastoq Bingo',
   ].filter(Boolean).join('\n');
 }
 
-export async function sendBookingRefundNotification({ to, booking, session, action = 'refund', refundTransactionId = '' }) {
+export async function sendBookingRefundNotification({ to, booking, session, item = null, action = 'refund', refundTransactionId = '' }) {
   const bccRaw = process.env.EMAIL_BCC || '';
   const bcc = bccRaw
     .split(',')
@@ -476,9 +508,11 @@ export async function sendBookingRefundNotification({ to, booking, session, acti
   }
 
   const actionLabel = action === 'void' ? 'Voided' : 'Refunded';
-  const html = renderRefundHtml({ booking, session, actionLabel, refundTransactionId });
-  const text = renderRefundText({ booking, session, actionLabel, refundTransactionId });
-  const subject = `Your Bingo Booking Was ${actionLabel} - ${booking.reference_number}`;
+  const html = renderRefundHtml({ booking, session, actionLabel, refundTransactionId, item });
+  const text = renderRefundText({ booking, session, actionLabel, refundTransactionId, item });
+  const subject = item
+    ? `Your Bingo Ticket Was ${actionLabel} - ${item.reference_number || booking.reference_number}`
+    : `Your Bingo Booking Was ${actionLabel} - ${booking.reference_number}`;
 
   const transporter = getGmailTransporter();
   if (transporter) {
