@@ -740,6 +740,7 @@ export default function AdminDashboard() {
 
   const dashboardContext = {
     tab,
+    setTab,
     isSuperUser,
     dashboard,
     dashboardDateFrom,

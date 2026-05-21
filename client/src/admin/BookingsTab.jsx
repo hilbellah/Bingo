@@ -49,7 +49,7 @@ export default function BookingsTab() {
     bookings,
   } = useAdminDashboard();
   const [openBoards, setOpenBoards] = useState({
-    bookingSales: false,
+    bookingSales: true,
     transactions: true,
     dailySales: false,
   });
@@ -113,6 +113,7 @@ export default function BookingsTab() {
                           <th className="pb-2">Description</th>
                           <th className="pb-2 text-center">Quantity</th>
                           <th className="pb-2 text-right pr-2">Amount</th>
+                          <th className="pb-2 text-right pr-2">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -155,6 +156,22 @@ export default function BookingsTab() {
                               )}
                             </td>
                             <td className="py-2.5 text-right pr-2 font-medium text-gray-800">{sale.totalFormatted}</td>
+                            <td className="py-2.5 text-right pr-2">
+                              {canOpen ? (
+                                <button
+                                  type="button"
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    handleSalesDrilldown(sale);
+                                  }}
+                                  className="px-3 py-1.5 text-xs bg-brand-blue text-white rounded-lg hover:bg-blue-800 font-semibold"
+                                >
+                                  View / Refund
+                                </button>
+                              ) : (
+                                <span className="text-xs text-gray-400">-</span>
+                              )}
+                            </td>
                           </tr>
                           );
                         })}
@@ -170,6 +187,7 @@ export default function BookingsTab() {
                           <td className="py-3 text-right pr-2 font-bold text-brand-gold">
                             {formatPrice(bingoSales.reduce((sum, s) => sum + s.totalAmount, 0))}
                           </td>
+                          <td></td>
                         </tr>
                       </tfoot>
                     </table>

@@ -14,6 +14,7 @@ function getReceiptBadge(receipt) {
 export default function DashboardTab() {
   const {
     tab,
+    setTab,
     dashboard,
     dashboardDateFrom,
     dashboardDateTo,
@@ -29,6 +30,10 @@ export default function DashboardTab() {
     bookings,
     phdInventory,
   } = useAdminDashboard();
+
+  const openBookingSalesTab = () => {
+    if (setTab) setTab('bookings');
+  };
 
   const openSessionSales = (session) => {
     const quantity = Number(session.sold || session.quantity || 0);
@@ -81,21 +86,36 @@ export default function DashboardTab() {
 
             {/* Metric Cards Row 1 - Key Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#2563eb' }}>
+              <button
+                type="button"
+                onClick={openBookingSalesTab}
+                className="rounded-xl p-5 shadow-sm text-white text-left hover:ring-4 hover:ring-blue-200 focus:outline-none focus:ring-4 focus:ring-blue-200"
+                style={{ background: '#2563eb' }}
+              >
                 <p className="text-sm opacity-80">Total Bookings</p>
                 <p className="text-4xl font-bold mt-1">{dashboard.todayBookings}</p>
-                <p className="text-xs opacity-60 mt-1">paid bookings</p>
-              </div>
-              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#16a34a' }}>
+                <p className="text-xs opacity-80 mt-1">Open Booking Sales</p>
+              </button>
+              <button
+                type="button"
+                onClick={openBookingSalesTab}
+                className="rounded-xl p-5 shadow-sm text-white text-left hover:ring-4 hover:ring-green-200 focus:outline-none focus:ring-4 focus:ring-green-200"
+                style={{ background: '#16a34a' }}
+              >
                 <p className="text-sm opacity-80">Revenue</p>
                 <p className="text-4xl font-bold mt-1">{dashboard.todayRevenueFormatted}</p>
-                <p className="text-xs opacity-60 mt-1">total earned</p>
-              </div>
-              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#0d9488' }}>
+                <p className="text-xs opacity-80 mt-1">Open Booking Sales</p>
+              </button>
+              <button
+                type="button"
+                onClick={openBookingSalesTab}
+                className="rounded-xl p-5 shadow-sm text-white text-left hover:ring-4 hover:ring-teal-200 focus:outline-none focus:ring-4 focus:ring-teal-200"
+                style={{ background: '#0d9488' }}
+              >
                 <p className="text-sm opacity-80">Total Persons</p>
                 <p className="text-4xl font-bold mt-1">{dashboard.totalPersons || 0}</p>
-                <p className="text-xs opacity-60 mt-1">attendees</p>
-              </div>
+                <p className="text-xs opacity-80 mt-1">Open Booking Sales</p>
+              </button>
               <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#7c3aed' }}>
                 <p className="text-sm opacity-80">Upcoming Sessions</p>
                 <p className="text-4xl font-bold mt-1">{dashboard.upcomingSessions?.length || 0}</p>
@@ -129,15 +149,20 @@ export default function DashboardTab() {
 
             {/* Sold / Held Chair Summary */}
             <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-white rounded-xl p-5 shadow-sm flex items-center justify-between">
+              <button
+                type="button"
+                onClick={openBookingSalesTab}
+                className="bg-white rounded-xl p-5 shadow-sm flex items-center justify-between text-left hover:ring-4 hover:ring-red-100 focus:outline-none focus:ring-4 focus:ring-red-100"
+              >
                 <div>
                   <p className="text-sm text-gray-400">Chairs Sold</p>
                   <p className="text-3xl font-bold text-red-600">{dashboard.soldChairs || 0}</p>
+                  <p className="text-xs text-gray-400 mt-1">Open Booking Sales</p>
                 </div>
                 <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-2xl">
                   {'\u{1F4BA}'}
                 </div>
-              </div>
+              </button>
               <div className="bg-white rounded-xl p-5 shadow-sm flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-400">Chairs Held</p>
@@ -253,6 +278,7 @@ export default function DashboardTab() {
                       <th className="pb-2">Sold</th>
                       <th className="pb-2">Held</th>
                       <th className="pb-2">Total</th>
+                      <th className="pb-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -270,6 +296,19 @@ export default function DashboardTab() {
                         </td>
                         <td className="py-2 text-amber-500">{s.held}</td>
                         <td className="py-2 text-gray-600">{s.total}</td>
+                        <td className="py-2 text-right">
+                          {s.sold > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => openSessionSales(s)}
+                              className="px-3 py-1.5 text-xs bg-brand-blue text-white rounded-lg hover:bg-blue-800 font-semibold"
+                            >
+                              View / Refund
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
