@@ -112,7 +112,20 @@ app.get('/IFrameCommunicator.html', (req, res) => {
 });
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      "default-src": ["'self'"],
+      "script-src": ["'self'"],
+      "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      "font-src": ["'self'", "https://fonts.gstatic.com", "data:"],
+      "img-src": ["'self'", "data:", "blob:"],
+      "connect-src": ["'self'", "ws:", "wss:"],
+      "frame-src": ["'self'", "https://accept.authorize.net", "https://test.authorize.net"],
+      "form-action": ["'self'", "https://accept.authorize.net", "https://test.authorize.net"],
+      "frame-ancestors": ["'self'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 app.use(cors(corsOptions));
@@ -1001,19 +1014,14 @@ app.get('/api/sessions/:id', (req, res) => {
 
 // --- Seats ---
 app.get('/api/sessions/:sessionId/seats', (req, res) => {
+  const holderId = String(req.query.holderId || '').trim();
   const seats = all(`
-    SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled, s.held_by, s.held_until,
-           bi.first_name as booked_name
+    SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled,
+           CASE WHEN s.status = 'held' AND s.held_by = ? THEN 1 ELSE 0 END as isMyHold
     FROM seats s
-    LEFT JOIN (
-      SELECT bi.seat_id, bi.first_name
-      FROM booking_items bi
-      JOIN bookings b ON b.id = bi.booking_id
-      WHERE b.payment_status = 'paid'
-    ) bi ON bi.seat_id = s.id
     WHERE s.session_id = ?
     ORDER BY s.table_number ASC, s.chair_number ASC
-  `, [req.params.sessionId]);
+  `, [holderId, req.params.sessionId]);
   res.json(seats);
 });
 

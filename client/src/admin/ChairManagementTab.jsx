@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
-import { fetchSeats, toggleAdminSeat } from '../api';
+import { fetchAdminSeats, toggleAdminSeat } from '../api';
 import SessionWeekPicker from '../components/SessionWeekPicker';
 import { SECTIONS } from '../seatLayout';
 
@@ -36,7 +36,7 @@ export default function ChairManagementTab() {
 
     setChairMgmtLoading(true);
     try {
-      const seats = await fetchSeats(sessionId);
+      const seats = await fetchAdminSeats(token, sessionId);
       setChairMgmtSeats(seats);
     } finally {
       setChairMgmtLoading(false);

@@ -246,6 +246,23 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     res.json({ success: true });
   });
 
+  app.get('/api/admin/sessions/:id/seats', adminAuth, (req, res) => {
+    const seats = all(`
+      SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled,
+             bi.first_name as booked_name
+      FROM seats s
+      LEFT JOIN (
+        SELECT bi.seat_id, bi.first_name
+        FROM booking_items bi
+        JOIN bookings b ON b.id = bi.booking_id
+        WHERE b.payment_status = 'paid'
+      ) bi ON bi.seat_id = s.id
+      WHERE s.session_id = ?
+      ORDER BY s.table_number ASC, s.chair_number ASC
+    `, [req.params.id]);
+    res.json(seats);
+  });
+
   app.get('/api/admin/sessions/deleted', adminAuth, (req, res) => {
     archivePastSessions();
     const sessions = all(`

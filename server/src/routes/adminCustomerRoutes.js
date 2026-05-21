@@ -3,7 +3,9 @@ import { adminAuth } from '../middleware/adminAuth.js';
 import { formatPrice } from '../utils/format.js';
 
 function csvCell(value) {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+  let text = String(value ?? '');
+  if (/^\s*[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
 }
 
 function getCustomerRows(search = '') {

@@ -20,8 +20,16 @@ export async function fetchSessions() {
   return res.json();
 }
 
-export async function fetchSeats(sessionId) {
-  const res = await fetch(`${API}/sessions/${sessionId}/seats`);
+export async function fetchSeats(sessionId, holderId = '') {
+  const params = new URLSearchParams();
+  if (holderId) params.set('holderId', holderId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API}/sessions/${sessionId}/seats${qs}`);
+  return res.json();
+}
+
+export async function fetchAdminSeats(token, sessionId) {
+  const res = await fetch(`${API}/admin/sessions/${sessionId}/seats`, { headers: adminHeaders(token) });
   return res.json();
 }
 

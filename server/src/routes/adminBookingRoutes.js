@@ -3,6 +3,12 @@ import { adminAuth } from '../middleware/adminAuth.js';
 import { refundTransaction, verifyTransaction, voidTransaction } from '../services/payments.js';
 import { formatPrice } from '../utils/format.js';
 
+function csvCell(value) {
+  let text = String(value ?? '');
+  if (/^\s*[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
 export function registerAdminBookingRoutes(app, {
   io,
   logAudit,
@@ -111,14 +117,31 @@ export function registerAdminBookingRoutes(app, {
       ORDER BY b.created_at DESC
     `, params);
 
-    let csv = 'Reference,Session Date,Session Time,Customer First Name,Customer Last Name,Email,First Name,Last Name,Table,Chair,Package,Package Price,Total Amount,Payment Status,Booked At\n';
+    const header = ['Reference', 'Session Date', 'Session Time', 'Customer First Name', 'Customer Last Name', 'Email', 'First Name', 'Last Name', 'Table', 'Chair', 'Package', 'Package Price', 'Total Amount', 'Payment Status', 'Booked At'];
+    const lines = [header.map(csvCell).join(',')];
     for (const row of rows) {
-      csv += `${row.ticket_reference},${row.session_date},${row.session_time},${row.customer_first_name || ''},${row.customer_last_name || ''},${row.email || ''},${row.first_name},${row.last_name},${row.table_number},${row.chair_number},${row.package_name},$${formatPrice(row.package_price)},$${formatPrice(row.total_amount)},${row.payment_status},${row.created_at}\n`;
+      lines.push([
+        row.ticket_reference,
+        row.session_date,
+        row.session_time,
+        row.customer_first_name || '',
+        row.customer_last_name || '',
+        row.email || '',
+        row.first_name,
+        row.last_name,
+        row.table_number,
+        row.chair_number,
+        row.package_name,
+        '$' + formatPrice(row.package_price),
+        '$' + formatPrice(row.total_amount),
+        row.payment_status,
+        row.created_at,
+      ].map(csvCell).join(','));
     }
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=bookings-report.csv');
-    res.send(csv);
+    res.send(lines.join('\n'));
   });
 
   app.post('/api/admin/bookings/:id/cancel', adminAuth, (req, res) => {

@@ -204,8 +204,8 @@ function TableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, getTabl
 
 function InlineChair({ chair, holderId, selectedSeats, onChairClick, bookingStatus }) {
   const isSelected = selectedSeats.includes(chair.id);
-  const isMyHold = chair.status === 'held' && chair.held_by === holderId;
-  const isOtherHold = chair.status === 'held' && chair.held_by !== holderId;
+  const isMyHold = chair.status === 'held' && !!chair.isMyHold;
+  const isOtherHold = chair.status === 'held' && !chair.isMyHold;
   const isSold = chair.status === 'sold';
   const isDisabled = chair.is_disabled;
   const isBookingClosed = bookingStatus?.isClosed;
@@ -341,8 +341,8 @@ function FloorChair({ chair, selectedSeats, holderId, onChairClick, bookingStatu
   }
 
   const isSelected = selectedSeats.includes(chair.id);
-  const isMyHold = chair.status === 'held' && chair.held_by === holderId;
-  const isOtherHold = chair.status === 'held' && chair.held_by !== holderId;
+  const isMyHold = chair.status === 'held' && !!chair.isMyHold;
+  const isOtherHold = chair.status === 'held' && !chair.isMyHold;
   const isSold = chair.status === 'sold';
   const isDisabled = chair.is_disabled;
   const isBookingClosed = bookingStatus?.isClosed;

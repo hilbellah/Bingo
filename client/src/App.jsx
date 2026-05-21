@@ -148,7 +148,7 @@ export default function App() {
   useEffect(() => {
     if (!selectedSession) return undefined;
 
-    fetchSeats(selectedSession.id).then(setSeats);
+    fetchSeats(selectedSession.id, holderId).then(setSeats);
     fetchSessionPackages(selectedSession.id).then(setPackages);
     setPhdInventory(null);
     fetchPhdInventory(selectedSession.id).then(setPhdInventory);
@@ -159,20 +159,20 @@ export default function App() {
 
     const handleLocked = (data) => {
       setSeats(prev => prev.map(seat =>
-        seat.id === data.seatId ? { ...seat, status: 'held', held_by: data.holderId, held_until: data.holdUntil } : seat
+        seat.id === data.seatId ? { ...seat, status: 'held', isMyHold: data.holderId === holderId } : seat
       ));
     };
     const handleUnlocked = (data) => {
       setSeats(prev => prev.map(seat =>
-        seat.id === data.seatId ? { ...seat, status: 'vacant', held_by: null, held_until: null } : seat
+        seat.id === data.seatId ? { ...seat, status: 'vacant', isMyHold: false } : seat
       ));
     };
     const handleSold = (data) => {
       setSeats(prev => prev.map(seat =>
-        seat.id === data.seatId ? { ...seat, status: 'sold', held_by: null, held_until: null } : seat
+        seat.id === data.seatId ? { ...seat, status: 'sold', isMyHold: false } : seat
       ));
     };
-    const handleRefresh = () => fetchSeats(selectedSession.id).then(setSeats);
+    const handleRefresh = () => fetchSeats(selectedSession.id, holderId).then(setSeats);
 
     socket.emit('join:session', selectedSession.id);
     socket.on('seat:locked', handleLocked);
@@ -187,7 +187,7 @@ export default function App() {
       socket.off('seat:sold', handleSold);
       socket.off('seats:refresh', handleRefresh);
     };
-  }, [selectedSession, socketRef]);
+  }, [selectedSession, socketRef, holderId]);
 
   const handleChairClick = async (chair) => {
     if (bookingClosed) {
@@ -196,7 +196,7 @@ export default function App() {
       return;
     }
     if (chair.is_disabled || chair.status === 'sold') return;
-    if (chair.status === 'held' && chair.held_by !== holderId) return;
+    if (chair.status === 'held' && !chair.isMyHold) return;
     if (bookingStep === 2) return;
 
     if (selectedSeats.includes(chair.id)) {
