@@ -29,10 +29,24 @@ export default function DashboardTab() {
     handleSalesDrilldown,
     bookings,
     phdInventory,
+    setChairMgmtSession,
   } = useAdminDashboard();
 
   const openBookingSalesTab = () => {
     if (setTab) setTab('bookings');
+  };
+
+  const openSessionsTab = () => {
+    if (setTab) setTab('sessions');
+  };
+
+  const openChairManagement = (sessionId = '') => {
+    if (setChairMgmtSession) setChairMgmtSession(sessionId);
+    if (setTab) setTab('chairs');
+  };
+
+  const openInventoryTab = () => {
+    if (setTab) setTab('inventory');
   };
 
   const openSessionSales = (session) => {
@@ -48,6 +62,11 @@ export default function DashboardTab() {
       sessionType: session.session_type,
       isSpecialEvent: !!session.is_special_event,
     });
+  };
+
+  const openUpcomingSession = (session) => {
+    if (!session?.id) return openSessionsTab();
+    openChairManagement(session.id);
   };
 
   return (
@@ -116,35 +135,60 @@ export default function DashboardTab() {
                 <p className="text-4xl font-bold mt-1">{dashboard.totalPersons || 0}</p>
                 <p className="text-xs opacity-80 mt-1">Open Booking Sales</p>
               </button>
-              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#7c3aed' }}>
+              <button
+                type="button"
+                onClick={openSessionsTab}
+                className="rounded-xl p-5 shadow-sm text-white text-left hover:ring-4 hover:ring-purple-200 focus:outline-none focus:ring-4 focus:ring-purple-200"
+                style={{ background: '#7c3aed' }}
+              >
                 <p className="text-sm opacity-80">Upcoming Sessions</p>
                 <p className="text-4xl font-bold mt-1">{dashboard.upcomingSessions?.length || 0}</p>
-                <p className="text-xs opacity-60 mt-1">next 7 days</p>
-              </div>
+                <p className="text-xs opacity-80 mt-1">Open Bingo Sessions</p>
+              </button>
             </div>
 
             {/* Metric Cards Row 2 - Table & Chair Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#059669' }}>
+              <button
+                type="button"
+                onClick={() => openChairManagement()}
+                className="rounded-xl p-5 shadow-sm text-white text-left hover:ring-4 hover:ring-emerald-200 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+                style={{ background: '#059669' }}
+              >
                 <p className="text-sm opacity-80">Available Tables</p>
                 <p className="text-4xl font-bold mt-1">{dashboard.availableTables || 0}</p>
-                <p className="text-xs opacity-60 mt-1">of {dashboard.totalTables || 0} total</p>
-              </div>
-              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#d97706' }}>
+                <p className="text-xs opacity-80 mt-1">Open Chair Management</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => openChairManagement()}
+                className="rounded-xl p-5 shadow-sm text-white text-left hover:ring-4 hover:ring-amber-200 focus:outline-none focus:ring-4 focus:ring-amber-200"
+                style={{ background: '#d97706' }}
+              >
                 <p className="text-sm opacity-80">Partial Tables</p>
                 <p className="text-4xl font-bold mt-1">{dashboard.partialTables || 0}</p>
-                <p className="text-xs opacity-60 mt-1">partially occupied</p>
-              </div>
-              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#dc2626' }}>
+                <p className="text-xs opacity-80 mt-1">Open Chair Management</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => openChairManagement()}
+                className="rounded-xl p-5 shadow-sm text-white text-left hover:ring-4 hover:ring-red-200 focus:outline-none focus:ring-4 focus:ring-red-200"
+                style={{ background: '#dc2626' }}
+              >
                 <p className="text-sm opacity-80">Full Tables</p>
                 <p className="text-4xl font-bold mt-1">{dashboard.fullTables || 0}</p>
-                <p className="text-xs opacity-60 mt-1">fully occupied</p>
-              </div>
-              <div className="rounded-xl p-5 shadow-sm text-white" style={{ background: '#4f46e5' }}>
+                <p className="text-xs opacity-80 mt-1">Open Chair Management</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => openChairManagement()}
+                className="rounded-xl p-5 shadow-sm text-white text-left hover:ring-4 hover:ring-indigo-200 focus:outline-none focus:ring-4 focus:ring-indigo-200"
+                style={{ background: '#4f46e5' }}
+              >
                 <p className="text-sm opacity-80">Chairs Available</p>
                 <p className="text-4xl font-bold mt-1">{dashboard.availableChairs || 0}</p>
-                <p className="text-xs opacity-60 mt-1">of {dashboard.totalChairs || 0} total</p>
-              </div>
+                <p className="text-xs opacity-80 mt-1">Open Chair Management</p>
+              </button>
             </div>
 
             {/* Sold / Held Chair Summary */}
@@ -163,20 +207,29 @@ export default function DashboardTab() {
                   {'\u{1F4BA}'}
                 </div>
               </button>
-              <div className="bg-white rounded-xl p-5 shadow-sm flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => openChairManagement()}
+                className="bg-white rounded-xl p-5 shadow-sm flex items-center justify-between text-left hover:ring-4 hover:ring-amber-100 focus:outline-none focus:ring-4 focus:ring-amber-100"
+              >
                 <div>
                   <p className="text-sm text-gray-400">Chairs Held</p>
                   <p className="text-3xl font-bold text-amber-500">{dashboard.heldChairs || 0}</p>
+                  <p className="text-xs text-gray-400 mt-1">Open Chair Management</p>
                 </div>
                 <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-2xl">
                   {'\u{23F3}'}
                 </div>
-              </div>
+              </button>
             </div>
 
             {/* PHD Inventory Monitor */}
             {dashboard.phdInventory && (
-              <div className="bg-white rounded-xl p-5 shadow-sm mb-6">
+              <button
+                type="button"
+                onClick={openInventoryTab}
+                className="block w-full bg-white rounded-xl p-5 shadow-sm mb-6 text-left hover:ring-4 hover:ring-purple-100 focus:outline-none focus:ring-4 focus:ring-purple-100"
+              >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-brand-blue">PHD Inventory (Next Session)</h3>
                   <span className={`text-xs font-bold px-3 py-1 rounded-full ${
@@ -220,7 +273,7 @@ export default function DashboardTab() {
                     {Math.round((dashboard.phdInventory.totalUsed / dashboard.phdInventory.totalStock) * 100)}% allocated
                   </p>
                 </div>
-              </div>
+              </button>
             )}
 
             {/* Recent Orders (Live Feed) */}
@@ -283,24 +336,74 @@ export default function DashboardTab() {
                   </thead>
                   <tbody>
                     {dashboard.upcomingSessions?.map(s => (
-                      <tr key={s.id} className="border-b border-gray-50">
-                        <td className="py-2 font-medium">{s.date}</td>
+                      <tr
+                        key={s.id}
+                        onClick={() => openUpcomingSession(s)}
+                        className="border-b border-gray-50 cursor-pointer hover:bg-blue-50/60 focus-within:bg-blue-50/60"
+                        title="Open this session in Chair Management"
+                      >
+                        <td className="py-2 font-medium text-brand-blue underline decoration-transparent hover:decoration-current">{s.date}</td>
                         <td className="py-2">{s.time}</td>
-                        <td className="py-2 text-green-600">{s.available}</td>
+                        <td className="py-2 text-green-600">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openUpcomingSession(s);
+                            }}
+                            className="font-medium hover:underline"
+                          >
+                            {s.available}
+                          </button>
+                        </td>
                         <td className="py-2">
                           {s.sold > 0 ? (
-                            <button onClick={() => openSessionSales(s)} className="text-brand-blue underline hover:text-blue-800 font-medium cursor-pointer">{s.sold}</button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openSessionSales(s);
+                              }}
+                              className="text-brand-blue underline hover:text-blue-800 font-medium cursor-pointer"
+                            >
+                              {s.sold}
+                            </button>
                           ) : (
                             <span className="text-gray-500">0</span>
                           )}
                         </td>
-                        <td className="py-2 text-amber-500">{s.held}</td>
-                        <td className="py-2 text-gray-600">{s.total}</td>
+                        <td className="py-2 text-amber-500">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openUpcomingSession(s);
+                            }}
+                            className="font-medium hover:underline"
+                          >
+                            {s.held}
+                          </button>
+                        </td>
+                        <td className="py-2 text-gray-600">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openUpcomingSession(s);
+                            }}
+                            className="hover:underline"
+                          >
+                            {s.total}
+                          </button>
+                        </td>
                         <td className="py-2 text-right">
                           {s.sold > 0 ? (
                             <button
                               type="button"
-                              onClick={() => openSessionSales(s)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openSessionSales(s);
+                              }}
                               className="px-3 py-1.5 text-xs bg-brand-blue text-white rounded-lg hover:bg-blue-800 font-semibold"
                             >
                               View / Refund

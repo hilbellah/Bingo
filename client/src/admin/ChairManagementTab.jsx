@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { fetchAdminSeats, toggleAdminSeat } from '../api';
 import SessionWeekPicker from '../components/SessionWeekPicker';
@@ -29,7 +29,6 @@ export default function ChairManagementTab() {
   const selectedSession = sessions.find(session => session.id === chairMgmtSession);
 
   const loadSessionSeats = async (sessionId) => {
-    setChairMgmtSession(sessionId);
     if (!sessionId) {
       setChairMgmtSeats([]);
       return;
@@ -43,6 +42,11 @@ export default function ChairManagementTab() {
       setChairMgmtLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (tab !== 'chairs') return;
+    loadSessionSeats(chairMgmtSession);
+  }, [tab, chairMgmtSession]);
 
   const handleToggleChair = async (chair) => {
     if (chair.status === 'sold') return;
@@ -87,7 +91,7 @@ export default function ChairManagementTab() {
                 selectedSession={selectedSession}
                 weekOffset={weekOffset}
                 onWeekOffsetChange={setWeekOffset}
-                onSelectSession={(session) => loadSessionSeats(session.id)}
+                onSelectSession={(session) => setChairMgmtSession(session.id)}
               />
             ) : (
               <div className="text-sm text-white/60 px-2 py-1">No sessions available.</div>
