@@ -267,10 +267,25 @@ export default function AdminDashboard() {
   };
 
   const handleSalesDrilldown = (sale) => {
-    if (sale.quantity === 0) return;
-    fetchAdminBookings(token, sale.id).then(data => {
-      setSalesDrilldown({ session: sale, bookings: data });
-    });
+    const quantity = Number(sale?.quantity || sale?.sold || 0);
+    if (!sale?.id || quantity <= 0) return;
+
+    setSalesDrilldown({ session: { ...sale, quantity }, bookings: [], loading: true, error: '' });
+    fetchAdminBookings(token, sale.id)
+      .then(data => {
+        if (!Array.isArray(data)) {
+          throw new Error(data?.message || data?.error || 'Could not load booking details.');
+        }
+        setSalesDrilldown({ session: { ...sale, quantity }, bookings: data, loading: false, error: '' });
+      })
+      .catch(err => {
+        setSalesDrilldown({
+          session: { ...sale, quantity },
+          bookings: [],
+          loading: false,
+          error: err?.message || 'Could not load booking details.',
+        });
+      });
   };
 
   const handlePrintSalesDrilldown = () => {

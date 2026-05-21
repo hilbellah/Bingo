@@ -3,7 +3,6 @@ import { useAdminDashboard } from './AdminDashboardContext';
 
 export default function SalesDrilldownModal() {
   const {
-    bookings,
     handlePrintBookingReceipt,
     handleRefundBooking,
     handleRefundBookingItem,
@@ -12,6 +11,11 @@ export default function SalesDrilldownModal() {
     handlePrintSalesDrilldown,
     handleSaveSalesDrilldownCsv,
   } = useAdminDashboard();
+  const bookingsList = Array.isArray(salesDrilldown?.bookings) ? salesDrilldown.bookings : [];
+  const activeTicketCount = bookingsList.reduce((sum, booking) => {
+    const items = Array.isArray(booking.items) ? booking.items : [];
+    return sum + items.filter(item => item.refundStatus !== 'refunded').length;
+  }, 0);
 
   return (
     <>
@@ -23,7 +27,7 @@ export default function SalesDrilldownModal() {
               <div>
                 <h3 className="font-bold text-brand-blue text-lg">Booking Details</h3>
                 <p className="text-sm text-gray-500">
-                  {salesDrilldown.session.description} &mdash; {salesDrilldown.bookings.reduce((sum, b) => sum + b.items.filter(item => item.refundStatus !== 'refunded').length, 0)} active ticket(s) in {salesDrilldown.session.bookingCount || salesDrilldown.bookings.length} batch(es) &mdash; {salesDrilldown.session.totalFormatted}
+                  {salesDrilldown.session.description} &mdash; {activeTicketCount} active ticket(s) in {salesDrilldown.session.bookingCount || bookingsList.length} batch(es) &mdash; {salesDrilldown.session.totalFormatted}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -33,10 +37,16 @@ export default function SalesDrilldownModal() {
               </div>
             </div>
             <div id="sales-drilldown-content" className="overflow-y-auto p-5" style={{ maxHeight: 'calc(85vh - 80px)' }}>
-              {salesDrilldown.bookings.length === 0 ? (
+              {salesDrilldown.loading ? (
+                <p className="text-gray-500 text-center py-8">Loading booking details...</p>
+              ) : salesDrilldown.error ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {salesDrilldown.error}
+                </div>
+              ) : bookingsList.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No bookings found.</p>
               ) : (
-                salesDrilldown.bookings.map(b => (
+                bookingsList.map(b => (
                   <div key={b.id} className="mb-4 border rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                       <div>
@@ -58,7 +68,7 @@ export default function SalesDrilldownModal() {
                         >
                           Receipt
                         </button>
-                        {b.paymentStatus === 'paid' && b.items.every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
+                        {b.paymentStatus === 'paid' && (Array.isArray(b.items) ? b.items : []).every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
                           <button
                             onClick={() => handleRefundBooking(b.id, b.referenceNumber)}
                             className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
@@ -92,7 +102,7 @@ export default function SalesDrilldownModal() {
                         </tr>
                       </thead>
                       <tbody>
-                        {b.items.map((item, i) => (
+                        {(Array.isArray(b.items) ? b.items : []).map((item, i) => (
                           <tr key={item.id || i} className={`border-b border-gray-50 ${item.refundStatus === 'refunded' ? 'text-gray-400 bg-gray-50' : ''}`}>
                             <td className="py-1 font-mono text-xs text-brand-blue font-semibold">{item.referenceNumber || '—'}</td>
                             <td className="py-1 font-medium">{item.firstName} {item.lastName}</td>
@@ -100,7 +110,7 @@ export default function SalesDrilldownModal() {
                             <td className="py-1">{item.chairNumber}</td>
                             <td className="py-1">{item.packageName}</td>
                             <td className="py-1 text-xs text-gray-500">
-                              {item.addons.length > 0
+                              {Array.isArray(item.addons) && item.addons.length > 0
                                 ? item.addons.map(a => `${a.packageName} x${a.quantity}`).join(', ')
                                 : '—'}
                             </td>
