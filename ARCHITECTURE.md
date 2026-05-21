@@ -276,9 +276,10 @@ CREATE TABLE packages (
 **Trigger**: Server startup + daily at midnight  
 **Process**:
 1. Check next 90 days for missing sessions
-2. Skip Wednesdays (no bingo)
-3. Create session if missing
-4. Generate 444 seats (74 tables × 6 chairs, skip table 41)
+2. Generate Tuesday-Saturday regular bingo at 6:30 PM and Sunday regular bingo at 6:00 PM
+3. Skip Monday regular night bingo
+4. Create session if missing
+5. Generate 444 seats (74 tables × 6 chairs, skip table 41)
 
 **Benefit**: Automatic session scheduling, no manual creation
 

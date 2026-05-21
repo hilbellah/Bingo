@@ -14,6 +14,96 @@ const BASELINE_PACKAGES = REGULAR_BINGO_PACKAGE_DEFINITIONS.map(pkg => [
   pkg.description || '',
 ]);
 
+const REGULAR_BINGO_SCHEDULE = [
+  { dayOfWeek: 0, time: '18:00' }, // Sunday
+  { dayOfWeek: 2, time: '18:30' }, // Tuesday
+  { dayOfWeek: 3, time: '18:30' }, // Wednesday
+  { dayOfWeek: 4, time: '18:30' }, // Thursday
+  { dayOfWeek: 5, time: '18:30' }, // Friday
+  { dayOfWeek: 6, time: '18:30' }, // Saturday
+];
+
+function ensureRegularBingoSchedule() {
+  console.log('Ensuring regular bingo schedule (Tue-Sat 6:30 PM, Sun 6:00 PM; no Monday).');
+
+  run(`
+    UPDATE recurring_schedules
+       SET is_active = 0, updated_at = datetime('now')
+     WHERE session_type = 'regular_bingo'
+       AND day_of_week = 1
+  `);
+
+  for (const schedule of REGULAR_BINGO_SCHEDULE) {
+    const existing = all(
+      `SELECT id
+         FROM recurring_schedules
+        WHERE session_type = 'regular_bingo'
+          AND day_of_week = ?
+        ORDER BY is_active DESC, created_at ASC
+        LIMIT 1`,
+      [schedule.dayOfWeek]
+    )[0];
+
+    if (existing) {
+      run(
+        `UPDATE recurring_schedules
+            SET time = ?,
+                cutoff_time = '12:00',
+                session_type = 'regular_bingo',
+                is_active = 1,
+                updated_at = datetime('now')
+          WHERE id = ?`,
+        [schedule.time, existing.id]
+      );
+      run(
+        `UPDATE recurring_schedules
+            SET is_active = 0,
+                updated_at = datetime('now')
+          WHERE session_type = 'regular_bingo'
+            AND day_of_week = ?
+            AND id != ?`,
+        [schedule.dayOfWeek, existing.id]
+      );
+    } else {
+      run(
+        `INSERT INTO recurring_schedules
+           (id, day_of_week, time, cutoff_time, session_type, is_active)
+         VALUES (?, ?, ?, '12:00', 'regular_bingo', 1)`,
+        [uuid(), schedule.dayOfWeek, schedule.time]
+      );
+    }
+  }
+}
+
+function correctFutureRegularSessionsForSchedule() {
+  const today = new Date().toISOString().slice(0, 10);
+
+  run(
+    `UPDATE sessions
+        SET time = '18:00'
+      WHERE date >= ?
+        AND deleted_at IS NULL
+        AND COALESCE(is_special_event, 0) = 0
+        AND COALESCE(NULLIF(session_type, ''), 'regular_bingo') = 'regular_bingo'
+        AND strftime('%w', date) = '0'
+        AND time != '18:00'`,
+    [today]
+  );
+
+  run(
+    `UPDATE sessions
+        SET is_available = 0,
+            deleted_at = COALESCE(deleted_at, datetime('now'))
+      WHERE date >= ?
+        AND deleted_at IS NULL
+        AND COALESCE(is_special_event, 0) = 0
+        AND COALESCE(NULLIF(session_type, ''), 'regular_bingo') = 'regular_bingo'
+        AND strftime('%w', date) = '1'
+        AND NOT EXISTS (SELECT 1 FROM bookings WHERE bookings.session_id = sessions.id)`,
+    [today]
+  );
+}
+
 function ensureBaselinePackages() {
   const countRow = all('SELECT COUNT(*) as count FROM packages')[0];
   const isEmpty = (countRow?.count || 0) === 0;
@@ -341,9 +431,8 @@ async function migrate() {
   //
   // day_of_week uses JS getDay() convention: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat.
   //
-  // Default seed (matches the St. Mary's Entertainment Centre "Bingo 6 Nights
-  // per week!" pattern from their Facebook page — skips Wednesday):
-  //   Sun, Mon, Tue, Thu, Fri, Sat at 18:30 with 12:00 cutoff.
+  // Default seed and production correction:
+  //   Tue-Sat at 18:30, Sunday at 18:00, no Monday regular night bingo.
   console.log('Running recurring-schedule migration...');
   exec(`
     CREATE TABLE IF NOT EXISTS recurring_schedules (
@@ -361,17 +450,18 @@ async function migrate() {
 
   const existingScheduleCount = all('SELECT COUNT(*) as count FROM recurring_schedules')[0]?.count || 0;
   if (existingScheduleCount === 0) {
-    console.log('Seeding default recurring schedule (6 nights/week, skip Wednesday)');
-    const defaultDays = [0, 1, 2, 4, 5, 6]; // Sun, Mon, Tue, Thu, Fri, Sat
-    for (const dow of defaultDays) {
+    console.log('Seeding default recurring schedule (Tue-Sat 6:30 PM, Sun 6:00 PM)');
+    for (const schedule of REGULAR_BINGO_SCHEDULE) {
       run(
         `INSERT INTO recurring_schedules
            (id, day_of_week, time, cutoff_time, session_type, is_active)
-         VALUES (?, ?, '18:30', '12:00', 'regular_bingo', 1)`,
-        [uuid(), dow]
+         VALUES (?, ?, ?, '12:00', 'regular_bingo', 1)`,
+        [uuid(), schedule.dayOfWeek, schedule.time]
       );
     }
   }
+  ensureRegularBingoSchedule();
+  correctFutureRegularSessionsForSchedule();
 
   // auto_generate_config controls how the scheduler runs:
   //   - lookAheadDays: how many days into the future to keep sessions for

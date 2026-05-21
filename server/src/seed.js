@@ -221,7 +221,7 @@ async function seed() {
     db.run('INSERT INTO packages (id, name, price, type, max_quantity, is_active, sort_order, is_phd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', p);
   }
 
-  // --- Sessions (next 10 upcoming sessions, skip Wednesdays) ---
+  // --- Sessions (next 10 upcoming regular bingo sessions) ---
   const sessionIds = [];
   const today = new Date();
   let dayOffset = 0;
@@ -229,12 +229,13 @@ async function seed() {
     const d = new Date(today);
     d.setDate(today.getDate() + dayOffset);
     dayOffset++;
-    if (d.getDay() === 3) continue; // Skip Wednesday
+    if (d.getDay() === 1) continue; // No Monday regular night bingo
     const dateStr = d.toISOString().split('T')[0];
+    const time = d.getDay() === 0 ? '18:00' : '18:30';
     const sid = uuid();
     sessionIds.push(sid);
     db.run('INSERT INTO sessions (id, date, time, cutoff_time, is_available) VALUES (?, ?, ?, ?, ?)',
-      [sid, dateStr, '18:30', '12:00', 1]);
+      [sid, dateStr, time, '12:00', 1]);
   }
 
   // --- Chairs for each session (75 tables x 6 chairs = 450 per session) ---
