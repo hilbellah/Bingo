@@ -34,13 +34,8 @@ export default function AdminLogin() {
     <div className="min-h-screen bg-gradient-to-b from-brand-blue-dark via-brand-blue to-brand-blue-mid flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-brand-gold to-brand-gold-light rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </div>
+          <img src="/wolastoq-logo.png" alt="Wolastoq Casino" className="h-14 w-auto mx-auto mb-5 object-contain" />
           <h1 className="text-2xl font-bold text-brand-blue">Admin Panel</h1>
-          <p className="text-gray-500 text-sm mt-1">Saint Mary's Entertainment Centre</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

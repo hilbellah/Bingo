@@ -195,10 +195,21 @@ export default function AdminShell({
         <div className="p-4 border-b border-white/10">
           {!collapsed && (
             <>
-              <h1 className="text-lg font-bold leading-tight">SMEC</h1>
+              <img
+                src="/wolastoq-logo.png"
+                alt="Wolastoq Casino"
+                className="h-11 w-auto max-w-[170px] object-contain"
+              />
               <p className="text-xs text-gray-300 mt-0.5">Admin Panel</p>
               <p className="text-xs text-brand-gold mt-1 truncate" title={adminDisplayName}>Logged in as {adminDisplayName}</p>
             </>
+          )}
+          {collapsed && (
+            <img
+              src="/wolastoq-favicon.png"
+              alt="Wolastoq Casino"
+              className="h-8 w-8 object-contain mx-auto"
+            />
           )}
           <button onClick={onToggleCollapsed} className="mt-2 text-xs text-gray-300 hover:text-white">
             {collapsed ? '>' : '<'}

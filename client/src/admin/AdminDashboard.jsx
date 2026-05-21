@@ -864,7 +864,6 @@ export default function AdminDashboard() {
               <span>{autoPrint ? '\uD83D\uDFE2' : '\u26AA'}</span>
               Auto-Print {autoPrint ? 'ON' : 'OFF'}
             </button>
-            <p className="text-xs text-gray-400">Saint Mary's Entertainment Centre</p>
             <span className="text-xs font-medium text-brand-blue">{adminDisplayName}</span>
     </div>
   );
