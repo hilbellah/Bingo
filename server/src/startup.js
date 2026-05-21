@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { get, run, saveDb } from './database.js';
 import { releaseExpiredHolds } from './services/holds.js';
 import { archivePastSessions } from './services/sessionArchive.js';
+import { ensureGoLiveSalesReportCutoff } from './services/salesReporting.js';
 import {
   cleanupOldData,
   ensureFutureSessions,
@@ -57,6 +58,7 @@ export function startMaintenanceTasks(io, { reconcileReversedBookingSeats }) {
   setInterval(cleanupOldData, 24 * 60 * 60 * 1000);
 
   openWeeklySessions();
+  ensureGoLiveSalesReportCutoff();
   normalizeAutoGenerateConfigForGoLive();
   ensureFutureSessions();
   pruneFutureSessionsBeyondLookahead();

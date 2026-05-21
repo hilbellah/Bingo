@@ -33,6 +33,7 @@ export default function BookingsTab() {
     loadTransactions,
     handlePrintDailySalesReceipt,
     handleClearTestBookings,
+    handleResetSalesReporting,
   } = useAdminDashboard();
   const [activeBoard, setActiveBoard] = useState('dailySales');
   const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
@@ -266,6 +267,13 @@ export default function BookingsTab() {
                     className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
                   >
                     Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetSalesReporting}
+                    className="ml-auto px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    Reset Sales Totals
                   </button>
               </div>
 

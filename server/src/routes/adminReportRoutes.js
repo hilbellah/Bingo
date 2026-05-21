@@ -1,20 +1,34 @@
 import { all, get } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { getNextPhdSessionId, getPhdInventoryForSession } from '../services/phdInventory.js';
+import { getSalesReportCutoff, setSalesReportCutoff } from '../services/salesReporting.js';
 import { sessionTypeSql } from '../services/sessionPackages.js';
 import { formatLocalDate, formatPrice } from '../utils/format.js';
+
+function addSalesCutoff(where, params, expression) {
+  const cutoff = getSalesReportCutoff();
+  if (cutoff) {
+    where.push(`datetime(${expression}) >= datetime(?)`);
+    params.push(cutoff);
+  }
+  return cutoff;
+}
 
 export function registerAdminReportRoutes(app) {
   app.get('/api/admin/dashboard', adminAuth, (req, res) => {
     const today = formatLocalDate(new Date());
     const dateFrom = req.query.dateFrom || req.query.date || today;
     const dateTo = req.query.dateTo || dateFrom;
+    const cutoff = getSalesReportCutoff();
+    const bookingCutoffSql = cutoff ? " AND datetime(COALESCE(b.payment_completed_at, b.created_at)) >= datetime(?)" : '';
+    const bookingCutoffParams = cutoff ? [cutoff] : [];
     const todayBookings = get(
       `SELECT COUNT(DISTINCT b.id) as count
        FROM bookings b
        JOIN sessions s ON b.session_id = s.id
        WHERE s.date >= ? AND s.date <= ?
-         AND b.payment_status IN ('paid', 'partially_refunded')`, [dateFrom, dateTo]
+         AND b.payment_status IN ('paid', 'partially_refunded')
+         ${bookingCutoffSql}`, [dateFrom, dateTo, ...bookingCutoffParams]
     );
     const todayRevenue = get(
       `SELECT COALESCE(SUM(bi.price + COALESCE(addons.addon_total, 0)), 0) as total
@@ -28,7 +42,8 @@ export function registerAdminReportRoutes(app) {
        ) addons ON addons.booking_item_id = bi.id
        WHERE s.date >= ? AND s.date <= ?
          AND b.payment_status IN ('paid', 'partially_refunded')
-         AND COALESCE(bi.refund_status, 'active') != 'refunded'`, [dateFrom, dateTo]
+         AND COALESCE(bi.refund_status, 'active') != 'refunded'
+         ${bookingCutoffSql}`, [dateFrom, dateTo, ...bookingCutoffParams]
     );
     const upcomingSessions = all(
       `SELECT s.*,
@@ -78,7 +93,8 @@ export function registerAdminReportRoutes(app) {
        JOIN sessions s ON b.session_id = s.id
        WHERE s.date >= ? AND s.date <= ?
          AND b.payment_status IN ('paid', 'partially_refunded')
-         AND COALESCE(bi.refund_status, 'active') != 'refunded'`, [dateFrom, dateTo]
+         AND COALESCE(bi.refund_status, 'active') != 'refunded'
+         ${bookingCutoffSql}`, [dateFrom, dateTo, ...bookingCutoffParams]
     );
 
     res.json({
@@ -87,6 +103,7 @@ export function registerAdminReportRoutes(app) {
       todayBookings: todayBookings?.count || 0,
       todayRevenue: todayRevenue?.total || 0,
       todayRevenueFormatted: '$' + formatPrice(todayRevenue?.total || 0),
+      salesReportCutoffAt: cutoff,
       upcomingSessions,
       totalTables: seatMetrics?.totalTables || 0,
       totalChairs: seatMetrics?.totalChairs || 0,
@@ -113,6 +130,9 @@ export function registerAdminReportRoutes(app) {
   app.get('/api/admin/daily-sales', adminAuth, (req, res) => {
     const date = req.query.date || formatLocalDate(new Date());
     const search = (req.query.search || '').trim().toLowerCase();
+    const cutoff = getSalesReportCutoff();
+    const cutoffSql = cutoff ? "AND datetime(COALESCE(b.payment_completed_at, b.created_at)) >= datetime(?)" : '';
+    const cutoffParams = cutoff ? [cutoff] : [];
     const rows = all(`
       SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
              b.email, b.customer_first_name, b.customer_last_name,
@@ -132,8 +152,9 @@ export function registerAdminReportRoutes(app) {
       WHERE s.date = ?
         AND b.payment_status IN ('paid', 'partially_refunded')
         AND COALESCE(bi.refund_status, 'active') != 'refunded'
+        ${cutoffSql}
       ORDER BY b.created_at ASC, b.id, bi.id
-    `, [date]);
+    `, [date, ...cutoffParams]);
 
     const allAddons = all(`
       SELECT ba.booking_item_id, ba.quantity, ba.price,
@@ -147,7 +168,8 @@ export function registerAdminReportRoutes(app) {
       WHERE s.date = ?
         AND b.payment_status IN ('paid', 'partially_refunded')
         AND COALESCE(bi.refund_status, 'active') != 'refunded'
-    `, [date]);
+        ${cutoffSql}
+    `, [date, ...cutoffParams]);
     const addonsByItem = {};
     for (const addon of allAddons) {
       if (!addonsByItem[addon.booking_item_id]) addonsByItem[addon.booking_item_id] = [];
@@ -199,6 +221,7 @@ export function registerAdminReportRoutes(app) {
 
     res.json({
       date,
+      salesReportCutoffAt: cutoff,
       items,
       totalTickets: items.length,
       totalBookings: uniqueBookings.size,
@@ -219,6 +242,7 @@ export function registerAdminReportRoutes(app) {
 
     const where = [];
     const params = [];
+    const cutoff = addSalesCutoff(where, params, 'transaction_at');
     if (dateFrom) {
       where.push('substr(transaction_at, 1, 10) >= ?');
       params.push(dateFrom);
@@ -371,6 +395,7 @@ export function registerAdminReportRoutes(app) {
 
     res.json({
       filters: { dateFrom, dateTo, status, search },
+      salesReportCutoffAt: cutoff,
       summary: {
         totalTransactions: rows.length,
         paidCount: (statusCounts.paid || 0) + (statusCounts.partially_refunded || 0),
@@ -393,13 +418,15 @@ export function registerAdminReportRoutes(app) {
   });
 
   app.get('/api/admin/booking-sales', adminAuth, (req, res) => {
+    const cutoff = getSalesReportCutoff();
+    const bookingCutoffSql = cutoff ? " AND datetime(COALESCE(b.payment_completed_at, b.created_at)) >= datetime(?)" : '';
     const rows = all(`
       SELECT s.id, s.date, s.time, s.is_special_event, s.event_title, ${sessionTypeSql('s')} as session_type,
         COUNT(bi.id) as quantity,
         COUNT(DISTINCT b.id) as booking_count,
         COALESCE(SUM(bi.price + COALESCE(addons.addon_total, 0)), 0) as total_amount
       FROM sessions s
-      LEFT JOIN bookings b ON b.session_id = s.id AND b.payment_status IN ('paid', 'partially_refunded')
+      LEFT JOIN bookings b ON b.session_id = s.id AND b.payment_status IN ('paid', 'partially_refunded') ${bookingCutoffSql}
       LEFT JOIN booking_items bi ON bi.booking_id = b.id AND COALESCE(bi.refund_status, 'active') != 'refunded'
       LEFT JOIN (
         SELECT booking_item_id, SUM(price) as addon_total
@@ -409,7 +436,7 @@ export function registerAdminReportRoutes(app) {
       WHERE s.deleted_at IS NULL
       GROUP BY s.id
       ORDER BY s.date ASC, s.time ASC
-    `);
+    `, cutoff ? [cutoff] : []);
     res.json(rows.map(row => ({
       id: row.id,
       date: row.date,
@@ -423,5 +450,20 @@ export function registerAdminReportRoutes(app) {
       totalAmount: row.total_amount,
       totalFormatted: '$' + formatPrice(row.total_amount)
     })));
+  });
+
+  app.post('/api/admin/sales-reporting/reset', adminAuth, (req, res) => {
+    if (req.body?.confirm !== 'RESET SALES TOTALS') {
+      return res.status(400).json({
+        error: 'confirmation_required',
+        message: 'Type RESET SALES TOTALS to reset sales reporting totals.',
+      });
+    }
+    const cutoffAt = setSalesReportCutoff();
+    res.json({
+      ok: true,
+      cutoffAt,
+      message: 'Sales reports now count only bookings and transactions after this reset time.',
+    });
   });
 }

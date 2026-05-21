@@ -257,6 +257,16 @@ export async function fetchAdminTransactions(token, filters = {}) {
   return res.json();
 }
 
+export async function resetAdminSalesReporting(token) {
+  const res = await fetch(`${API}/admin/sales-reporting/reset`, {
+    method: 'POST',
+    headers: adminHeaders(token),
+    body: JSON.stringify({ confirm: 'RESET SALES TOTALS' })
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
 export async function fetchBookingSales(token) {
   const res = await fetch(`${API}/admin/booking-sales`, { headers: adminHeaders(token) });
   return res.json();

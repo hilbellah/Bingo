@@ -9,7 +9,7 @@ import {
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
   fetchDeletedSessions, restoreSession, fetchSessionBookings, fetchAuditLog,
-  fetchBookingSales, fetchDailySales, fetchAdminTransactions,
+  fetchBookingSales, fetchDailySales, fetchAdminTransactions, resetAdminSalesReporting,
   fetchAdminCustomers, getCustomersExportUrl,
   fetchSettings, saveSettings,
   uploadImage,
@@ -724,6 +724,26 @@ export default function AdminDashboard() {
     loadPhdInventory();
   };
 
+  const handleResetSalesReporting = async () => {
+    const proceed = confirmAdminAction({
+      action: 'Reset sales report totals',
+      warning: 'This keeps Authorize.Net payment records and audit history, but hides older test sales/refunds from Daily Sales, Booking Sales, Transactions, and dashboard totals. New sales after this reset will count normally.',
+    });
+    if (!proceed) return;
+
+    const result = await resetAdminSalesReporting(token);
+    if (!result.ok) {
+      window.alert(result.message || result.error || 'Could not reset sales reporting totals.');
+      return;
+    }
+
+    window.alert(result.message || 'Sales reporting totals were reset.');
+    loadBookingSales();
+    loadDailySales(dailySalesDate, dailySalesSearch);
+    loadTransactions(transactionFilters);
+    loadDashboard(dashboardDateFrom, dashboardDateTo);
+  };
+
   // Refund a paid booking through Authorize.Net. Server auto-decides void vs
   // refund and releases seats. /cancel is for legacy/admin bookings with no
   // payment processor; /refund is for real Authorize.Net transactions.
@@ -940,6 +960,7 @@ export default function AdminDashboard() {
     loadBookings,
     handleCancelBooking,
     handleClearTestBookings,
+    handleResetSalesReporting,
     handleRefundBooking,
     handleRefundBookingItem,
     handleExport,
