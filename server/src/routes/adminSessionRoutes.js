@@ -246,6 +246,61 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     res.json({ success: true });
   });
 
+  app.patch('/api/admin/sessions/:id/tables/:tableNumber/seats', adminAuth, (req, res) => {
+    const { is_disabled } = req.body;
+    if (typeof is_disabled !== 'boolean') {
+      return res.status(400).json({ error: 'is_disabled must be true or false' });
+    }
+
+    const tableNumber = Number.parseInt(req.params.tableNumber, 10);
+    if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > 75) {
+      return res.status(400).json({ error: 'Invalid table number' });
+    }
+
+    const session = get('SELECT id, date, time, event_title FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const seats = all(
+      'SELECT id, chair_number, status, is_disabled FROM seats WHERE session_id = ? AND table_number = ? ORDER BY chair_number ASC',
+      [session.id, tableNumber]
+    );
+    if (seats.length === 0) return res.status(404).json({ error: 'Table seats not found' });
+
+    const editableSeats = seats.filter(seat => seat.status !== 'sold');
+    if (editableSeats.length === 0) {
+      return res.status(409).json({ error: 'All seats at this table are sold and cannot be changed.' });
+    }
+
+    const targetValue = is_disabled ? 1 : 0;
+    for (const seat of editableSeats) {
+      run('UPDATE seats SET is_disabled = ? WHERE id = ?', [targetValue, seat.id]);
+    }
+
+    logAudit(is_disabled ? 'table_disabled' : 'table_enabled', 'session', session.id, {
+      table_number: tableNumber,
+      changed_seats: editableSeats.length,
+      skipped_sold_seats: seats.length - editableSeats.length,
+      date: session.date,
+      time: session.time,
+      event_title: session.event_title,
+      admin: req.adminUser?.email,
+    });
+
+    io.to(`session:${session.id}`).emit('seats:refresh');
+    res.json({
+      success: true,
+      sessionId: session.id,
+      tableNumber,
+      is_disabled,
+      changedSeats: editableSeats.length,
+      skippedSoldSeats: seats.length - editableSeats.length,
+      seats: seats.map(seat => ({
+        ...seat,
+        is_disabled: seat.status === 'sold' ? seat.is_disabled : targetValue,
+      })),
+    });
+  });
+
   app.get('/api/admin/sessions/:id/seats', adminAuth, (req, res) => {
     const seats = all(`
       SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled,

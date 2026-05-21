@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
-import { fetchAdminSeats, toggleAdminSeat } from '../api';
+import { fetchAdminSeats, toggleAdminSeat, toggleAdminTableSeats } from '../api';
 import SessionWeekPicker from '../components/SessionWeekPicker';
 import { SECTIONS } from '../seatLayout';
 import { confirmAdminAction } from './adminConfirm';
@@ -75,6 +75,48 @@ export default function ChairManagementTab() {
     ));
   };
 
+  const handleToggleTable = async (tableNumber, chairs) => {
+    const editableChairs = chairs.filter(chair => chair.status !== 'sold');
+    if (editableChairs.length === 0) {
+      window.alert('All seats at this table are sold and cannot be changed.');
+      return;
+    }
+
+    const nextDisabled = editableChairs.some(chair => !chair.is_disabled);
+    const skippedSoldCount = chairs.length - editableChairs.length;
+    if (!confirmAdminAction({
+      action: `${nextDisabled ? 'Disable' : 'Enable'} table ${tableNumber}`,
+      details: [
+        selectedSession ? `Session: ${selectedSession.date} at ${selectedSession.time}` : '',
+        `Table: ${tableNumber}`,
+        `Seats to ${nextDisabled ? 'disable' : 'enable'}: ${editableChairs.length}`,
+        skippedSoldCount ? `Sold seats skipped: ${skippedSoldCount}` : '',
+      ],
+      warning: nextDisabled
+        ? 'Customers will not be able to book any enabled seats at this table.'
+        : 'Customers will be able to book these seats again if they are available.',
+    })) return;
+
+    try {
+      const result = await toggleAdminTableSeats(token, chairMgmtSession, tableNumber, nextDisabled);
+      if (result?.error) {
+        window.alert(result.error);
+        return;
+      }
+
+      const updatedSeatMap = new Map((result.seats || []).map(seat => [seat.id, seat]));
+      setChairMgmtSeats(prev => prev.map(seat =>
+        updatedSeatMap.has(seat.id) ? { ...seat, ...updatedSeatMap.get(seat.id) } : seat
+      ));
+
+      if (result.skippedSoldSeats) {
+        window.alert(`Updated ${result.changedSeats} seat(s). ${result.skippedSoldSeats} sold seat(s) were skipped.`);
+      }
+    } catch (error) {
+      window.alert(error.message || 'Failed to update table seats.');
+    }
+  };
+
   return (
     <>
       {tab === 'chairs' && (
@@ -108,6 +150,7 @@ export default function ChairManagementTab() {
               filter={chairMgmtFilter}
               onFilter={setChairMgmtFilter}
               onToggleChair={handleToggleChair}
+              onToggleTable={handleToggleTable}
               selectedSession={selectedSession}
             />
           )}
@@ -121,7 +164,7 @@ export default function ChairManagementTab() {
   );
 }
 
-function ChairManagementWorkspace({ seats, filter, onFilter, onToggleChair, selectedSession }) {
+function ChairManagementWorkspace({ seats, filter, onFilter, onToggleChair, onToggleTable, selectedSession }) {
   const disabledCount = seats.filter(seat => seat.is_disabled).length;
   const availableCount = seats.filter(seat => seat.status === 'vacant' && !seat.is_disabled).length;
   const soldCount = seats.filter(seat => seat.status === 'sold').length;
@@ -190,12 +233,13 @@ function ChairManagementWorkspace({ seats, filter, onFilter, onToggleChair, sele
             tableMap={tableMap}
             filter={filter}
             onToggleChair={onToggleChair}
+            onToggleTable={onToggleTable}
           />
         </div>
       </div>
 
       <p className="mt-3 text-xs text-gray-500">
-        Click a green, amber, or red chair to toggle disabled status. Sold chairs are locked and cannot be changed here.
+        Click a chair to toggle one seat, or click the table number to toggle every non-sold seat at that table. Sold chairs are locked and cannot be changed here.
       </p>
     </>
   );
@@ -219,7 +263,7 @@ function Legend({ color, label }) {
   );
 }
 
-function AdminFloorPlan({ tableMap, filter, onToggleChair }) {
+function AdminFloorPlan({ tableMap, filter, onToggleChair, onToggleTable }) {
   return (
     <div className="seat-map-container">
       <div className="floorplan-room">
@@ -239,13 +283,14 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair }) {
                   tableMap={tableMap}
                   filter={filter}
                   onToggleChair={onToggleChair}
+                  onToggleTable={onToggleTable}
                 />
               ))
             )}
 
-            <AdminTableCell tableNum={41} gridColumn={7} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} />
-            <AdminTableCell tableNum={47} gridColumn={9} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} />
-            <AdminTableCell tableNum={46} gridColumn={9} gridRow={3} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} />
+            <AdminTableCell tableNum={41} gridColumn={7} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} onToggleTable={onToggleTable} />
+            <AdminTableCell tableNum={47} gridColumn={9} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} onToggleTable={onToggleTable} />
+            <AdminTableCell tableNum={46} gridColumn={9} gridRow={3} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} onToggleTable={onToggleTable} />
 
             {sectionsById['upper-right'].seats.flatMap((row, rowIndex) =>
               row.map((num, colIndex) => (
@@ -257,6 +302,7 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair }) {
                   tableMap={tableMap}
                   filter={filter}
                   onToggleChair={onToggleChair}
+                  onToggleTable={onToggleTable}
                 />
               ))
             )}
@@ -279,6 +325,7 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair }) {
                   tableMap={tableMap}
                   filter={filter}
                   onToggleChair={onToggleChair}
+                  onToggleTable={onToggleTable}
                 />
               ))
             )}
@@ -294,6 +341,7 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair }) {
                   tableMap={tableMap}
                   filter={filter}
                   onToggleChair={onToggleChair}
+                  onToggleTable={onToggleTable}
                 />
               ))
             )}
@@ -318,7 +366,7 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair }) {
   );
 }
 
-function AdminTableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, filter, onToggleChair }) {
+function AdminTableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, filter, onToggleChair, onToggleTable }) {
   const chairs = (tableMap[tableNum] || []).slice().sort((a, b) => a.chair_number - b.chair_number);
   const matchesFilter = tableMatchesFilter(chairs, filter);
 
@@ -327,12 +375,12 @@ function AdminTableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, fi
       className={matchesFilter ? '' : 'opacity-25 grayscale'}
       style={{ gridColumn, gridRow, ...(marginTop ? { marginTop } : {}) }}
     >
-      <AdminTableUnit tableNum={tableNum} chairs={chairs} onToggleChair={onToggleChair} />
+      <AdminTableUnit tableNum={tableNum} chairs={chairs} onToggleChair={onToggleChair} onToggleTable={onToggleTable} />
     </div>
   );
 }
 
-function AdminTableUnit({ tableNum, chairs, onToggleChair }) {
+function AdminTableUnit({ tableNum, chairs, onToggleChair, onToggleTable }) {
   const chairMap = {};
   for (const chair of chairs) chairMap[chair.chair_number] = chair;
 
@@ -357,15 +405,19 @@ function AdminTableUnit({ tableNum, chairs, onToggleChair }) {
         ))}
       </div>
 
-      <div
+      <button
+        type="button"
+        onClick={() => onToggleTable(tableNum, chairs)}
+        disabled={chairs.length === 0 || soldCount === chairs.length}
         className={`table-btn border-2 ${tableClass}`}
-        title={`Table ${tableNum}: ${availableCount} available, ${disabledCount} disabled, ${soldCount} sold, ${heldCount} held`}
+        title={`Table ${tableNum}: ${availableCount} available, ${disabledCount} disabled, ${soldCount} sold, ${heldCount} held - click to ${availableCount > 0 || heldCount > 0 ? 'disable' : 'enable'} all non-sold seats`}
+        aria-label={`Table ${tableNum}: ${availableCount} available, ${disabledCount} disabled, ${soldCount} sold, ${heldCount} held. Click to ${availableCount > 0 || heldCount > 0 ? 'disable' : 'enable'} all non-sold seats.`}
       >
         <span className="text-sm font-bold leading-none">{tableNum}</span>
         <span className="text-[9px] leading-none opacity-80">
           {disabledCount > 0 ? `${disabledCount} off` : `${availableCount}/6`}
         </span>
-      </div>
+      </button>
 
       <div className="floorplan-chair-col">
         {rightNums.map(num => (
