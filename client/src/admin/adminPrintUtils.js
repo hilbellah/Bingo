@@ -1,14 +1,3 @@
-function writePrintDocument(title, body, style, features = 'width=800,height=600') {
-  const printWindow = window.open('', '_blank', features);
-  if (!printWindow) return;
-
-  printWindow.document.write(`<html><head><title>${title}</title><style>${style}</style></head><body>`);
-  printWindow.document.write(body);
-  printWindow.document.write('</body></html>');
-  printWindow.document.close();
-  printWindow.print();
-}
-
 function csvCell(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
@@ -20,6 +9,51 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function writePrintDocument(title, body, style) {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${style}</style></head><body>${body}</body></html>`;
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.position = 'fixed';
+  frame.style.right = '0';
+  frame.style.bottom = '0';
+  frame.style.width = '0';
+  frame.style.height = '0';
+  frame.style.border = '0';
+  frame.style.opacity = '0';
+
+  let printed = false;
+  const cleanup = () => {
+    setTimeout(() => {
+      if (frame.parentNode) frame.parentNode.removeChild(frame);
+    }, 1000);
+  };
+  const doPrint = () => {
+    if (printed) return;
+    printed = true;
+    const win = frame.contentWindow;
+    if (!win) {
+      cleanup();
+      return;
+    }
+    win.focus();
+    win.print();
+    if ('onafterprint' in win) win.onafterprint = cleanup;
+    else cleanup();
+  };
+
+  document.body.appendChild(frame);
+  const doc = frame.contentWindow?.document;
+  if (!doc) {
+    cleanup();
+    return;
+  }
+  frame.onload = () => setTimeout(doPrint, 100);
+  doc.open();
+  doc.write(html);
+  doc.close();
+  setTimeout(doPrint, 300);
 }
 
 function getBookingSessionType(booking) {
@@ -75,54 +109,55 @@ body { font-family: 'Courier New', monospace; font-size: 12px; width: 72mm; marg
 @media print { body { width: 72mm; margin: 0 auto; } }`;
 
 function printThermalReceipt(title, lines) {
-  writePrintDocument(title, lines.join(''), thermalReceiptStyle, 'width=350,height=600');
+  writePrintDocument(title, lines.join(''), thermalReceiptStyle);
 }
 
 export function printAutoBookingReceipt(booking, cfg) {
-  const bodyWidth = cfg.paperWidth === '58mm' ? '50mm' : '72mm';
+  const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
+  const bodyWidth = paperWidth === '58mm' ? '50mm' : '72mm';
   const receiptTitle = getReceiptTitle(booking, cfg.receiptTitle);
   const lines = [
-    `<div class="header">${cfg.businessName}</div>`,
-    `<div class="sub-header">${cfg.businessSubtitle}</div>`,
+    `<div class="header">${escapeHtml(cfg.businessName)}</div>`,
+    `<div class="sub-header">${escapeHtml(cfg.businessSubtitle)}</div>`,
     '<div class="line"></div>',
-    `<div class="center bold">${receiptTitle}</div>`,
+    `<div class="center bold">${escapeHtml(receiptTitle)}</div>`,
     booking.sessionTitle ? `<div class="center bold" style="font-size:11px">${escapeHtml(booking.sessionTitle)}</div>` : '',
-    `<div class="center">${booking.sessionDate} at ${booking.sessionTime}</div>`,
+    `<div class="center">${escapeHtml(booking.sessionDate)} at ${escapeHtml(booking.sessionTime)}</div>`,
     '<div class="line"></div>',
   ].filter(Boolean);
 
   if (cfg.showRefNumber) {
-    lines.push(`<div class="row"><span>Ref:</span><span class="bold">${booking.referenceNumber}</span></div>`);
+    lines.push(`<div class="row"><span>Ref:</span><span class="bold">${escapeHtml(booking.referenceNumber)}</span></div>`);
     lines.push('<div class="line"></div>');
   }
 
   lines.push('<div class="bold">Attendees:</div>');
   for (const item of booking.items) {
-    lines.push(`<div style="padding:2px 0">${item.firstName} ${item.lastName}</div>`);
+    lines.push(`<div style="padding:2px 0">${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</div>`);
     if (item.referenceNumber) {
-      lines.push(`<div style="font-size:10px;color:#555;padding-left:8px">Ticket: ${item.referenceNumber}</div>`);
+      lines.push(`<div style="font-size:10px;color:#555;padding-left:8px">Ticket: ${escapeHtml(item.referenceNumber)}</div>`);
     }
     if (cfg.showTableChair) {
-      lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${item.tableNumber}/C${item.chairNumber} - ${item.packageName}</span>${cfg.showPackagePrice ? `<span class="item-amt">${item.packagePriceFormatted || ''}</span>` : ''}</div>`);
+      lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${escapeHtml(item.tableNumber)}/C${escapeHtml(item.chairNumber)} - ${escapeHtml(item.packageName)}</span>${cfg.showPackagePrice ? `<span class="item-amt">${escapeHtml(item.packagePriceFormatted || '')}</span>` : ''}</div>`);
     }
     if (cfg.showAddons && item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
-        lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  + ${addon.packageName} x${addon.quantity}</span><span class="item-amt">${addon.priceFormatted}</span></div>`);
+        lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  + ${escapeHtml(addon.packageName)} x${escapeHtml(addon.quantity)}</span><span class="item-amt">${escapeHtml(addon.priceFormatted)}</span></div>`);
       }
     }
   }
 
   lines.push('<div class="dbl-line"></div>');
-  lines.push(`<div class="total-row"><span>TOTAL</span><span>${booking.totalFormatted}</span></div>`);
+  lines.push(`<div class="total-row"><span>TOTAL</span><span>${escapeHtml(booking.totalFormatted)}</span></div>`);
   if (cfg.footerText) {
     lines.push('<div class="line"></div>');
-    lines.push(`<div class="center" style="font-size:10px;margin-top:4px">${cfg.footerText}</div>`);
+    lines.push(`<div class="center" style="font-size:10px;margin-top:4px">${escapeHtml(cfg.footerText)}</div>`);
   }
   if (cfg.showTimestamp) {
-    lines.push(`<div class="center" style="font-size:10px;margin-top:4px">${new Date(booking.createdAt).toLocaleString()}</div>`);
+    lines.push(`<div class="center" style="font-size:10px;margin-top:4px">${escapeHtml(new Date(booking.createdAt).toLocaleString())}</div>`);
   }
 
-  const style = `@page { size: ${cfg.paperWidth} auto; margin: 0; }
+  const style = `@page { size: ${paperWidth} auto; margin: 0; }
 body { font-family: 'Courier New', monospace; font-size: 12px; width: ${bodyWidth}; margin: 4mm auto; padding: 0; color: #000; line-height: 1.4; }
 .center { text-align: center; }
 .bold { font-weight: bold; }
@@ -137,7 +172,7 @@ body { font-family: 'Courier New', monospace; font-size: 12px; width: ${bodyWidt
 .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; padding: 2px 0; }
 @media print { body { width: ${bodyWidth}; margin: 0 auto; } }`;
 
-  writePrintDocument('Receipt', lines.join(''), style, 'width=350,height=600');
+  writePrintDocument('Receipt', lines.join(''), style);
 }
 
 export function printPurchasers(soldModal) {
@@ -189,7 +224,7 @@ export function printDailySalesReceipt(dailySales) {
     '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
     '<div class="line"></div>',
     '<div class="center bold">DAILY SALES REPORT</div>',
-    `<div class="center">${dailySales.date}</div>`,
+    `<div class="center">${escapeHtml(dailySales.date)}</div>`,
     '<div class="line"></div>',
     '<div class="item-row"><span class="item-qty bold">#</span><span class="item-desc bold">Name / Ticket</span><span class="item-amt bold">Price</span></div>',
     '<div class="line"></div>',
@@ -198,24 +233,24 @@ export function printDailySalesReceipt(dailySales) {
   for (const item of dailySales.items) {
     const addonTotal = item.addons ? item.addons.reduce((sum, addon) => sum + addon.price, 0) : 0;
     const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
-    lines.push(`<div class="item-row"><span class="item-qty">${item.rowNum}</span><span class="item-desc">${item.firstName} ${item.lastName}</span><span class="item-amt">${totalPrice}</span></div>`);
-    lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">${item.referenceNumber} - T${item.tableNumber}/C${item.chairNumber} - ${item.packageName || ''}</div>`);
+    lines.push(`<div class="item-row"><span class="item-qty">${escapeHtml(item.rowNum)}</span><span class="item-desc">${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</span><span class="item-amt">${escapeHtml(totalPrice)}</span></div>`);
+    lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">${escapeHtml(item.referenceNumber)} - T${escapeHtml(item.tableNumber)}/C${escapeHtml(item.chairNumber)} - ${escapeHtml(item.packageName || '')}</div>`);
     if (item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
-        lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">+ ${addon.packageName} x${addon.quantity} (${addon.priceFormatted})</div>`);
+        lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">+ ${escapeHtml(addon.packageName)} x${escapeHtml(addon.quantity)} (${escapeHtml(addon.priceFormatted)})</div>`);
       }
     }
   }
 
   lines.push('<div class="dbl-line"></div>');
   if (dailySales.addonSubtotal > 0) {
-    lines.push(`<div class="item-row"><span class="item-desc">Packages</span><span class="item-amt">${dailySales.packageSubtotalFormatted}</span></div>`);
-    lines.push(`<div class="item-row"><span class="item-desc">Add-ons</span><span class="item-amt">${dailySales.addonSubtotalFormatted}</span></div>`);
+    lines.push(`<div class="item-row"><span class="item-desc">Packages</span><span class="item-amt">${escapeHtml(dailySales.packageSubtotalFormatted)}</span></div>`);
+    lines.push(`<div class="item-row"><span class="item-desc">Add-ons</span><span class="item-amt">${escapeHtml(dailySales.addonSubtotalFormatted)}</span></div>`);
     lines.push('<div class="line"></div>');
   }
-  lines.push(`<div class="total-row"><span>TOTAL (${dailySales.totalTickets} tickets, ${dailySales.totalBookings} bookings)</span><span>${dailySales.grandTotalFormatted}</span></div>`);
+  lines.push(`<div class="total-row"><span>TOTAL (${escapeHtml(dailySales.totalTickets)} tickets, ${escapeHtml(dailySales.totalBookings)} bookings)</span><span>${escapeHtml(dailySales.grandTotalFormatted)}</span></div>`);
   lines.push('<div class="line"></div>');
-  lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${new Date().toLocaleString()}</div>`);
+  lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${escapeHtml(new Date().toLocaleString())}</div>`);
   printThermalReceipt('Daily Sales', lines);
 }
 
@@ -225,32 +260,32 @@ export function printBookingReceipt(booking) {
     '<div class="header">SMEC BINGO</div>',
     '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
     '<div class="line"></div>',
-    `<div class="center bold">${receiptTitle}</div>`,
+    `<div class="center bold">${escapeHtml(receiptTitle)}</div>`,
     booking.sessionTitle ? `<div class="center bold" style="font-size:11px">${escapeHtml(booking.sessionTitle)}</div>` : '',
-    `<div class="center">${booking.sessionDate} at ${booking.sessionTime}</div>`,
+    `<div class="center">${escapeHtml(booking.sessionDate)} at ${escapeHtml(booking.sessionTime)}</div>`,
     '<div class="line"></div>',
-    `<div class="row"><span>Ref:</span><span class="bold">${booking.referenceNumber}</span></div>`,
-    `<div class="row"><span>Status:</span><span>${String(booking.paymentStatus || 'paid').toUpperCase()}</span></div>`,
+    `<div class="row"><span>Ref:</span><span class="bold">${escapeHtml(booking.referenceNumber)}</span></div>`,
+    `<div class="row"><span>Status:</span><span>${escapeHtml(String(booking.paymentStatus || 'paid').toUpperCase())}</span></div>`,
     '<div class="line"></div>',
     '<div class="bold">Attendees:</div>',
   ].filter(Boolean);
 
   for (const item of booking.items) {
-    lines.push(`<div style="padding:2px 0">${item.firstName} ${item.lastName}</div>`);
+    lines.push(`<div style="padding:2px 0">${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</div>`);
     if (item.referenceNumber) {
-      lines.push(`<div style="font-size:10px;color:#555;padding-left:8px">Ticket: ${item.referenceNumber}</div>`);
+      lines.push(`<div style="font-size:10px;color:#555;padding-left:8px">Ticket: ${escapeHtml(item.referenceNumber)}</div>`);
     }
-    lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${item.tableNumber}/C${item.chairNumber} - ${item.packageName}</span><span class="item-amt">${item.packagePriceFormatted || ''}</span></div>`);
+    lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${escapeHtml(item.tableNumber)}/C${escapeHtml(item.chairNumber)} - ${escapeHtml(item.packageName)}</span><span class="item-amt">${escapeHtml(item.packagePriceFormatted || '')}</span></div>`);
     if ((item.addons || []).length > 0) {
       for (const addon of item.addons || []) {
-        lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  + ${addon.packageName} x${addon.quantity}</span><span class="item-amt">${addon.priceFormatted}</span></div>`);
+        lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  + ${escapeHtml(addon.packageName)} x${escapeHtml(addon.quantity)}</span><span class="item-amt">${escapeHtml(addon.priceFormatted)}</span></div>`);
       }
     }
   }
 
   lines.push('<div class="dbl-line"></div>');
-  lines.push(`<div class="total-row"><span>TOTAL</span><span>${booking.totalFormatted}</span></div>`);
+  lines.push(`<div class="total-row"><span>TOTAL</span><span>${escapeHtml(booking.totalFormatted)}</span></div>`);
   lines.push('<div class="line"></div>');
-  lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${new Date(booking.createdAt).toLocaleString()}</div>`);
+  lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${escapeHtml(new Date(booking.createdAt).toLocaleString())}</div>`);
   printThermalReceipt('Booking Receipt', lines);
 }

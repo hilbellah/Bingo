@@ -87,7 +87,7 @@ export default function SettingsTab() {
                         onChange={e => setReceiptConfig({ ...receiptConfig, paperWidth: e.target.value })}
                         className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue">
                         <option value="58mm">58mm (Small Thermal)</option>
-                        <option value="80mm">80mm (Standard Thermal)</option>
+                        <option value="80mm">80mm (Epson TM-T88V / Standard Thermal)</option>
                       </select>
                     </div>
                     <label className="flex items-center gap-3 cursor-pointer">
@@ -100,7 +100,7 @@ export default function SettingsTab() {
                         className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue" />
                       <span className="text-sm text-gray-700">Auto-Print on New Orders</span>
                     </label>
-                    <p className="text-xs text-gray-400 ml-7">When enabled, a receipt will automatically print every time a new booking is placed. Set your thermal printer as the default browser printer for silent printing.</p>
+                    <p className="text-xs text-gray-400 ml-7">When enabled, a receipt will automatically print every time a new booking is placed. Install the Epson driver, set the TM-T88V as the default printer, and use 80mm receipt paper.</p>
                   </div>
                 </div>
 
