@@ -14,6 +14,19 @@ export default {
           cream: '#faf7f0',
           light: '#f0f4f8',
         },
+        // Wolastoq Casino brand palette — matches https://www.wolastoqcasino.ca
+        // Used by the public-facing header and footer to visually integrate with
+        // the main casino site. The existing brand-blue/gold tokens above are
+        // intentionally preserved so admin panels and the seat-picker UI keep
+        // working unchanged.
+        casino: {
+          'purple-light': '#C026D3', // bright magenta — left end of header gradient
+          'purple': '#9333EA',       // mid purple
+          'purple-dark': '#6D28D9',  // deep violet — right end of header gradient
+          'cream': '#FCE7AD',        // pale yellow used for headlines on the main site
+          'dark': '#0F1419',         // body background on main site
+          'dark-soft': '#1A1F2E',    // alternating section background
+        },
         seat: {
           vacant: '#43a047',
           held: '#f9a825',

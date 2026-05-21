@@ -11,11 +11,21 @@
   --color-seat-held: #f9a825;
   --color-seat-sold: #757575;
   --color-seat-selected: #1565c0;
+
+  /* Wolastoq Casino body palette — used by the public-facing page background
+     to match the main casino site (https://www.wolastoqcasino.ca/bingo/).
+     The FloorPlan's seat colors above are intentionally left unchanged so
+     vacant/held/sold seats stay visually distinguishable. */
+  --color-casino-dark: #0F1419;
+  --color-casino-dark-soft: #1A1F2E;
 }
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: linear-gradient(180deg, var(--color-header-bg) 0%, #132744 40%, var(--color-primary) 100%);
+  /* Dark casino body — subtle gradient between two very dark tones so the
+     purple header and footer pop, and the white booking panel / FloorPlan
+     contrast cleanly. */
+  background: linear-gradient(180deg, var(--color-casino-dark) 0%, var(--color-casino-dark-soft) 50%, var(--color-casino-dark) 100%);
   min-height: 100vh;
   color: #1a202c;
 }
@@ -271,9 +281,10 @@ body {
   border-color: #ccc;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar — track tinted to match the dark casino body, thumb
+   keeps the warm gold accent so it stays visible against the dark track. */
 ::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: #1a2744; }
+::-webkit-scrollbar-track { background: var(--color-casino-dark-soft); }
 ::-webkit-scrollbar-thumb { background: #c5a55a; border-radius: 4px; }
 
 /* Seat map zoom on mobile */

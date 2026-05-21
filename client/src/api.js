@@ -1,5 +1,20 @@
 const API = '/api';
 
+async function readJson(res, fallbackMessage = 'Request failed') {
+  const text = await res.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    const snippet = text.slice(0, 80).replace(/\s+/g, ' ').trim();
+    throw new Error(`${fallbackMessage}: expected JSON from ${res.url}, got ${res.status} ${res.statusText}${snippet ? ` (${snippet})` : ''}`);
+  }
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || `${fallbackMessage}: ${res.status} ${res.statusText}`);
+  }
+  return data;
+}
+
 export async function fetchSessions() {
   const res = await fetch(`${API}/sessions`);
   return res.json();
@@ -270,7 +285,7 @@ export async function fetchAdminBookings(token, sessionId) {
     ? `${API}/admin/bookings?sessionId=${sessionId}`
     : `${API}/admin/bookings`;
   const res = await fetch(url, { headers: adminHeaders(token) });
-  return res.json();
+  return readJson(res, 'Could not load admin bookings');
 }
 
 export async function cancelAdminBooking(token, id) {

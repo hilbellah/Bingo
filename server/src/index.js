@@ -1943,6 +1943,15 @@ registerAdminCustomerRoutes(app);
 
 registerAdminSessionRoutes(app, { io, logAudit });
 
+registerAdminBookingRoutes(app, {
+  io,
+  logAudit,
+  getBookingItemRefundAmount,
+  markBookingItemRefunded,
+  markBookingRefunded,
+  markBookingVoided,
+});
+
 registerAnnouncementRoutes(app, { io, upload, saveUploadedImage });
 
 registerAdminScheduleRoutes(app, { logAudit });
@@ -1951,6 +1960,12 @@ registerAdminBulkTicketRoutes(app, { logAudit });
 
 registerSocketHandlers(io, { logger, authenticateAdminToken });
 registerTicketRoutes(app);
+
+// Keep API misses as JSON. Without this, the SPA fallback returns index.html,
+// and admin fetch callers fail with "Unexpected token '<'" while parsing JSON.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API route not found', path: req.originalUrl });
+});
 
 // ============ SPA FALLBACK ============
 app.get('*', (req, res) => {
