@@ -34,11 +34,16 @@ export default function BookingsTab() {
     handlePrintDailySalesReceipt,
     handleClearTestBookings,
   } = useAdminDashboard();
-  const [activeBoard, setActiveBoard] = useState('bookingSales');
+  const [activeBoard, setActiveBoard] = useState('dailySales');
   const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
   const transactionRows = transactions?.items || [];
   const transactionSummary = transactions?.summary || {};
   const salesBoards = [
+    {
+      id: 'dailySales',
+      label: 'Daily Sales',
+      description: dailySales ? `${dailySales.totalTickets || 0} ticket(s) today` : 'Daily report',
+    },
     {
       id: 'bookingSales',
       label: 'Booking Sales',
@@ -48,11 +53,6 @@ export default function BookingsTab() {
       id: 'transactions',
       label: 'Transactions',
       description: `${transactionSummary.totalTransactions || 0} transaction(s)`,
-    },
-    {
-      id: 'dailySales',
-      label: 'Daily Sales',
-      description: dailySales ? `${dailySales.totalTickets || 0} ticket(s) today` : 'Daily report',
     },
   ];
   const updateTransactionFilter = (key, value) => {
