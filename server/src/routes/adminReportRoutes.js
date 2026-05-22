@@ -3,6 +3,7 @@ import { adminAuth } from '../middleware/adminAuth.js';
 import { getNextPhdSessionId, getPhdInventoryForSession } from '../services/phdInventory.js';
 import { getSalesReportCutoff, setSalesReportCutoff } from '../services/salesReporting.js';
 import { sessionTypeSql } from '../services/sessionPackages.js';
+import { clearExpiredHolds } from '../services/holds.js';
 import { formatLocalDate, formatPrice } from '../utils/format.js';
 
 function addSalesCutoff(where, params, expression) {
@@ -16,6 +17,7 @@ function addSalesCutoff(where, params, expression) {
 
 export function registerAdminReportRoutes(app) {
   app.get('/api/admin/dashboard', adminAuth, (req, res) => {
+    clearExpiredHolds();
     const today = formatLocalDate(new Date());
     const dateFrom = req.query.dateFrom || req.query.date || today;
     const dateTo = req.query.dateTo || dateFrom;

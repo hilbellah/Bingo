@@ -25,6 +25,7 @@ import {
   verifyBookingEmail
 } from './services/customers.js';
 import { logPaymentEvent } from './services/paymentEvents.js';
+import { releaseExpiredHolds } from './services/holds.js';
 import { getSessionBookingStatus, withSessionBookingStatus } from './services/sessionBookingStatus.js';
 import {
   getNextPhdSessionId,
@@ -94,7 +95,7 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3001;
-const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '10');
+const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '60');
 const startTime = Date.now();
 
 function generateTicketAccessToken() {
@@ -928,6 +929,7 @@ async function sendBookingConfirmationEmail(bookingId) {
 
 // --- Sessions ---
 app.get('/api/sessions', (req, res) => {
+  releaseExpiredHolds(io);
   archivePastSessions();
   const today = formatLocalDate(new Date());
   const sessions = all(
@@ -997,6 +999,7 @@ app.get('/api/announcements', (req, res) => {
 });
 
 app.get('/api/sessions/:id', (req, res) => {
+  releaseExpiredHolds(io);
   const session = get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
   if (!session) return res.status(404).json({ error: 'Session not found' });
   const seatRow = get(
@@ -1014,6 +1017,7 @@ app.get('/api/sessions/:id', (req, res) => {
 
 // --- Seats ---
 app.get('/api/sessions/:sessionId/seats', (req, res) => {
+  releaseExpiredHolds(io);
   const holderId = String(req.query.holderId || '').trim();
   const seats = all(`
     SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled,

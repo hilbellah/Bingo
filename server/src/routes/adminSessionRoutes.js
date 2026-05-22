@@ -2,6 +2,7 @@ import { v4 as uuid } from 'uuid';
 import { all, get, run, saveDb } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { archivePastSessions } from '../services/sessionArchive.js';
+import { releaseExpiredHolds } from '../services/holds.js';
 import {
   getDefaultSpecialBingoPackages,
   normalizeSessionType,
@@ -12,6 +13,7 @@ import { formatPrice } from '../utils/format.js';
 
 export function registerAdminSessionRoutes(app, { io, logAudit }) {
   app.get('/api/admin/sessions', adminAuth, (req, res) => {
+    releaseExpiredHolds(io);
     archivePastSessions();
     const includeDeleted = req.query.includeDeleted === 'true';
     const where = includeDeleted ? '' : 'WHERE deleted_at IS NULL';
@@ -302,6 +304,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
   });
 
   app.get('/api/admin/sessions/:id/seats', adminAuth, (req, res) => {
+    releaseExpiredHolds(io);
     const seats = all(`
       SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled,
              bi.first_name as booked_name
