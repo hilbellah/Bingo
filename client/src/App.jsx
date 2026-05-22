@@ -47,6 +47,17 @@ function generateHolderId() {
 
 const emptyAttendee = () => ({ firstName: '', lastName: '', addons: [] });
 
+function getSessionType(session) {
+  return session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
+}
+
+function getCutoffClosedMessage(session) {
+  if (getSessionType(session) === 'regular_bingo') {
+    return "Online booking for today's regular bingo closed at 12:00 PM. Staff are now printing orders, assembling packages, and placing them on the booked seats.";
+  }
+  return 'Booking closed. Online sales cutoff has passed.';
+}
+
 function getClientBookingStatus(session, { soldOut = false, nowMs = Date.now() } = {}) {
   if (!session) return { isClosed: false, reason: 'open', message: '' };
 
@@ -62,7 +73,7 @@ function getClientBookingStatus(session, { soldOut = false, nowMs = Date.now() }
   }
 
   if (Number.isFinite(cutoffAtMs) && nowMs >= cutoffAtMs) {
-    return { isClosed: true, reason: 'cutoff', message: 'Booking closed. Online sales cutoff has passed.' };
+    return { isClosed: true, reason: 'cutoff', message: getCutoffClosedMessage(session) };
   }
 
   if (session.booking_closed) {

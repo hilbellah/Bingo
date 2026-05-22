@@ -173,12 +173,13 @@ function SessionDateBanner({ selectedSession, isSpecialBingo, isEvent, placement
 function BookingClosedNotice({ bookingStatus }) {
   const isOngoing = bookingStatus.reason === 'ongoing';
   const isSoldOut = bookingStatus.reason === 'sold_out';
-  const label = isOngoing ? 'Event is on-going' : isSoldOut ? 'Sold out' : 'Booking closed';
+  const isCutoff = bookingStatus.reason === 'cutoff';
+  const label = isOngoing ? 'Event is on-going' : isSoldOut ? 'Sold out' : isCutoff ? 'Online booking closed' : 'Booking closed';
 
   return (
-    <div className="mx-3 mb-3 rounded-lg border border-red-300/50 bg-red-950/70 px-4 py-3 text-center shadow-lg">
+    <div className="mx-3 mb-3 rounded-lg border border-red-300/50 bg-red-950/80 px-4 py-4 text-center shadow-lg">
       <div className="text-xs font-bold uppercase tracking-[0.18em] text-red-200">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-white">{bookingStatus.message}</div>
+      <div className="mx-auto mt-1 max-w-2xl text-sm font-semibold leading-relaxed text-white">{bookingStatus.message}</div>
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { normalizeSessionType } from './sessionPackages.js';
+
 const VENUE_TIME_ZONE = process.env.VENUE_TIME_ZONE || 'America/Moncton';
 
 function getTimeZoneParts(date, timeZone = VENUE_TIME_ZONE) {
@@ -44,8 +46,10 @@ export function sessionDateTimeToUtc(dateValue, timeValue, timeZone = VENUE_TIME
 }
 
 export function getSessionBookingStatus(session, { soldOut = false, now = new Date() } = {}) {
+  const sessionType = normalizeSessionType(session?.session_type, session?.is_special_event);
   const startsAt = sessionDateTimeToUtc(session?.date, session?.time);
-  const cutoffAt = sessionDateTimeToUtc(session?.date, session?.cutoff_time || session?.time);
+  const cutoffTime = sessionType === 'regular_bingo' ? '12:00' : (session?.cutoff_time || session?.time);
+  const cutoffAt = sessionDateTimeToUtc(session?.date, cutoffTime);
   const base = {
     booking_closed: 0,
     booking_closed_reason: 'open',
@@ -91,11 +95,14 @@ export function getSessionBookingStatus(session, { soldOut = false, now = new Da
   }
 
   if (cutoffAt && now >= cutoffAt) {
+    const isRegularBingo = sessionType === 'regular_bingo';
     return {
       ...base,
       booking_closed: 1,
       booking_closed_reason: 'cutoff',
-      booking_closed_message: 'Booking closed. Online sales cutoff has passed.',
+      booking_closed_message: isRegularBingo
+        ? 'Online booking for today\'s regular bingo closed at 12:00 PM. Staff are now printing orders, assembling packages, and placing them on the booked seats.'
+        : 'Booking closed. Online sales cutoff has passed.',
     };
   }
 
