@@ -303,6 +303,71 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     });
   });
 
+  app.patch('/api/admin/sessions/:id/seats/bulk', adminAuth, (req, res) => {
+    const { seatIds, is_disabled } = req.body;
+    if (typeof is_disabled !== 'boolean') {
+      return res.status(400).json({ error: 'is_disabled must be true or false' });
+    }
+    if (!Array.isArray(seatIds) || seatIds.length === 0) {
+      return res.status(400).json({ error: 'Select at least one seat' });
+    }
+
+    const uniqueSeatIds = [...new Set(seatIds.map(id => String(id || '').trim()).filter(Boolean))];
+    if (uniqueSeatIds.length === 0) {
+      return res.status(400).json({ error: 'Select at least one valid seat' });
+    }
+    if (uniqueSeatIds.length > 450) {
+      return res.status(400).json({ error: 'Too many seats selected' });
+    }
+
+    const session = get('SELECT id, date, time, event_title FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const placeholders = uniqueSeatIds.map(() => '?').join(',');
+    const seats = all(
+      `SELECT id, table_number, chair_number, status, is_disabled
+       FROM seats
+       WHERE session_id = ? AND id IN (${placeholders})
+       ORDER BY table_number ASC, chair_number ASC`,
+      [session.id, ...uniqueSeatIds]
+    );
+    if (seats.length === 0) return res.status(404).json({ error: 'Selected seats were not found for this session' });
+
+    const editableSeats = seats.filter(seat => seat.status !== 'sold');
+    if (editableSeats.length === 0) {
+      return res.status(409).json({ error: 'All selected seats are sold and cannot be changed.' });
+    }
+
+    const targetValue = is_disabled ? 1 : 0;
+    for (const seat of editableSeats) {
+      run('UPDATE seats SET is_disabled = ? WHERE id = ?', [targetValue, seat.id]);
+    }
+
+    logAudit(is_disabled ? 'bulk_seats_disabled' : 'bulk_seats_enabled', 'session', session.id, {
+      changed_seats: editableSeats.length,
+      skipped_sold_seats: seats.length - editableSeats.length,
+      selected_seats: uniqueSeatIds.length,
+      tables: [...new Set(editableSeats.map(seat => seat.table_number))],
+      date: session.date,
+      time: session.time,
+      event_title: session.event_title,
+      admin: req.adminUser?.email,
+    });
+
+    io.to(`session:${session.id}`).emit('seats:refresh');
+    res.json({
+      success: true,
+      sessionId: session.id,
+      is_disabled,
+      changedSeats: editableSeats.length,
+      skippedSoldSeats: seats.length - editableSeats.length,
+      seats: seats.map(seat => ({
+        ...seat,
+        is_disabled: seat.status === 'sold' ? seat.is_disabled : targetValue,
+      })),
+    });
+  });
+
   app.get('/api/admin/sessions/:id/seats', adminAuth, (req, res) => {
     releaseExpiredHolds(io);
     const seats = all(`

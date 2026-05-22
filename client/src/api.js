@@ -569,6 +569,15 @@ export async function toggleAdminTableSeats(token, sessionId, tableNumber, isDis
   return readJson(res, 'Failed to update table seats');
 }
 
+export async function toggleAdminSeatsBulk(token, sessionId, seatIds, isDisabled) {
+  const res = await fetch(`${API}/admin/sessions/${encodeURIComponent(sessionId)}/seats/bulk`, {
+    method: 'PATCH',
+    headers: adminHeaders(token),
+    body: JSON.stringify({ seatIds, is_disabled: isDisabled })
+  });
+  return readJson(res, 'Failed to update selected seats');
+}
+
 // PHD Inventory
 export async function fetchPhdInventory(sessionId) {
   const qs = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';

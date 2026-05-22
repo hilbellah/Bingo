@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
-import { fetchAdminSeats, toggleAdminSeat, toggleAdminTableSeats } from '../api';
+import { fetchAdminSeats, toggleAdminSeat, toggleAdminTableSeats, toggleAdminSeatsBulk } from '../api';
 import SessionWeekPicker from '../components/SessionWeekPicker';
 import { SECTIONS } from '../seatLayout';
 import { confirmAdminAction } from './adminConfirm';
@@ -9,6 +9,20 @@ const sectionsById = SECTIONS.reduce((acc, section) => {
   acc[section.id] = section;
   return acc;
 }, {});
+
+const SECTION_LABELS = {
+  'upper-left': 'Front Left',
+  'upper-right': 'Front Right',
+  'stage-bridge': 'Stage Bridge',
+  'lower-left': 'Back Left',
+  'lower-right': 'Back Right',
+};
+
+const sectionTableNumbers = SECTIONS.map(section => ({
+  id: section.id,
+  label: SECTION_LABELS[section.id] || section.id,
+  tableNumbers: section.seats.flat().filter(num => num !== null),
+}));
 
 export default function ChairManagementTab() {
   const {
@@ -26,6 +40,8 @@ export default function ChairManagementTab() {
   } = useAdminDashboard();
 
   const [weekOffset, setWeekOffset] = useState(0);
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [selectedSeatIds, setSelectedSeatIds] = useState(() => new Set());
   const selectedSession = sessions.find(session => session.id === chairMgmtSession);
 
   const loadSessionSeats = async (sessionId) => {
@@ -47,6 +63,10 @@ export default function ChairManagementTab() {
     if (tab !== 'chairs') return;
     loadSessionSeats(chairMgmtSession);
   }, [tab, chairMgmtSession]);
+
+  useEffect(() => {
+    setSelectedSeatIds(new Set());
+  }, [chairMgmtSession, tab]);
 
   const handleToggleChair = async (chair) => {
     if (chair.status === 'sold') return;
@@ -117,6 +137,92 @@ export default function ChairManagementTab() {
     }
   };
 
+  const handleToggleSeatSelection = (chair) => {
+    if (!bulkSelectMode || chair.status === 'sold') return;
+    setSelectedSeatIds(prev => {
+      const next = new Set(prev);
+      if (next.has(chair.id)) next.delete(chair.id);
+      else next.add(chair.id);
+      return next;
+    });
+  };
+
+  const handleToggleTableSelection = (tableNumber, chairs) => {
+    if (!bulkSelectMode) return;
+    const selectableIds = chairs.filter(chair => chair.status !== 'sold').map(chair => chair.id);
+    if (selectableIds.length === 0) return;
+    setSelectedSeatIds(prev => {
+      const next = new Set(prev);
+      const allSelected = selectableIds.every(id => next.has(id));
+      for (const id of selectableIds) {
+        if (allSelected) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSectionSelection = (tableNumbers) => {
+    const tableSet = new Set(tableNumbers);
+    const selectableIds = chairMgmtSeats
+      .filter(seat => tableSet.has(seat.table_number) && seat.status !== 'sold')
+      .map(seat => seat.id);
+    if (selectableIds.length === 0) return;
+    setSelectedSeatIds(prev => {
+      const next = new Set(prev);
+      const allSelected = selectableIds.every(id => next.has(id));
+      for (const id of selectableIds) {
+        if (allSelected) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleApplyBulkSelection = async (nextDisabled) => {
+    const selectedSeats = chairMgmtSeats.filter(seat => selectedSeatIds.has(seat.id));
+    const editableSeats = selectedSeats.filter(seat => seat.status !== 'sold');
+    if (editableSeats.length === 0) {
+      window.alert('Select at least one non-sold chair first.');
+      return;
+    }
+
+    const tableCount = new Set(editableSeats.map(seat => seat.table_number)).size;
+    if (!confirmAdminAction({
+      action: `${nextDisabled ? 'Disable' : 'Enable'} selected chairs`,
+      details: [
+        selectedSession ? `Session: ${selectedSession.date} at ${selectedSession.time}` : '',
+        `Chairs selected: ${editableSeats.length}`,
+        `Tables affected: ${tableCount}`,
+      ],
+      warning: nextDisabled
+        ? 'Customers will not be able to book these selected chairs.'
+        : 'Customers will be able to book these selected chairs again if they are available.',
+    })) return;
+
+    try {
+      const result = await toggleAdminSeatsBulk(
+        token,
+        chairMgmtSession,
+        editableSeats.map(seat => seat.id),
+        nextDisabled
+      );
+      const updatedSeatMap = new Map((result.seats || []).map(seat => [seat.id, seat]));
+      setChairMgmtSeats(prev => prev.map(seat =>
+        updatedSeatMap.has(seat.id) ? { ...seat, ...updatedSeatMap.get(seat.id) } : seat
+      ));
+      setSelectedSeatIds(new Set());
+
+      if (result.skippedSoldSeats) {
+        window.alert(`Updated ${result.changedSeats} chair(s). ${result.skippedSoldSeats} sold chair(s) were skipped.`);
+      }
+    } catch (error) {
+      window.alert(error.message || 'Failed to update selected chairs.');
+    }
+  };
+
+  const selectedSeatCount = selectedSeatIds.size;
+
   return (
     <>
       {tab === 'chairs' && (
@@ -151,6 +257,15 @@ export default function ChairManagementTab() {
               onFilter={setChairMgmtFilter}
               onToggleChair={handleToggleChair}
               onToggleTable={handleToggleTable}
+              bulkSelectMode={bulkSelectMode}
+              selectedSeatIds={selectedSeatIds}
+              selectedSeatCount={selectedSeatCount}
+              onBulkSelectModeChange={setBulkSelectMode}
+              onToggleSeatSelection={handleToggleSeatSelection}
+              onToggleTableSelection={handleToggleTableSelection}
+              onToggleSectionSelection={handleToggleSectionSelection}
+              onApplyBulkSelection={handleApplyBulkSelection}
+              onClearBulkSelection={() => setSelectedSeatIds(new Set())}
               selectedSession={selectedSession}
             />
           )}
@@ -164,7 +279,23 @@ export default function ChairManagementTab() {
   );
 }
 
-function ChairManagementWorkspace({ seats, filter, onFilter, onToggleChair, onToggleTable, selectedSession }) {
+function ChairManagementWorkspace({
+  seats,
+  filter,
+  onFilter,
+  onToggleChair,
+  onToggleTable,
+  bulkSelectMode,
+  selectedSeatIds,
+  selectedSeatCount,
+  onBulkSelectModeChange,
+  onToggleSeatSelection,
+  onToggleTableSelection,
+  onToggleSectionSelection,
+  onApplyBulkSelection,
+  onClearBulkSelection,
+  selectedSession,
+}) {
   const disabledCount = seats.filter(seat => seat.is_disabled).length;
   const availableCount = seats.filter(seat => seat.status === 'vacant' && !seat.is_disabled).length;
   const soldCount = seats.filter(seat => seat.status === 'sold').length;
@@ -218,6 +349,86 @@ function ChairManagementWorkspace({ seats, filter, onFilter, onToggleChair, onTo
         </div>
       </div>
 
+      <div className={`rounded-xl shadow-sm p-4 mb-4 border ${
+        bulkSelectMode ? 'bg-blue-50 border-blue-200' : 'bg-white border-transparent'
+      }`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-semibold text-brand-blue">Bulk Chair Selection</h4>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {bulkSelectMode
+                ? 'Click chairs, tables, or sections to build one selection.'
+                : 'Turn this on to select many chairs and confirm once.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onBulkSelectModeChange(!bulkSelectMode)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                bulkSelectMode
+                  ? 'bg-brand-blue text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {bulkSelectMode ? 'Selection ON' : 'Bulk Select'}
+            </button>
+            <span className="text-xs font-medium text-gray-500">{selectedSeatCount} selected</span>
+            <button
+              type="button"
+              onClick={() => onApplyBulkSelection(true)}
+              disabled={!bulkSelectMode || selectedSeatCount === 0}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Disable Selected
+            </button>
+            <button
+              type="button"
+              onClick={() => onApplyBulkSelection(false)}
+              disabled={!bulkSelectMode || selectedSeatCount === 0}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Enable Selected
+            </button>
+            <button
+              type="button"
+              onClick={onClearBulkSelection}
+              disabled={!bulkSelectMode || selectedSeatCount === 0}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {bulkSelectMode && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {sectionTableNumbers.map(section => {
+              const sectionSelectableIds = seats
+                .filter(seat => section.tableNumbers.includes(seat.table_number) && seat.status !== 'sold')
+                .map(seat => seat.id);
+              const selectedInSection = sectionSelectableIds.filter(id => selectedSeatIds.has(id)).length;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => onToggleSectionSelection(section.tableNumbers)}
+                  disabled={sectionSelectableIds.length === 0}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                    selectedInSection > 0
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-blue-50 hover:border-blue-200'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  {section.label}
+                  {selectedInSection > 0 ? ` (${selectedInSection})` : ''}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="bg-slate-950 rounded-xl shadow-sm border border-slate-800 p-4 overflow-x-auto">
         <div className="min-w-[1120px]">
           {selectedSession && (
@@ -234,12 +445,18 @@ function ChairManagementWorkspace({ seats, filter, onFilter, onToggleChair, onTo
             filter={filter}
             onToggleChair={onToggleChair}
             onToggleTable={onToggleTable}
+            bulkSelectMode={bulkSelectMode}
+            selectedSeatIds={selectedSeatIds}
+            onToggleSeatSelection={onToggleSeatSelection}
+            onToggleTableSelection={onToggleTableSelection}
           />
         </div>
       </div>
 
       <p className="mt-3 text-xs text-gray-500">
-        Click a chair to toggle one seat, or click the table number to toggle every non-sold seat at that table. Sold chairs are locked and cannot be changed here.
+        {bulkSelectMode
+          ? 'Bulk selection is active. Click chairs, table numbers, or section buttons to highlight chairs, then use Disable Selected or Enable Selected.'
+          : 'Click a chair to toggle one seat, or click the table number to toggle every non-sold seat at that table. Sold chairs are locked and cannot be changed here.'}
       </p>
     </>
   );
@@ -263,7 +480,16 @@ function Legend({ color, label }) {
   );
 }
 
-function AdminFloorPlan({ tableMap, filter, onToggleChair, onToggleTable }) {
+function AdminFloorPlan({
+  tableMap,
+  filter,
+  onToggleChair,
+  onToggleTable,
+  bulkSelectMode,
+  selectedSeatIds,
+  onToggleSeatSelection,
+  onToggleTableSelection,
+}) {
   return (
     <div className="seat-map-container">
       <div className="floorplan-room">
@@ -284,13 +510,17 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair, onToggleTable }) {
                   filter={filter}
                   onToggleChair={onToggleChair}
                   onToggleTable={onToggleTable}
+                  bulkSelectMode={bulkSelectMode}
+                  selectedSeatIds={selectedSeatIds}
+                  onToggleSeatSelection={onToggleSeatSelection}
+                  onToggleTableSelection={onToggleTableSelection}
                 />
               ))
             )}
 
-            <AdminTableCell tableNum={41} gridColumn={7} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} onToggleTable={onToggleTable} />
-            <AdminTableCell tableNum={47} gridColumn={9} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} onToggleTable={onToggleTable} />
-            <AdminTableCell tableNum={46} gridColumn={9} gridRow={3} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} onToggleTable={onToggleTable} />
+            <AdminTableCell tableNum={41} gridColumn={7} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} onToggleTable={onToggleTable} bulkSelectMode={bulkSelectMode} selectedSeatIds={selectedSeatIds} onToggleSeatSelection={onToggleSeatSelection} onToggleTableSelection={onToggleTableSelection} />
+            <AdminTableCell tableNum={47} gridColumn={9} gridRow={2} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} onToggleTable={onToggleTable} bulkSelectMode={bulkSelectMode} selectedSeatIds={selectedSeatIds} onToggleSeatSelection={onToggleSeatSelection} onToggleTableSelection={onToggleTableSelection} />
+            <AdminTableCell tableNum={46} gridColumn={9} gridRow={3} tableMap={tableMap} filter={filter} onToggleChair={onToggleChair} onToggleTable={onToggleTable} bulkSelectMode={bulkSelectMode} selectedSeatIds={selectedSeatIds} onToggleSeatSelection={onToggleSeatSelection} onToggleTableSelection={onToggleTableSelection} />
 
             {sectionsById['upper-right'].seats.flatMap((row, rowIndex) =>
               row.map((num, colIndex) => (
@@ -303,6 +533,10 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair, onToggleTable }) {
                   filter={filter}
                   onToggleChair={onToggleChair}
                   onToggleTable={onToggleTable}
+                  bulkSelectMode={bulkSelectMode}
+                  selectedSeatIds={selectedSeatIds}
+                  onToggleSeatSelection={onToggleSeatSelection}
+                  onToggleTableSelection={onToggleTableSelection}
                 />
               ))
             )}
@@ -326,6 +560,10 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair, onToggleTable }) {
                   filter={filter}
                   onToggleChair={onToggleChair}
                   onToggleTable={onToggleTable}
+                  bulkSelectMode={bulkSelectMode}
+                  selectedSeatIds={selectedSeatIds}
+                  onToggleSeatSelection={onToggleSeatSelection}
+                  onToggleTableSelection={onToggleTableSelection}
                 />
               ))
             )}
@@ -342,6 +580,10 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair, onToggleTable }) {
                   filter={filter}
                   onToggleChair={onToggleChair}
                   onToggleTable={onToggleTable}
+                  bulkSelectMode={bulkSelectMode}
+                  selectedSeatIds={selectedSeatIds}
+                  onToggleSeatSelection={onToggleSeatSelection}
+                  onToggleTableSelection={onToggleTableSelection}
                 />
               ))
             )}
@@ -366,7 +608,20 @@ function AdminFloorPlan({ tableMap, filter, onToggleChair, onToggleTable }) {
   );
 }
 
-function AdminTableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, filter, onToggleChair, onToggleTable }) {
+function AdminTableCell({
+  tableNum,
+  gridColumn,
+  gridRow,
+  marginTop,
+  tableMap,
+  filter,
+  onToggleChair,
+  onToggleTable,
+  bulkSelectMode,
+  selectedSeatIds,
+  onToggleSeatSelection,
+  onToggleTableSelection,
+}) {
   const chairs = (tableMap[tableNum] || []).slice().sort((a, b) => a.chair_number - b.chair_number);
   const matchesFilter = tableMatchesFilter(chairs, filter);
 
@@ -375,12 +630,30 @@ function AdminTableCell({ tableNum, gridColumn, gridRow, marginTop, tableMap, fi
       className={matchesFilter ? '' : 'opacity-25 grayscale'}
       style={{ gridColumn, gridRow, ...(marginTop ? { marginTop } : {}) }}
     >
-      <AdminTableUnit tableNum={tableNum} chairs={chairs} onToggleChair={onToggleChair} onToggleTable={onToggleTable} />
+      <AdminTableUnit
+        tableNum={tableNum}
+        chairs={chairs}
+        onToggleChair={onToggleChair}
+        onToggleTable={onToggleTable}
+        bulkSelectMode={bulkSelectMode}
+        selectedSeatIds={selectedSeatIds}
+        onToggleSeatSelection={onToggleSeatSelection}
+        onToggleTableSelection={onToggleTableSelection}
+      />
     </div>
   );
 }
 
-function AdminTableUnit({ tableNum, chairs, onToggleChair, onToggleTable }) {
+function AdminTableUnit({
+  tableNum,
+  chairs,
+  onToggleChair,
+  onToggleTable,
+  bulkSelectMode,
+  selectedSeatIds,
+  onToggleSeatSelection,
+  onToggleTableSelection,
+}) {
   const chairMap = {};
   for (const chair of chairs) chairMap[chair.chair_number] = chair;
 
@@ -388,11 +661,14 @@ function AdminTableUnit({ tableNum, chairs, onToggleChair, onToggleTable }) {
   const soldCount = chairs.filter(chair => chair.status === 'sold').length;
   const heldCount = chairs.filter(chair => chair.status === 'held').length;
   const availableCount = chairs.filter(chair => chair.status === 'vacant' && !chair.is_disabled).length;
+  const selectableCount = chairs.filter(chair => chair.status !== 'sold').length;
+  const selectedCount = chairs.filter(chair => selectedSeatIds?.has(chair.id)).length;
 
   let tableClass = 'bg-green-700/70 border-green-400/70 text-white';
   if (disabledCount > 0) tableClass = 'bg-red-700/80 border-red-300 text-white';
   else if (soldCount === chairs.length && chairs.length > 0) tableClass = 'bg-gray-700/70 border-gray-500/60 text-gray-200';
   else if (heldCount > 0 || soldCount > 0) tableClass = 'bg-amber-700/70 border-amber-400/70 text-white';
+  if (bulkSelectMode && selectedCount > 0) tableClass += ' ring-2 ring-blue-300 shadow-lg shadow-blue-500/30';
 
   const leftNums = [5, 3, 1];
   const rightNums = [6, 4, 2];
@@ -401,34 +677,52 @@ function AdminTableUnit({ tableNum, chairs, onToggleChair, onToggleTable }) {
     <div className="relative shrink-0 floorplan-table-unit">
       <div className="floorplan-chair-col">
         {leftNums.map(num => (
-          <AdminChair key={num} chair={chairMap[num]} onToggleChair={onToggleChair} />
+          <AdminChair
+            key={num}
+            chair={chairMap[num]}
+            onToggleChair={onToggleChair}
+            bulkSelectMode={bulkSelectMode}
+            selected={!!chairMap[num] && selectedSeatIds?.has(chairMap[num].id)}
+            onToggleSeatSelection={onToggleSeatSelection}
+          />
         ))}
       </div>
 
       <button
         type="button"
-        onClick={() => onToggleTable(tableNum, chairs)}
+        onClick={() => bulkSelectMode ? onToggleTableSelection(tableNum, chairs) : onToggleTable(tableNum, chairs)}
         disabled={chairs.length === 0 || soldCount === chairs.length}
         className={`table-btn border-2 ${tableClass}`}
-        title={`Table ${tableNum}: ${availableCount} available, ${disabledCount} disabled, ${soldCount} sold, ${heldCount} held - click to ${availableCount > 0 || heldCount > 0 ? 'disable' : 'enable'} all non-sold seats`}
-        aria-label={`Table ${tableNum}: ${availableCount} available, ${disabledCount} disabled, ${soldCount} sold, ${heldCount} held. Click to ${availableCount > 0 || heldCount > 0 ? 'disable' : 'enable'} all non-sold seats.`}
+        title={bulkSelectMode
+          ? `Table ${tableNum}: ${selectedCount}/${selectableCount} selected - click to toggle table selection`
+          : `Table ${tableNum}: ${availableCount} available, ${disabledCount} disabled, ${soldCount} sold, ${heldCount} held - click to ${availableCount > 0 || heldCount > 0 ? 'disable' : 'enable'} all non-sold seats`}
+        aria-label={bulkSelectMode
+          ? `Table ${tableNum}: ${selectedCount} of ${selectableCount} selectable chairs selected. Click to toggle table selection.`
+          : `Table ${tableNum}: ${availableCount} available, ${disabledCount} disabled, ${soldCount} sold, ${heldCount} held. Click to ${availableCount > 0 || heldCount > 0 ? 'disable' : 'enable'} all non-sold seats.`}
       >
         <span className="text-sm font-bold leading-none">{tableNum}</span>
         <span className="text-[9px] leading-none opacity-80">
-          {disabledCount > 0 ? `${disabledCount} off` : `${availableCount}/6`}
+          {bulkSelectMode && selectedCount > 0 ? `${selectedCount} sel` : disabledCount > 0 ? `${disabledCount} off` : `${availableCount}/6`}
         </span>
       </button>
 
       <div className="floorplan-chair-col">
         {rightNums.map(num => (
-          <AdminChair key={num} chair={chairMap[num]} onToggleChair={onToggleChair} />
+          <AdminChair
+            key={num}
+            chair={chairMap[num]}
+            onToggleChair={onToggleChair}
+            bulkSelectMode={bulkSelectMode}
+            selected={!!chairMap[num] && selectedSeatIds?.has(chairMap[num].id)}
+            onToggleSeatSelection={onToggleSeatSelection}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function AdminChair({ chair, onToggleChair }) {
+function AdminChair({ chair, onToggleChair, bulkSelectMode, selected, onToggleSeatSelection }) {
   if (!chair) {
     return <div className="chair-mini chair-mini-empty" aria-hidden="true" />;
   }
@@ -449,15 +743,20 @@ function AdminChair({ chair, onToggleChair }) {
     stateClass = 'bg-amber-500 border-amber-200 text-white hover:scale-150';
     statusText = 'Held';
   }
+  if (bulkSelectMode && selected) {
+    stateClass += ' ring-2 ring-blue-200 outline outline-2 outline-white scale-125';
+  }
 
   return (
     <button
       type="button"
-      onClick={() => onToggleChair(chair)}
+      onClick={() => bulkSelectMode ? onToggleSeatSelection(chair) : onToggleChair(chair)}
       disabled={isSold}
       className={`chair-mini ${stateClass}`}
       aria-label={`Table ${chair.table_number} chair ${chair.chair_number}: ${statusText}`}
-      title={`Table ${chair.table_number}, Chair ${chair.chair_number}: ${statusText}${isSold ? '' : ` - click to ${isDisabled ? 'enable' : 'disable'}`}`}
+      title={bulkSelectMode
+        ? `Table ${chair.table_number}, Chair ${chair.chair_number}: ${statusText}${isSold ? '' : selected ? ' - selected' : ' - click to select'}`
+        : `Table ${chair.table_number}, Chair ${chair.chair_number}: ${statusText}${isSold ? '' : ` - click to ${isDisabled ? 'enable' : 'disable'}`}`}
     >
       {chair.chair_number}
     </button>
