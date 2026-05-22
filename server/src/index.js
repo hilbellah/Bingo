@@ -95,7 +95,7 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3001;
-const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '60');
+const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '20');
 const startTime = Date.now();
 
 function generateTicketAccessToken() {
@@ -1295,8 +1295,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     }));
 
     // Refresh held_until so seats survive the hosted-page detour.
-    // HOLD_MINUTES is generous (60min) so this gives the customer a full hour
-    // from clicking Confirm — comfortable even for slow / elderly users.
+    // This gives the customer a fresh hold window from clicking Confirm.
     const newHoldUntil = new Date(Date.now() + HOLD_MINUTES * 60 * 1000).toISOString();
     for (const att of attendees) {
       run('UPDATE seats SET held_until = ? WHERE id = ?', [newHoldUntil, att.seatId]);

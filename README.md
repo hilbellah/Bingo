@@ -28,14 +28,14 @@ npm run dev
 - Party size selector (1-6 people)
 - Per-person attendee names and ticket package selection
 - Real-time interactive seat map with 12 tables x 6 seats
-- 60-minute seat hold with visible countdown timer
+- 20-minute seat hold with visible countdown timer
 - Live order total calculation
 - Mock payment form (demo mode)
 - Booking confirmation with reference number
 
 ### Real-Time Seat Locking
 - WebSocket (Socket.io) for instant seat status updates
-- Pessimistic locking: seats are held server-side with 60-minute TTL
+- Pessimistic locking: seats are held server-side with 20-minute TTL
 - Background sweep releases expired holds every 30 seconds
 - All connected clients see seat changes in real-time
 
@@ -97,7 +97,7 @@ Set in `server/.env`:
 | `ADMIN_USERNAME` | `admin` | Admin panel username |
 | `ADMIN_PASSWORD` | `bingo2026` | Admin panel password |
 | `DATABASE_URL` | `./bingo.db` | SQLite database file path |
-| `SESSION_HOLD_MINUTES` | `60` | Seat hold duration in minutes |
+| `SESSION_HOLD_MINUTES` | `20` | Seat hold duration in minutes |
 | `PORT` | `3001` | API server port |
 
 ## Seat Map Layout

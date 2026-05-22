@@ -217,7 +217,7 @@ export default function Tutorial() {
         <Step number={4} title="Lock a Seat">
           <ul style={styles.ul}>
             <li style={styles.li}><strong>Click a chair number</strong> inside the expanded table to lock it.</li>
-            <li style={styles.li}>The seat is held for <strong>60 minutes</strong> (a countdown timer appears in the header).</li>
+            <li style={styles.li}>The seat is held for <strong>20 minutes</strong> (a countdown timer appears in the header).</li>
             <li style={styles.li}>Your locked seats turn <strong style={styles.gold}>blue</strong> on the floor map.</li>
             <li style={styles.li}>Other customers see your locked seats in real time -- they cannot double-book.</li>
             <li style={styles.li}>The booking panel opens automatically after your first seat selection.</li>
@@ -541,7 +541,7 @@ export default function Tutorial() {
               <tr><td style={styles.td}><strong>PHD</strong></td><td style={styles.td}>Personal Handheld Device -- a limited-stock device tracked by inventory</td></tr>
               <tr><td style={styles.td}><strong>Reference Number</strong></td><td style={styles.td}>Unique booking ID (format: BNG-XXXXXX)</td></tr>
               <tr><td style={styles.td}><strong>Cutoff Time</strong></td><td style={styles.td}>Deadline for online booking before the session starts</td></tr>
-              <tr><td style={styles.td}><strong>Hold Timer</strong></td><td style={styles.td}>60-minute lock on selected seats to prevent double-booking</td></tr>
+              <tr><td style={styles.td}><strong>Hold Timer</strong></td><td style={styles.td}>20-minute lock on selected seats to prevent double-booking</td></tr>
               <tr><td style={styles.td}><strong>SMEC</strong></td><td style={styles.td}>Saint Mary's Entertainment Centre (venue name)</td></tr>
               <tr><td style={styles.td}><strong>Audit Log</strong></td><td style={styles.td}>Record of all admin actions (session creates, deletes, restores, etc.)</td></tr>
             </tbody>
