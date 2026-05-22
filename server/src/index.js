@@ -96,6 +96,10 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3001;
 const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '20');
+const configuredPaymentFailureHoldMinutes = parseInt(process.env.PAYMENT_FAILURE_HOLD_MINUTES || '5', 10);
+const PAYMENT_FAILURE_HOLD_MINUTES = Number.isFinite(configuredPaymentFailureHoldMinutes)
+  ? configuredPaymentFailureHoldMinutes
+  : 5;
 const startTime = Date.now();
 
 function generateTicketAccessToken() {
@@ -617,9 +621,34 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
   return { ok: true };
 }
 
+function shortenBookingSeatHolds({ bookingId, minutes = PAYMENT_FAILURE_HOLD_MINUTES }) {
+  const releaseAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+  const booking = get('SELECT id, session_id FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) return { changedSeats: 0, releaseAt };
+
+  const seats = all(`
+    SELECT s.id
+    FROM seats s
+    JOIN booking_items bi ON bi.seat_id = s.id
+    WHERE bi.booking_id = ?
+      AND s.status = 'held'
+      AND (s.held_until IS NULL OR s.held_until > ?)
+  `, [bookingId, releaseAt]);
+
+  for (const seat of seats) {
+    run('UPDATE seats SET held_until = ? WHERE id = ?', [releaseAt, seat.id]);
+  }
+
+  if (seats.length > 0) {
+    io.to(`session:${booking.session_id}`).emit('seats:refresh', { sessionId: booking.session_id });
+  }
+
+  return { changedSeats: seats.length, releaseAt };
+}
+
 // Idempotently mark a 'pending' booking as 'failed' (decline / error path).
-// Does not flip seats — they remain 'held' until the hold expires naturally,
-// freeing them for a retry by the same customer or for other buyers.
+// Failed payment seats stay held only briefly so customers/admins see the table
+// open again without waiting for the full checkout hold window.
 function markBookingFailed({ bookingId, reason, source = 'server' }) {
   const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
@@ -628,15 +657,21 @@ function markBookingFailed({ bookingId, reason, source = 'server' }) {
 
   run(`UPDATE bookings SET payment_status = 'failed', payment_failure_reason = ? WHERE id = ?`,
     [String(reason || 'unknown').slice(0, 500), bookingId]);
+  // Shorten the post-payment-error hold to the go-live operational window.
+  const holdShorten = shortenBookingSeatHolds({ bookingId });
   saveDb();
 
-  logPaymentEvent(bookingId, 'declined', source, { reason });
+  logPaymentEvent(bookingId, 'declined', source, {
+    reason,
+    heldSeatsReleaseAt: holdShorten.releaseAt,
+    heldSeatsShortened: holdShorten.changedSeats,
+  });
   return { ok: true };
 }
 
 // Idempotently mark a 'pending' booking as 'cancelled' (customer clicked Cancel
-// on the Authorize.Net hosted page). Does not flip seats — they remain 'held'
-// so the customer can retry within the hold window without losing their spot.
+// on the Authorize.Net hosted page). Cancelled payment seats use the same short
+// release window as failed payments.
 function markBookingCancelled({ bookingId, source = 'customer' }) {
   const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
@@ -644,9 +679,14 @@ function markBookingCancelled({ bookingId, source = 'customer' }) {
   if (booking.payment_status === 'cancelled') return { ok: true, alreadyCancelled: true };
 
   run(`UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?`, [bookingId]);
+  // Treat payment cancellations like payment failures for seat availability.
+  const holdShorten = shortenBookingSeatHolds({ bookingId });
   saveDb();
 
-  logPaymentEvent(bookingId, 'cancelled', source, {});
+  logPaymentEvent(bookingId, 'cancelled', source, {
+    heldSeatsReleaseAt: holdShorten.releaseAt,
+    heldSeatsShortened: holdShorten.changedSeats,
+  });
   return { ok: true };
 }
 
