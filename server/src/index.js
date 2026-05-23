@@ -73,6 +73,7 @@ const configuredOrigins = (process.env.CORS_ORIGINS || process.env.PUBLIC_BASE_U
 const allowedOrigins = new Set([
   ...configuredOrigins,
   'https://bingo-jk2h.onrender.com',
+  'https://booking.wolastoqcasino.ca',
 ]);
 if (process.env.NODE_ENV !== 'production') {
   allowedOrigins.add('http://localhost:3000');

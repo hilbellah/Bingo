@@ -437,7 +437,7 @@ export default function App() {
           <a href="https://www.wolastoqcasino.ca" target="_blank" rel="noopener noreferrer" className="text-white hover:text-casino-cream transition-colors">Casino</a>
           <a href="https://www.wolastoqcasino.ca/events/" target="_blank" rel="noopener noreferrer" className="text-white hover:text-casino-cream transition-colors">Events</a>
           <a href="https://www.wolastoqcasino.ca/promotions/" target="_blank" rel="noopener noreferrer" className="text-white hover:text-casino-cream transition-colors">Promotions</a>
-          <a href="https://booking.wolastoqcasino.ca/bingo" className="text-casino-cream font-semibold border-b-2 border-casino-cream pb-1" aria-current="page">Bingo</a>
+          <a href="https://booking.wolastoqcasino.ca" className="text-casino-cream font-semibold border-b-2 border-casino-cream pb-1" aria-current="page">Bingo</a>
           <a href="https://www.wolastoqcasino.ca/contact-us/" target="_blank" rel="noopener noreferrer" className="text-white hover:text-casino-cream transition-colors">Contact Us</a>
         </nav>
 

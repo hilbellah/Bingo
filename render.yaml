@@ -47,11 +47,11 @@ services:
         sync: false
       # Public URLs for redirects/webhooks - update when moving to a custom domain.
       - key: PUBLIC_BASE_URL
-        value: https://bingo-jk2h.onrender.com
+        value: https://booking.wolastoqcasino.ca
       - key: ANET_RETURN_URL
-        value: https://bingo-jk2h.onrender.com/payment/return
+        value: https://booking.wolastoqcasino.ca/payment/return
       - key: ANET_CANCEL_URL
-        value: https://bingo-jk2h.onrender.com/payment/cancel
+        value: https://booking.wolastoqcasino.ca/payment/cancel
       # Currency - CAD for production (Saint Mary's is in NB).
       - key: ANET_CURRENCY
         value: CAD
