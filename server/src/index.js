@@ -82,7 +82,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 function corsOrigin(origin, callback) {
   if (!origin || allowedOrigins.has(origin)) return callback(null, true);
-  return callback(new Error('Not allowed by CORS'));
+  return callback(null, false);
 }
 
 const corsOptions = {
