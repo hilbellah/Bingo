@@ -1,20 +1,36 @@
 // Booking-confirmation email service.
 //
-// Two providers are supported, chosen automatically by which env vars are set:
+// Three providers are supported, chosen automatically by which env vars are
+// set. Postmark is the PRIMARY for production; Gmail and Resend remain as
+// fallbacks so legacy deployments keep working.
 //
-//   1. Gmail SMTP (preferred when configured) — works for any recipient with
-//      no DNS setup. Uses nodemailer + a Gmail App Password. Best for demos
-//      and small deployments.
-//   2. Resend (fallback) — REST-based transactional email service. Requires
+//   1. Postmark (primary, production) — REST-based transactional email.
+//      Requires a verified Sender Signature or DKIM-verified domain. Best
+//      deliverability, native Message Streams, structured webhooks.
+//   2. Gmail SMTP (legacy) — works for any recipient with no DNS setup.
+//      Uses nodemailer + a Gmail App Password. Kept for demos and as an
+//      emergency fallback if Postmark is unavailable.
+//   3. Resend (fallback) — REST-based transactional email service. Requires
 //      domain verification before it'll deliver to non-account emails.
 //
-// Selection logic: if BOTH GMAIL_USER and GMAIL_APP_PASSWORD are set, Gmail is
-// used. Otherwise, if RESEND_API_KEY is set, Resend is used. Otherwise the
-// module logs a warning and no-ops so the booking flow still completes.
+// Selection logic: if POSTMARK_SERVER_TOKEN is set, Postmark is used.
+// Otherwise, if BOTH GMAIL_USER and GMAIL_APP_PASSWORD are set, Gmail is used.
+// Otherwise, if RESEND_API_KEY is set, Resend is used. Otherwise the module
+// logs a warning and no-ops so the booking flow still completes.
 //
 // Env vars (all optional unless noted):
 //
-//   --- Gmail SMTP path ---
+//   --- Postmark path (production) ---
+//   POSTMARK_SERVER_TOKEN     Server API Token from the "Wolastoq Bingo"
+//                             Postmark server. Looks like a UUID, e.g.
+//                             "9f5f2838-7eb8-454d-a510-cf46c8680e57".
+//                             Works as both the API token AND as SMTP
+//                             username/password if the relay path is used.
+//   POSTMARK_MESSAGE_STREAM   Message Stream to send through. Default is
+//                             "outbound" (the default transactional stream).
+//                             Override if you create a dedicated stream.
+//
+//   --- Gmail SMTP path (legacy) ---
 //   GMAIL_USER            The Gmail address to authenticate as, e.g.
 //                         "demo@gmail.com". This is also used as the From
 //                         envelope address regardless of EMAIL_FROM display.
@@ -26,13 +42,15 @@
 //   --- Resend path ---
 //   RESEND_API_KEY        Resend account API key (re_*).
 //   PUBLIC_SITE_URL       Base URL used in the "View tickets online" link.
-//                         Default: "https://bingo-jk2h.onrender.com".
+//                         Default: "https://booking.wolastoqcasino.ca".
 //
-//   --- Shared (used by both providers) ---
+//   --- Shared (used by all providers) ---
 //   EMAIL_FROM            Display name + address shown to the customer.
-//                         e.g. "Wolastoq Bingo <demo@gmail.com>". For Gmail,
-//                         the address part SHOULD match GMAIL_USER (Gmail
-//                         rewrites mismatched From addresses anyway).
+//                         For Postmark: must match a verified Sender Signature
+//                         or be on a DKIM-verified domain. Recommended:
+//                         "Wolastoq Bingo <noreply@wolastoqcasino.ca>".
+//                         For Gmail: the address part SHOULD match GMAIL_USER
+//                         (Gmail rewrites mismatched From addresses anyway).
 //   EMAIL_BCC             Comma-separated addresses to BCC on every booking
 //                         confirmation/refund email.
 //                         Customer doesn't see these. Admin notification.
@@ -44,6 +62,7 @@ import nodemailer from 'nodemailer';
 import { normalizeSessionType } from './sessionPackages.js';
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
+const POSTMARK_ENDPOINT = 'https://api.postmarkapp.com/email';
 
 // Reused across calls. Re-created if env vars change at runtime (rare).
 let _gmailTransporter = null;
@@ -353,7 +372,7 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
  * doesn't block the booking response.
  */
 export async function sendBookingConfirmation({ to, booking, session, attendees, seats, packages }) {
-  const siteUrl = process.env.PUBLIC_SITE_URL || 'https://bingo-jk2h.onrender.com';
+  const siteUrl = process.env.PUBLIC_SITE_URL || 'https://booking.wolastoqcasino.ca';
 
   // Optional admin BCC list. Comma-separated, whitespace tolerant. Filtered to
   // valid-looking addresses so a typo'd env var doesn't blow up the send.
@@ -376,7 +395,12 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
     .filter(Boolean)
     .join(' - ');
 
-  // Decide provider: Gmail SMTP if creds are present, else Resend, else no-op.
+  // Decide provider: Postmark (primary) → Gmail SMTP → Resend → no-op.
+  const postmarkToken = process.env.POSTMARK_SERVER_TOKEN;
+  if (postmarkToken) {
+    return sendViaPostmark({ token: postmarkToken, to, bcc, subject, html, text, booking });
+  }
+
   const transporter = getGmailTransporter();
   if (transporter) {
     return sendViaGmail({ transporter, to, bcc, subject, html, text, booking });
@@ -387,7 +411,7 @@ export async function sendBookingConfirmation({ to, booking, session, attendees,
     return sendViaResend({ apiKey, to, bcc, subject, html, text, booking });
   }
 
-  console.warn('[email] No email provider configured. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY on Render. Booking continues without email.');
+  console.warn('[email] No email provider configured. Set POSTMARK_SERVER_TOKEN (preferred), GMAIL_USER + GMAIL_APP_PASSWORD, or RESEND_API_KEY on Render. Booking continues without email.');
   return { ok: false, status: 0, error: 'no_provider_configured' };
 }
 
@@ -519,6 +543,11 @@ export async function sendBookingRefundNotification({ to, booking, session, item
     ? `Your Bingo Ticket Was ${actionLabel} - ${item.reference_number || booking.reference_number}`
     : `Your Bingo Booking Was ${actionLabel} - ${booking.reference_number}`;
 
+  const postmarkToken = process.env.POSTMARK_SERVER_TOKEN;
+  if (postmarkToken) {
+    return sendViaPostmark({ token: postmarkToken, to, bcc, subject, html, text, booking: { referenceNumber: booking.reference_number } });
+  }
+
   const transporter = getGmailTransporter();
   if (transporter) {
     return sendViaGmail({ transporter, to, bcc, subject, html, text, booking: { referenceNumber: booking.reference_number } });
@@ -535,7 +564,7 @@ export async function sendBookingRefundNotification({ to, booking, session, item
 
 function renderRescheduleHtml({ booking, session, previousSession }) {
   const presentation = getBookingPresentation(session);
-  const siteUrl = process.env.PUBLIC_SITE_URL || 'https://bingo-jk2h.onrender.com';
+  const siteUrl = process.env.PUBLIC_SITE_URL || 'https://booking.wolastoqcasino.ca';
   const ticketUrl = buildTicketUrl(siteUrl, booking.reference_number, booking.ticket_access_token);
   const title = session?.event_title || presentation.brandLabel;
 
@@ -585,7 +614,7 @@ function renderRescheduleHtml({ booking, session, previousSession }) {
 function renderRescheduleText({ booking, session, previousSession }) {
   const presentation = getBookingPresentation(session);
   const title = session?.event_title || presentation.brandLabel;
-  const siteUrl = process.env.PUBLIC_SITE_URL || 'https://bingo-jk2h.onrender.com';
+  const siteUrl = process.env.PUBLIC_SITE_URL || 'https://booking.wolastoqcasino.ca';
   return [
     `${title} has been rescheduled.`,
     '',
@@ -618,6 +647,11 @@ export async function sendSessionRescheduleNotification({ to, booking, session, 
   const html = renderRescheduleHtml({ booking, session, previousSession });
   const text = renderRescheduleText({ booking, session, previousSession });
   const emailBooking = { referenceNumber: booking.reference_number };
+
+  const postmarkToken = process.env.POSTMARK_SERVER_TOKEN;
+  if (postmarkToken) {
+    return sendViaPostmark({ token: postmarkToken, to, bcc, subject, html, text, booking: emailBooking });
+  }
 
   const transporter = getGmailTransporter();
   if (transporter) {
@@ -681,6 +715,11 @@ export async function sendEmailVerificationCode({ to, code, firstName }) {
   const text = renderVerificationText({ code, firstName });
   const booking = { referenceNumber: 'email verification' };
 
+  const postmarkToken = process.env.POSTMARK_SERVER_TOKEN;
+  if (postmarkToken) {
+    return sendViaPostmark({ token: postmarkToken, to, bcc: [], subject, html, text, booking });
+  }
+
   const transporter = getGmailTransporter();
   if (transporter) {
     return sendViaGmail({ transporter, to, bcc: [], subject, html, text, booking });
@@ -691,7 +730,7 @@ export async function sendEmailVerificationCode({ to, code, firstName }) {
     return sendViaResend({ apiKey, to, bcc: [], subject, html, text, booking });
   }
 
-  console.warn('[email] No email provider configured. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY on Render. Verification email cannot be sent.');
+  console.warn('[email] No email provider configured. Set POSTMARK_SERVER_TOKEN (preferred), GMAIL_USER + GMAIL_APP_PASSWORD, or RESEND_API_KEY on Render. Verification email cannot be sent.');
   return { ok: false, status: 0, error: 'no_provider_configured' };
 }
 
@@ -750,6 +789,66 @@ async function sendViaResend({ apiKey, to, bcc, subject, html, text, booking }) 
     return { ok: true, status: res.status, id: body?.id };
   } catch (err) {
     console.error('[email] Resend send failed:', err?.message || err);
+    return { ok: false, status: 0, error: err?.message || String(err) };
+  }
+}
+
+// ---------- Provider: Postmark (primary) ----------
+// Sends via Postmark's transactional email REST API. Requires the From
+// address to be on a Postmark-verified Sender Signature OR a DKIM-verified
+// domain — otherwise Postmark returns ErrorCode 405 "must verify sender
+// signature". The token serves as both API auth and (if you switch to SMTP
+// relay later) as the SMTP username/password.
+//
+// Postmark response handling:
+//   - HTTP 200 + ErrorCode 0  → success, body.MessageID is the unique id
+//   - HTTP 422 + ErrorCode X  → validation/sender-not-verified — fix config
+//   - HTTP 401                → bad token — rotate it in Postmark dashboard
+//   - HTTP 5xx / network err  → transient, caller logs but doesn't retry
+async function sendViaPostmark({ token, to, bcc, subject, html, text, booking }) {
+  const from = process.env.EMAIL_FROM || 'Wolastoq Bingo <noreply@wolastoqcasino.ca>';
+  const messageStream = process.env.POSTMARK_MESSAGE_STREAM || 'outbound';
+
+  const payload = {
+    From: from,
+    To: to,
+    Subject: subject,
+    HtmlBody: html,
+    TextBody: text,
+    MessageStream: messageStream,
+    // Disable per-recipient open/click tracking for transactional mail. Booking
+    // confirmations don't need it and pixel/link rewrites can trigger spam
+    // filters on certain webmail clients.
+    TrackOpens: false,
+    TrackLinks: 'None',
+  };
+  if (bcc.length > 0) payload.Bcc = bcc.join(',');
+
+  try {
+    const res = await fetch(POSTMARK_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-Postmark-Server-Token': token,
+      },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    // Postmark returns 200 on success, 422 on validation errors. ErrorCode 0
+    // is the success marker inside the body; non-zero means the API accepted
+    // the request format but rejected the content (e.g. unverified sender).
+    if (!res.ok || (body && body.ErrorCode && body.ErrorCode !== 0)) {
+      const errCode = body?.ErrorCode ?? res.status;
+      const errMsg = body?.Message || `HTTP ${res.status}`;
+      console.error(`[email] Postmark rejected (code=${errCode}): ${errMsg}`);
+      return { ok: false, status: res.status, error: `${errCode}: ${errMsg}` };
+    }
+    const bccNote = bcc.length > 0 ? ` bcc=${bcc.join(',')}` : '';
+    console.log(`[email] sent ${booking.referenceNumber} to ${to}${bccNote} via Postmark (messageId=${body?.MessageID || 'unknown'} stream=${messageStream})`);
+    return { ok: true, status: res.status, id: body?.MessageID };
+  } catch (err) {
+    console.error('[email] Postmark send failed:', err?.message || err);
     return { ok: false, status: 0, error: err?.message || String(err) };
   }
 }

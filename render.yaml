@@ -55,5 +55,25 @@ services:
       # Currency - CAD for production (Saint Mary's is in NB).
       - key: ANET_CURRENCY
         value: CAD
+      # === Postmark Email (transactional) ===
+      # Primary email provider. Replaces Gmail SMTP path. Server is
+      # "Wolastoq Bingo" (Server ID 19342010), DKIM-verified domain
+      # wolastoqcasino.ca. Server API Token works for both REST API
+      # and SMTP relay.
+      # Secret - actual token pasted in Render dashboard, NOT committed.
+      - key: POSTMARK_SERVER_TOKEN
+        sync: false
+      # Message Stream - default "outbound" is the transactional stream
+      # auto-created with the server. Override only if a dedicated stream
+      # is configured in Postmark.
+      - key: POSTMARK_MESSAGE_STREAM
+        value: outbound
+      # Display name + verified sender. Must match a Postmark Sender
+      # Signature or be on a DKIM-verified domain (wolastoqcasino.ca).
+      - key: EMAIL_FROM
+        value: "Wolastoq Bingo <noreply@wolastoqcasino.ca>"
+      # Base URL used in email ticket links and verification redirects.
+      - key: PUBLIC_SITE_URL
+        value: https://booking.wolastoqcasino.ca
     autoDeploy: true
     healthCheckPath: /api/sessions
