@@ -1301,7 +1301,7 @@ app.post('/api/bookings', adminAuth, (req, res) => {
 // Seats are NOT flipped to 'sold' here — they remain 'held' with a refreshed
 // held_until so they survive the time the customer spends on the hosted page.
 app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
-  const validation = validateBookingRequest(req.body);
+  const validation = validateBookingRequest(req.body, { requireEmailVerification: false });
   if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
   const {
     sessionId,

@@ -87,11 +87,10 @@ export async function createBooking(sessionId, holderId, attendees, customer) {
   const email = typeof customer === 'string' ? customer : customer?.email;
   const customerFirstName = typeof customer === 'object' ? customer?.customerFirstName : undefined;
   const customerLastName = typeof customer === 'object' ? customer?.customerLastName : undefined;
-  const emailVerificationId = typeof customer === 'object' ? customer?.emailVerificationId : undefined;
   const res = await fetch(`${API}/bookings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, holderId, attendees, email, customerFirstName, customerLastName, emailVerificationId })
+    body: JSON.stringify({ sessionId, holderId, attendees, email, customerFirstName, customerLastName })
   });
   return res.json();
 }
@@ -123,11 +122,10 @@ export async function initiateBooking(sessionId, holderId, attendees, customer) 
   const email = typeof customer === 'string' ? customer : customer?.email;
   const customerFirstName = typeof customer === 'object' ? customer?.customerFirstName : undefined;
   const customerLastName = typeof customer === 'object' ? customer?.customerLastName : undefined;
-  const emailVerificationId = typeof customer === 'object' ? customer?.emailVerificationId : undefined;
   const res = await fetch(`${API}/bookings/initiate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, holderId, attendees, email, customerFirstName, customerLastName, emailVerificationId })
+    body: JSON.stringify({ sessionId, holderId, attendees, email, customerFirstName, customerLastName })
   });
   return res.json();
 }
