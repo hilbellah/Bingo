@@ -10,6 +10,12 @@ for (let i = 1; i <= 75; i++) {
 const CHAIRS_PER_TABLE = 6;
 
 async function seed() {
+  if ((process.env.DB_DRIVER || 'sqlite').toLowerCase() === 'postgres') {
+    console.log('seed.js: DB_DRIVER=postgres detected. Skipping SQLite seed.');
+    console.log('seed.js: Postgres schema/data is managed separately; seed.js uses SQLite-only bulk APIs.');
+    process.exit(0);
+  }
+
   const db = await getDb();
 
   // === IDEMPOTENCY GUARD ===
