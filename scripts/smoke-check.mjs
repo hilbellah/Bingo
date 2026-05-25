@@ -25,7 +25,7 @@ try {
   await migrate();
   await getDb();
 
-  const packages = all('SELECT name, type, is_active, is_phd FROM packages ORDER BY sort_order, name');
+  const packages = await all('SELECT name, type, is_active, is_phd FROM packages ORDER BY sort_order, name');
   const activeRequired = packages.filter(pkg => pkg.type === 'required' && pkg.is_active === 1);
   const activePhd = packages.filter(pkg => pkg.is_phd === 1 && pkg.is_active === 1);
   const activeOptional = packages.filter(pkg => pkg.type === 'optional' && pkg.is_active === 1);

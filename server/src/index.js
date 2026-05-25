@@ -395,6 +395,8 @@ async function insertBookingRecord({
   const refNumber = generateRef();
   const ticketAccessToken = generateTicketAccessToken();
   const itemRefs = [];
+  const itemRows = [];
+  const addonRows = [];
 
   for (const att of attendees) {
     const itemId = uuid();
@@ -403,14 +405,11 @@ async function insertBookingRecord({
     const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg];
     const primaryRequiredPkg = includedRequiredPkgs[0];
     totalAmount += primaryRequiredPkg.price;
-
-    await run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [itemId, bookingId, att.firstName, att.lastName, att.seatId, primaryRequiredPkg.id, primaryRequiredPkg.price, itemRef]);
+    itemRows.push([itemId, bookingId, att.firstName, att.lastName, att.seatId, primaryRequiredPkg.id, primaryRequiredPkg.price, itemRef]);
 
     for (const requiredAddonPkg of includedRequiredPkgs.slice(1)) {
       totalAmount += requiredAddonPkg.price;
-      await run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)',
-        [uuid(), itemId, requiredAddonPkg.id, 1, requiredAddonPkg.price]);
+      addonRows.push([uuid(), itemId, requiredAddonPkg.id, 1, requiredAddonPkg.price]);
     }
 
     if (att.addons) {
@@ -421,44 +420,63 @@ async function insertBookingRecord({
         if (pkg) {
           const addonPrice = pkg.price * addon.quantity;
           totalAmount += addonPrice;
-          await run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)',
-            [uuid(), itemId, addon.packageId, addon.quantity, addonPrice]);
+          addonRows.push([uuid(), itemId, addon.packageId, addon.quantity, addonPrice]);
         }
       }
     }
   }
 
-  await run(
-    `INSERT INTO bookings
-      (id, session_id, reference_number, total_amount, payment_status, created_at, email,
-       customer_first_name, customer_last_name, email_verified_at, ticket_access_token)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      bookingId,
+  let bookingInserted = false;
+  try {
+    await run(
+      `INSERT INTO bookings
+        (id, session_id, reference_number, total_amount, payment_status, created_at, email,
+         customer_first_name, customer_last_name, email_verified_at, ticket_access_token)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        bookingId,
+        sessionId,
+        refNumber,
+        totalAmount,
+        'pending',
+        new Date().toISOString(),
+        email,
+        customerFirstName,
+        customerLastName,
+        emailVerifiedAt,
+        ticketAccessToken,
+      ]
+    );
+    bookingInserted = true;
+
+    for (const itemRow of itemRows) {
+      await run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', itemRow);
+    }
+    for (const addonRow of addonRows) {
+      await run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)', addonRow);
+    }
+
+    // Preserve the original 'booking_created' audit event so any admin filters
+    // / dashboards watching for it keep working after the refactor.
+    await logAudit('booking_created', 'booking', bookingId, {
+      referenceNumber: refNumber,
       sessionId,
-      refNumber,
       totalAmount,
-      'pending',
-      new Date().toISOString(),
-      email,
       customerFirstName,
       customerLastName,
-      emailVerifiedAt,
-      ticketAccessToken,
-    ]
-  );
-
-  // Preserve the original 'booking_created' audit event so any admin filters
-  // / dashboards watching for it keep working after the refactor.
-  await logAudit('booking_created', 'booking', bookingId, {
-    referenceNumber: refNumber,
-    sessionId,
-    totalAmount,
-    customerFirstName,
-    customerLastName,
-    email,
-    attendees: attendees.map(a => ({ firstName: a.firstName, lastName: a.lastName, seatId: a.seatId }))
-  });
+      email,
+      attendees: attendees.map(a => ({ firstName: a.firstName, lastName: a.lastName, seatId: a.seatId }))
+    });
+  } catch (err) {
+    if (bookingInserted) {
+      try {
+        await run('DELETE FROM bookings WHERE id = ?', [bookingId]);
+      } catch (cleanupErr) {
+        console.error(`[bookings] failed to clean up partial booking ${bookingId}:`, cleanupErr);
+      }
+    }
+    throw err;
+  }
 
   return { bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken };
 }

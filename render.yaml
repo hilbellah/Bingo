@@ -28,7 +28,7 @@ services:
       - key: DATABASE_URL
         value: /var/data/bingo.db
       - key: SESSION_HOLD_MINUTES
-        value: "60"
+        value: "20"
       # === Authorize.Net Payment Integration ===
       # Live in production as of go-live. To revert to sandbox for testing,
       # change value to 'sandbox' and also swap the credentials in the

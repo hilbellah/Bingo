@@ -170,6 +170,82 @@ async function removeRegularSessionPackageOverrides() {
   );
 }
 
+async function tableHasPackageForeignKey(tableName) {
+  try {
+    const fks = await all(`PRAGMA foreign_key_list('${tableName}')`);
+    return fks.some(fk => fk.table === 'packages' && fk.from === 'package_id');
+  } catch {
+    return false;
+  }
+}
+
+async function allowSessionPackageBookings() {
+  const rebuildItems = await tableHasPackageForeignKey('booking_items');
+  const rebuildAddons = await tableHasPackageForeignKey('booking_addons');
+  if (!rebuildItems && !rebuildAddons) return;
+
+  console.log('Removing package-only foreign keys from booking ticket tables...');
+  await exec('PRAGMA foreign_keys = OFF');
+  try {
+    if (rebuildItems) {
+      await exec(`
+        DROP TABLE IF EXISTS booking_items_rebuild;
+        CREATE TABLE booking_items_rebuild (
+          id TEXT PRIMARY KEY,
+          booking_id TEXT NOT NULL,
+          first_name TEXT NOT NULL,
+          last_name TEXT NOT NULL,
+          seat_id TEXT NOT NULL,
+          package_id TEXT NOT NULL,
+          price INTEGER NOT NULL,
+          reference_number TEXT,
+          printed_at TEXT,
+          refund_status TEXT DEFAULT 'active',
+          refunded_at TEXT,
+          refund_transaction_id TEXT,
+          refund_amount INTEGER DEFAULT 0,
+          refund_action TEXT,
+          FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
+          FOREIGN KEY (seat_id) REFERENCES seats(id)
+        );
+        INSERT INTO booking_items_rebuild
+          (id, booking_id, first_name, last_name, seat_id, package_id, price,
+           reference_number, printed_at, refund_status, refunded_at,
+           refund_transaction_id, refund_amount, refund_action)
+        SELECT
+          id, booking_id, first_name, last_name, seat_id, package_id, price,
+          reference_number, printed_at, refund_status, refunded_at,
+          refund_transaction_id, refund_amount, refund_action
+        FROM booking_items;
+        DROP TABLE booking_items;
+        ALTER TABLE booking_items_rebuild RENAME TO booking_items;
+      `);
+    }
+
+    if (rebuildAddons) {
+      await exec(`
+        DROP TABLE IF EXISTS booking_addons_rebuild;
+        CREATE TABLE booking_addons_rebuild (
+          id TEXT PRIMARY KEY,
+          booking_item_id TEXT NOT NULL,
+          package_id TEXT NOT NULL,
+          quantity INTEGER NOT NULL DEFAULT 1,
+          price INTEGER NOT NULL,
+          FOREIGN KEY (booking_item_id) REFERENCES booking_items(id) ON DELETE CASCADE
+        );
+        INSERT INTO booking_addons_rebuild
+          (id, booking_item_id, package_id, quantity, price)
+        SELECT id, booking_item_id, package_id, quantity, price
+        FROM booking_addons;
+        DROP TABLE booking_addons;
+        ALTER TABLE booking_addons_rebuild RENAME TO booking_addons;
+      `);
+    }
+  } finally {
+    await exec('PRAGMA foreign_keys = ON');
+  }
+}
+
 async function migrateVenueTo75Tables(db) {
   const sessions = await all(`
     SELECT session_id, COUNT(DISTINCT table_number) as table_count, MAX(table_number) as max_table
@@ -280,8 +356,7 @@ async function migrate() {
       package_id TEXT NOT NULL,
       price INTEGER NOT NULL,
       FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
-      FOREIGN KEY (seat_id) REFERENCES seats(id),
-      FOREIGN KEY (package_id) REFERENCES packages(id)
+      FOREIGN KEY (seat_id) REFERENCES seats(id)
     );
 
     CREATE TABLE IF NOT EXISTS booking_addons (
@@ -290,8 +365,7 @@ async function migrate() {
       package_id TEXT NOT NULL,
       quantity INTEGER NOT NULL DEFAULT 1,
       price INTEGER NOT NULL,
-      FOREIGN KEY (booking_item_id) REFERENCES booking_items(id) ON DELETE CASCADE,
-      FOREIGN KEY (package_id) REFERENCES packages(id)
+      FOREIGN KEY (booking_item_id) REFERENCES booking_items(id) ON DELETE CASCADE
     );
   `);
 
@@ -505,6 +579,9 @@ async function migrate() {
   try { await exec('ALTER TABLE booking_items ADD COLUMN refund_amount INTEGER DEFAULT 0'); } catch(e) {}
   try { await exec('ALTER TABLE booking_items ADD COLUMN refund_action TEXT'); } catch(e) {}
   try { await run("UPDATE booking_items SET refund_status = 'active' WHERE refund_status IS NULL OR refund_status = ''"); } catch(e) {}
+  await allowSessionPackageBookings();
+  try { await exec('CREATE INDEX idx_booking_items_booking ON booking_items(booking_id)'); } catch(e) {}
+  try { await exec('CREATE INDEX idx_booking_items_seat ON booking_items(seat_id)'); } catch(e) {}
   try { await exec('CREATE UNIQUE INDEX idx_booking_items_reference ON booking_items(reference_number)'); } catch(e) {}
   try { await exec('CREATE INDEX idx_booking_items_refund_status ON booking_items(refund_status)'); } catch(e) {}
 

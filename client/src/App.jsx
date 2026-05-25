@@ -206,10 +206,6 @@ export default function App() {
       setTimeout(() => setError(''), 4000);
       return;
     }
-    if (chair.is_disabled || chair.status === 'sold') return;
-    if (chair.status === 'held' && !chair.isMyHold) return;
-    if (bookingStep === 2) return;
-
     if (selectedSeats.includes(chair.id)) {
       await unlockSeat(chair.id, holderId);
       const removedIndex = selectedSeats.indexOf(chair.id);
@@ -217,8 +213,13 @@ export default function App() {
       setSelectedSeats(newSelected);
       setPartySize(newSelected.length);
       setAttendees(prev => prev.filter((_, index) => index !== removedIndex));
+      setBookingStep(prev => newSelected.length === 0 ? 0 : (prev === 2 ? 1 : prev));
       return;
     }
+
+    if (chair.is_disabled || chair.status === 'sold') return;
+    if (chair.status === 'held' && !chair.isMyHold) return;
+    if (bookingStep === 2) return;
 
     if (selectedSeats.length >= 6) {
       setError('Maximum 6 chairs per booking. Tap a selected chair to deselect.');

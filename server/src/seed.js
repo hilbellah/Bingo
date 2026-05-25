@@ -104,14 +104,12 @@ async function seed() {
       last_name TEXT NOT NULL, seat_id TEXT NOT NULL, package_id TEXT NOT NULL,
       price INTEGER NOT NULL, reference_number TEXT UNIQUE,
       FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
-      FOREIGN KEY (seat_id) REFERENCES seats(id),
-      FOREIGN KEY (package_id) REFERENCES packages(id)
+      FOREIGN KEY (seat_id) REFERENCES seats(id)
     );
     CREATE TABLE booking_addons (
       id TEXT PRIMARY KEY, booking_item_id TEXT NOT NULL, package_id TEXT NOT NULL,
       quantity INTEGER NOT NULL DEFAULT 1, price INTEGER NOT NULL,
-      FOREIGN KEY (booking_item_id) REFERENCES booking_items(id) ON DELETE CASCADE,
-      FOREIGN KEY (package_id) REFERENCES packages(id)
+      FOREIGN KEY (booking_item_id) REFERENCES booking_items(id) ON DELETE CASCADE
     );
 
     CREATE TABLE session_packages (
