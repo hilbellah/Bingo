@@ -97,8 +97,49 @@ Set in `server/.env`:
 | `ADMIN_USERNAME` | `admin` | Admin panel username |
 | `ADMIN_PASSWORD` | `bingo2026` | Admin panel password |
 | `DATABASE_URL` | `./bingo.db` | SQLite database file path |
-| `SESSION_HOLD_MINUTES` | `20` | Seat hold duration in minutes |
+| `SESSION_HOLD_MINUTES` | `20` | Seat hold duration in minutes, capped by the server at 20 |
+| `PAYMENT_FAILURE_HOLD_MINUTES` | `5` | Hold duration after failed, cancelled, or errored booking attempts, capped by the server at 5 |
 | `PORT` | `3001` | API server port |
+
+## Working From Another Device
+
+Use GitHub as the source of truth, not a copied backup folder.
+
+Before switching machines:
+
+```bash
+git status --short
+git add <changed app files>
+git commit -m "Describe the change"
+git push origin main
+```
+
+On the Mac:
+
+```bash
+git clone https://github.com/hilbellah/Bingo.git
+cd Bingo
+npm install
+cd client && npm install
+cd ../server && npm install
+cd ..
+npm run check
+```
+
+Create `server/.env` on the Mac from the live/local secret values. Do not commit `.env`, `.env.bak-*`, database files, PDFs, screenshots, or backup copies unless they are intentionally part of the app.
+
+When returning to the project on any device:
+
+```bash
+git pull origin main
+npm run check
+```
+
+Render should build from the repository. If the Render dashboard has a manual build command, keep it aligned with the repo and do not run the SQLite seed step on Postgres deploys:
+
+```bash
+cd client && npm install --include=dev && npm run build && cd ../server && npm install
+```
 
 ## Seat Map Layout
 

@@ -25,7 +25,13 @@ import {
   verifyBookingEmail
 } from './services/customers.js';
 import { logPaymentEvent } from './services/paymentEvents.js';
-import { releaseExpiredHolds } from './services/holds.js';
+import {
+  holdExpiresAt,
+  releaseExpiredHolds,
+  resolveHoldConfig,
+  shortenBookingSeatHolds,
+  shortenRequestedSeatHolds,
+} from './services/holds.js';
 import { getSessionBookingStatus, withSessionBookingStatus } from './services/sessionBookingStatus.js';
 import {
   getNextPhdSessionId,
@@ -96,14 +102,9 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3001;
-const configuredHoldMinutes = parseInt(process.env.SESSION_HOLD_MINUTES || '20', 10);
-const HOLD_MINUTES = Number.isFinite(configuredHoldMinutes)
-  ? Math.min(configuredHoldMinutes, 20)
-  : 20;
-const configuredPaymentFailureHoldMinutes = parseInt(process.env.PAYMENT_FAILURE_HOLD_MINUTES || '5', 10);
-const PAYMENT_FAILURE_HOLD_MINUTES = Number.isFinite(configuredPaymentFailureHoldMinutes)
-  ? configuredPaymentFailureHoldMinutes
-  : 5;
+const HOLD_CONFIG = resolveHoldConfig();
+const HOLD_MINUTES = HOLD_CONFIG.holdMinutes;
+const PAYMENT_FAILURE_HOLD_MINUTES = HOLD_CONFIG.paymentFailureHoldMinutes;
 const startTime = Date.now();
 
 function generateTicketAccessToken() {
@@ -112,6 +113,29 @@ function generateTicketAccessToken() {
 
 const { uploadsDir, upload, saveUploadedImage } = createUploadMiddleware(__dirname);
 const clientBuild = path.join(__dirname, '../../client/dist');
+
+function getSafeRuntimeConfig() {
+  const emailProvider = process.env.POSTMARK_SERVER_TOKEN
+    ? 'postmark'
+    : process.env.GMAIL_USER
+      ? 'gmail'
+      : process.env.RESEND_API_KEY
+        ? 'resend'
+        : 'none';
+
+  return {
+    dbDriver: (process.env.DB_DRIVER || 'sqlite').toLowerCase().trim(),
+    holdMinutes: HOLD_CONFIG.holdMinutes,
+    maxHoldMinutes: HOLD_CONFIG.maxHoldMinutes,
+    holdMinutesCapped: HOLD_CONFIG.configuredHoldMinutes !== HOLD_CONFIG.holdMinutes,
+    paymentFailureHoldMinutes: HOLD_CONFIG.paymentFailureHoldMinutes,
+    maxPaymentFailureHoldMinutes: HOLD_CONFIG.maxPaymentFailureHoldMinutes,
+    paymentFailureHoldMinutesCapped:
+      HOLD_CONFIG.configuredPaymentFailureHoldMinutes !== HOLD_CONFIG.paymentFailureHoldMinutes,
+    emailProvider,
+    paymentEnvironment: process.env.ANET_ENV || 'sandbox',
+  };
+}
 
 app.get('/IFrameCommunicator.html', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=UTF-8');
@@ -208,7 +232,8 @@ app.get('/health', async (req, res) => {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: Math.floor((Date.now() - startTime) / 1000),
-      db: 'connected'
+      db: 'connected',
+      config: getSafeRuntimeConfig()
     });
   } catch (error) {
     res.status(503).json({
@@ -216,7 +241,8 @@ app.get('/health', async (req, res) => {
       timestamp: new Date().toISOString(),
       uptime: Math.floor((Date.now() - startTime) / 1000),
       db: 'disconnected',
-      error: error.message
+      error: error.message,
+      config: getSafeRuntimeConfig()
     });
   }
 });
@@ -670,65 +696,6 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
   return { ok: true };
 }
 
-async function shortenBookingSeatHolds({ bookingId, minutes = PAYMENT_FAILURE_HOLD_MINUTES }) {
-  const releaseAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
-  const booking = await get('SELECT id, session_id FROM bookings WHERE id = ?', [bookingId]);
-  if (!booking) return { changedSeats: 0, releaseAt };
-
-  const seats = await all(`
-    SELECT s.id
-    FROM seats s
-    JOIN booking_items bi ON bi.seat_id = s.id
-    WHERE bi.booking_id = ?
-      AND s.status = 'held'
-      AND (s.held_until IS NULL OR s.held_until > ?)
-  `, [bookingId, releaseAt]);
-
-  for (const seat of seats) {
-    await run('UPDATE seats SET held_until = ? WHERE id = ?', [releaseAt, seat.id]);
-  }
-
-  if (seats.length > 0) {
-    io.to(`session:${booking.session_id}`).emit('seats:refresh', { sessionId: booking.session_id });
-  }
-
-  return { changedSeats: seats.length, releaseAt };
-}
-
-async function shortenRequestedSeatHolds({ holderId, attendees, minutes = PAYMENT_FAILURE_HOLD_MINUTES }) {
-  const cleanHolderId = String(holderId || '').trim();
-  const seatIds = [...new Set((attendees || []).map(att => String(att?.seatId || '').trim()).filter(Boolean))];
-  const releaseAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
-  if (!cleanHolderId || seatIds.length === 0) return { changedSeats: 0, releaseAt };
-
-  try {
-    const placeholders = seatIds.map(() => '?').join(',');
-    const seats = await all(
-      `SELECT id, session_id
-       FROM seats
-       WHERE id IN (${placeholders})
-         AND status = 'held'
-         AND held_by = ?
-         AND (held_until IS NULL OR held_until > ?)`,
-      [...seatIds, cleanHolderId, releaseAt]
-    );
-
-    for (const seat of seats) {
-      await run('UPDATE seats SET held_until = ? WHERE id = ?', [releaseAt, seat.id]);
-    }
-
-    const sessionIds = [...new Set(seats.map(seat => seat.session_id).filter(Boolean))];
-    for (const sessionId of sessionIds) {
-      io.to(`session:${sessionId}`).emit('seats:refresh', { sessionId });
-    }
-    if (seats.length > 0) await saveDb();
-    return { changedSeats: seats.length, releaseAt };
-  } catch (err) {
-    console.error('[bookings] failed to shorten requested seat holds:', err?.message || err);
-    return { changedSeats: 0, releaseAt, error: err?.message || String(err) };
-  }
-}
-
 // Idempotently mark a 'pending' booking as 'failed' (decline / error path).
 // Failed payment seats stay held only briefly so customers/admins see the table
 // open again without waiting for the full checkout hold window.
@@ -741,7 +708,7 @@ async function markBookingFailed({ bookingId, reason, source = 'server' }) {
   await run(`UPDATE bookings SET payment_status = 'failed', payment_failure_reason = ? WHERE id = ?`,
     [String(reason || 'unknown').slice(0, 500), bookingId]);
   // Shorten the post-payment-error hold to the go-live operational window.
-  const holdShorten = await shortenBookingSeatHolds({ bookingId });
+  const holdShorten = await shortenBookingSeatHolds({ bookingId, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
   await saveDb();
 
   await logPaymentEvent(bookingId, 'declined', source, {
@@ -763,7 +730,7 @@ async function markBookingCancelled({ bookingId, source = 'customer' }) {
 
   await run(`UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?`, [bookingId]);
   // Treat payment cancellations like payment failures for seat availability.
-  const holdShorten = await shortenBookingSeatHolds({ bookingId });
+  const holdShorten = await shortenBookingSeatHolds({ bookingId, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
   await saveDb();
 
   await logPaymentEvent(bookingId, 'cancelled', source, {
@@ -1231,7 +1198,7 @@ app.post('/api/seats/:seatId/lock', bookingLimiter, async (req, res) => {
       }
     }
 
-    const holdUntil = new Date(Date.now() + HOLD_MINUTES * 60 * 1000).toISOString();
+    const holdUntil = holdExpiresAt(HOLD_MINUTES);
     await run(`UPDATE seats SET status = 'held', held_by = ?, held_until = ? WHERE id = ?`,
       [holderId, holdUntil, seatId]);
 
@@ -1453,7 +1420,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
   try {
     const validation = await validateBookingRequest(req.body, { requireEmailVerification: false });
     if (!validation.ok) {
-      await shortenRequestedSeatHolds(failureHoldContext);
+      await shortenRequestedSeatHolds({ ...failureHoldContext, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
       return res.status(validation.statusCode).json({ error: validation.error });
     }
     const {
@@ -1474,7 +1441,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
 
     const phdCheck = await validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType, requiredPkgs);
     if (!phdCheck.ok) {
-      await shortenRequestedSeatHolds(failureHoldContext);
+      await shortenRequestedSeatHolds({ ...failureHoldContext, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
       return res.status(400).json({ error: phdCheck.error });
     }
 
@@ -1496,7 +1463,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
 
       // Refresh held_until so seats survive the hosted-page detour.
       // This gives the customer a fresh hold window from clicking Confirm.
-      const newHoldUntil = new Date(Date.now() + HOLD_MINUTES * 60 * 1000).toISOString();
+      const newHoldUntil = holdExpiresAt(HOLD_MINUTES);
       for (const att of attendees) {
         await run('UPDATE seats SET held_until = ? WHERE id = ?', [newHoldUntil, att.seatId]);
       }
@@ -1507,7 +1474,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
       await logPaymentEvent(bookingId, 'initiated', 'server', { totalAmount, refNumber });
     } catch (err) {
       console.error('Initiate booking insert error:', err);
-      await shortenRequestedSeatHolds(failureHoldContext);
+      await shortenRequestedSeatHolds({ ...failureHoldContext, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
       return res.status(500).json({ error: 'Booking initiation failed' });
     }
 
@@ -1548,7 +1515,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     if (bookingIdForFailure) {
       await markBookingFailed({ bookingId: bookingIdForFailure, reason: err?.message || 'unexpected initiate error', source: 'server' });
     } else {
-      await shortenRequestedSeatHolds(failureHoldContext);
+      await shortenRequestedSeatHolds({ ...failureHoldContext, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
     }
     res.status(500).json({ error: 'Internal server error' });
   }
