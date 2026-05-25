@@ -4,8 +4,8 @@ import { logger } from '../logger.js';
 import { formatLocalDate } from '../utils/format.js';
 import { sessionTypeSql } from './sessionPackages.js';
 
-function logArchiveAudit(session) {
-  run(
+async function logArchiveAudit(session) {
+  await run(
     'INSERT INTO audit_log (id, action, entity_type, entity_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     [
       uuid(),
@@ -24,9 +24,9 @@ function logArchiveAudit(session) {
   );
 }
 
-export function archivePastSessions() {
+export async function archivePastSessions() {
   const today = formatLocalDate(new Date());
-  const pastSessions = all(`
+  const pastSessions = await all(`
     SELECT s.id, s.date, s.time, s.event_title, ${sessionTypeSql('s')} as session_type
     FROM sessions s
     WHERE s.deleted_at IS NULL
@@ -36,13 +36,13 @@ export function archivePastSessions() {
   if (pastSessions.length === 0) return { archived: 0 };
 
   const archivedAt = new Date().toISOString();
-  run('UPDATE sessions SET deleted_at = ? WHERE deleted_at IS NULL AND date < ?', [archivedAt, today]);
+  await run('UPDATE sessions SET deleted_at = ? WHERE deleted_at IS NULL AND date < ?', [archivedAt, today]);
 
   for (const session of pastSessions) {
-    logArchiveAudit(session);
+    await logArchiveAudit(session);
   }
 
-  saveDb();
+  await saveDb();
   logger.info('Auto-archived past sessions', { count: pastSessions.length });
   return { archived: pastSessions.length };
 }

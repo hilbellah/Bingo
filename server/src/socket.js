@@ -10,20 +10,25 @@ export function registerSocketHandlers(io, { logger, authenticateAdminToken }) {
       socket.leave(`session:${sessionId}`);
     });
 
-    socket.on('join:admin-receipts', (payload = {}, ack) => {
-      const adminToken = typeof payload?.token === 'string'
-        ? payload.token
-        : socket.handshake.auth?.adminToken;
-      const adminUser = authenticateAdminToken(adminToken);
-      if (!adminUser) {
-        socket.emit('admin:receipts:unauthorized');
-        if (typeof ack === 'function') ack({ ok: false, error: 'Unauthorized' });
-        return;
-      }
+    socket.on('join:admin-receipts', async (payload = {}, ack) => {
+      try {
+        const adminToken = typeof payload?.token === 'string'
+          ? payload.token
+          : socket.handshake.auth?.adminToken;
+        const adminUser = await authenticateAdminToken(adminToken);
+        if (!adminUser) {
+          socket.emit('admin:receipts:unauthorized');
+          if (typeof ack === 'function') ack({ ok: false, error: 'Unauthorized' });
+          return;
+        }
 
-      socket.data.adminUser = adminUser;
-      socket.join('admin:receipts');
-      if (typeof ack === 'function') ack({ ok: true });
+        socket.data.adminUser = adminUser;
+        socket.join('admin:receipts');
+        if (typeof ack === 'function') ack({ ok: true });
+      } catch (err) {
+        logger.error('join:admin-receipts handler error', { error: err?.message });
+        if (typeof ack === 'function') ack({ ok: false, error: 'Internal error' });
+      }
     });
 
     socket.on('leave:admin-receipts', () => {

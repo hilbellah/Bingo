@@ -1,7 +1,7 @@
 import { run } from '../database.js';
 import { logger } from '../logger.js';
 
-export function clearExpiredHolds() {
+export async function clearExpiredHolds() {
   const now = new Date().toISOString();
   return run(
     `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
@@ -10,8 +10,8 @@ export function clearExpiredHolds() {
   );
 }
 
-export function releaseExpiredHolds(io) {
-  const result = clearExpiredHolds();
+export async function releaseExpiredHolds(io) {
+  const result = await clearExpiredHolds();
 
   if (result.changes > 0) {
     logger.info('Released expired seat holds', { seats_released: result.changes });

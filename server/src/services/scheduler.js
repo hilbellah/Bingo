@@ -24,10 +24,10 @@ export function getWeekMonday(date) {
 
 // Read the JSON settings row. Returns the default config if the row is missing
 // or unparseable rather than blowing up the boot sequence.
-export function getAutoGenerateConfig() {
+export async function getAutoGenerateConfig() {
   let parsed = {};
   try {
-    const row = get("SELECT value FROM settings WHERE key = 'auto_generate_config'");
+    const row = await get("SELECT value FROM settings WHERE key = 'auto_generate_config'");
     if (row?.value) parsed = JSON.parse(row.value);
   } catch (e) {
     logger.warn('Failed to parse auto_generate_config, using defaults', { error: e?.message });
@@ -39,39 +39,39 @@ export function getAutoGenerateConfig() {
   return { lookAheadDays, enabled, lastRunAt };
 }
 
-export function updateAutoGenerateConfig(patch = {}) {
-  const current = getAutoGenerateConfig();
+export async function updateAutoGenerateConfig(patch = {}) {
+  const current = await getAutoGenerateConfig();
   const next = { ...current, ...patch };
   next.lookAheadDays = Math.max(1, Math.min(MAX_LOOK_AHEAD_DAYS, Math.floor(Number(next.lookAheadDays) || DEFAULT_LOOK_AHEAD_DAYS)));
   next.enabled = next.enabled === false ? false : true;
   const json = JSON.stringify(next);
-  const updated = run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'auto_generate_config'", [json]);
+  const updated = await run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'auto_generate_config'", [json]);
   if (!updated || updated.changes === 0) {
-    run("INSERT INTO settings (key, value) VALUES ('auto_generate_config', ?)", [json]);
+    await run("INSERT INTO settings (key, value) VALUES ('auto_generate_config', ?)", [json]);
   }
   return next;
 }
 
-export function normalizeAutoGenerateConfigForGoLive() {
-  const alreadyNormalized = get("SELECT value FROM settings WHERE key = 'go_live_schedule_normalized_at'");
+export async function normalizeAutoGenerateConfigForGoLive() {
+  const alreadyNormalized = await get("SELECT value FROM settings WHERE key = 'go_live_schedule_normalized_at'");
   if (alreadyNormalized?.value) return getAutoGenerateConfig();
 
-  const current = getAutoGenerateConfig();
+  const current = await getAutoGenerateConfig();
   const next = current.lookAheadDays <= DEFAULT_LOOK_AHEAD_DAYS
     ? current
-    : updateAutoGenerateConfig({ lookAheadDays: DEFAULT_LOOK_AHEAD_DAYS });
-  run("INSERT INTO settings (key, value) VALUES ('go_live_schedule_normalized_at', ?)", [new Date().toISOString()]);
+    : await updateAutoGenerateConfig({ lookAheadDays: DEFAULT_LOOK_AHEAD_DAYS });
+  await run("INSERT INTO settings (key, value) VALUES ('go_live_schedule_normalized_at', ?)", [new Date().toISOString()]);
   return next;
 }
 
-function markRunComplete() {
-  updateAutoGenerateConfig({ lastRunAt: new Date().toISOString() });
+async function markRunComplete() {
+  await updateAutoGenerateConfig({ lastRunAt: new Date().toISOString() });
 }
 
 // Load active recurring schedule rows, grouped by day_of_week for O(1) lookup
 // during generation.
-function loadActiveScheduleByDay() {
-  const rows = all(
+async function loadActiveScheduleByDay() {
+  const rows = await all(
     `SELECT id, day_of_week, time, cutoff_time, session_type
      FROM recurring_schedules
      WHERE is_active = 1`
@@ -84,8 +84,8 @@ function loadActiveScheduleByDay() {
   return { rows, byDay };
 }
 
-export function listRecurringSchedules() {
-  return all(
+export async function listRecurringSchedules() {
+  return await all(
     `SELECT id, day_of_week, time, cutoff_time, session_type, is_active, created_at, updated_at
      FROM recurring_schedules
      ORDER BY day_of_week ASC, time ASC`
@@ -98,18 +98,18 @@ export function listRecurringSchedules() {
 // It is idempotent: a (date, hour) pair that already has a non-deleted session
 // is left alone, so this can run on every server boot and every hourly tick
 // without risk of duplicates.
-export function ensureFutureSessions() {
-  const config = getAutoGenerateConfig();
+export async function ensureFutureSessions() {
+  const config = await getAutoGenerateConfig();
   if (!config.enabled) {
     logger.info('Auto session generation skipped (disabled in settings)');
-    markRunComplete();
+    await markRunComplete();
     return { created: 0, skipped: true };
   }
 
-  const { rows, byDay } = loadActiveScheduleByDay();
+  const { rows, byDay } = await loadActiveScheduleByDay();
   if (rows.length === 0) {
     logger.info('Auto session generation skipped (no active recurring schedules)');
-    markRunComplete();
+    await markRunComplete();
     return { created: 0, skipped: true };
   }
 
@@ -135,7 +135,7 @@ export function ensureFutureSessions() {
       // Match the duplicate-prevention rule used by POST /api/admin/sessions:
       // one session per (date, hour). This lets admins still create a manual
       // session at a different hour without the generator clobbering it.
-      const existing = get(
+      const existing = await get(
         `SELECT id FROM sessions
          WHERE date = ? AND SUBSTR(time, 1, 2) = ? AND deleted_at IS NULL`,
         [dateStr, requestHour]
@@ -147,7 +147,7 @@ export function ensureFutureSessions() {
       const sessionType = schedule.session_type || 'regular_bingo';
       const isSpecialEvent = sessionType === 'special_bingo' || sessionType === 'event' ? 1 : 0;
 
-      run(
+      await run(
         `INSERT INTO sessions
            (id, date, time, cutoff_time, is_available, is_special_event, session_type)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -156,13 +156,13 @@ export function ensureFutureSessions() {
 
       for (let tableNum = 1; tableNum <= 75; tableNum++) {
         for (let chair = 1; chair <= 6; chair++) {
-          batchRun(
+          await batchRun(
             'INSERT INTO seats (id, session_id, table_number, chair_number, status) VALUES (?, ?, ?, ?, ?)',
             [uuid(), id, tableNum, chair, 'vacant']
           );
         }
       }
-      scheduleSaveAfterBatch();
+      await scheduleSaveAfterBatch();
 
       logger.info('Auto-created session', {
         date: dateStr,
@@ -177,12 +177,12 @@ export function ensureFutureSessions() {
   if (created > 0) {
     logger.info('Auto-session generation complete', { created, lookAheadDays: lookAhead });
   }
-  markRunComplete();
+  await markRunComplete();
   return { created, lookAheadDays: lookAhead };
 }
 
-export function pruneFutureSessionsBeyondLookahead() {
-  const config = getAutoGenerateConfig();
+export async function pruneFutureSessionsBeyondLookahead() {
+  const config = await getAutoGenerateConfig();
   const now = new Date();
   const cutoff = new Date(now);
   cutoff.setDate(now.getDate() + config.lookAheadDays - 1);
@@ -190,7 +190,7 @@ export function pruneFutureSessionsBeyondLookahead() {
   const cutoffDateStr = formatLocalDate(cutoff);
   const prunedAt = new Date().toISOString();
 
-  const sessions = all(
+  const sessions = await all(
     `SELECT id, date, time
      FROM sessions s
      WHERE s.date > ?
@@ -205,7 +205,7 @@ export function pruneFutureSessionsBeyondLookahead() {
   );
 
   for (const session of sessions) {
-    run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [prunedAt, session.id]);
+    await run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [prunedAt, session.id]);
   }
 
   if (sessions.length > 0) {
@@ -214,7 +214,7 @@ export function pruneFutureSessionsBeyondLookahead() {
       cutoffDate: cutoffDateStr,
       lookAheadDays: config.lookAheadDays,
     });
-    scheduleSaveAfterBatch();
+    await scheduleSaveAfterBatch();
   }
 
   return {
@@ -231,7 +231,7 @@ export function pruneFutureSessionsBeyondLookahead() {
 // now creates sessions with is_available = 1 directly, so this is mostly a
 // no-op safety net for any sessions that were created with is_available = 0
 // in the past (or by the previous scheduler implementation).
-export function openWeeklySessions() {
+export async function openWeeklySessions() {
   const now = new Date();
   const thisMonday = getWeekMonday(now);
   const thisSunday = new Date(thisMonday);
@@ -240,7 +240,7 @@ export function openWeeklySessions() {
   const mondayStr = formatLocalDate(thisMonday);
   const sundayStr = formatLocalDate(thisSunday);
 
-  const { changes } = run(
+  const { changes } = await run(
     `UPDATE sessions SET is_available = 1
      WHERE date >= ? AND date <= ?
      AND is_available = 0
@@ -254,11 +254,11 @@ export function openWeeklySessions() {
   }
 }
 
-export function cleanupOldData() {
+export async function cleanupOldData() {
   const thirtyDaysAgo = formatLocalDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
   const ninetyDaysAgo = formatLocalDate(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000));
 
-  const oldSessions = all(`
+  const oldSessions = await all(`
     SELECT id FROM sessions
     WHERE date < ?
       AND is_special_event = 0
@@ -269,28 +269,28 @@ export function cleanupOldData() {
     const sessionIds = oldSessions.map(s => s.id);
     const placeholders = sessionIds.map(() => '?').join(',');
 
-    exec('BEGIN TRANSACTION');
-    run(`DELETE FROM seats WHERE session_id IN (${placeholders})`, sessionIds);
-    run(`DELETE FROM sessions WHERE id IN (${placeholders})`, sessionIds);
-    exec('COMMIT');
+    await exec('BEGIN TRANSACTION');
+    await run(`DELETE FROM seats WHERE session_id IN (${placeholders})`, sessionIds);
+    await run(`DELETE FROM sessions WHERE id IN (${placeholders})`, sessionIds);
+    await exec('COMMIT');
 
     logger.info('Cleaned up old sessions', { count: oldSessions.length });
   }
 
-  const auditDeleted = run('DELETE FROM audit_log WHERE created_at < ?', [ninetyDaysAgo]);
+  const auditDeleted = await run('DELETE FROM audit_log WHERE created_at < ?', [ninetyDaysAgo]);
   if (auditDeleted.changes > 0) {
     logger.info('Pruned audit log', { entries_deleted: auditDeleted.changes });
   }
 
-  exec('VACUUM');
+  await exec('VACUUM');
   logger.info('Database vacuumed');
 }
 
 // Used by the admin "Auto Schedule" page to show what the generator will do
 // and what it most recently did.
-export function getScheduleSummary() {
-  const config = getAutoGenerateConfig();
-  const schedules = listRecurringSchedules();
+export async function getScheduleSummary() {
+  const config = await getAutoGenerateConfig();
+  const schedules = await listRecurringSchedules();
   const now = new Date();
   const todayStr = formatLocalDate(now);
 
@@ -299,17 +299,17 @@ export function getScheduleSummary() {
     .sort((a, b) => a - b)
     .map(d => DAY_SHORT_LABELS[d]);
 
-  const upcomingAutoSessions = all(
+  const upcomingAutoSessions = (await all(
     `SELECT COUNT(*) as count FROM sessions
      WHERE date >= ? AND is_special_event = 0 AND deleted_at IS NULL`,
     [todayStr]
-  )[0]?.count || 0;
+  ))[0]?.count || 0;
 
   const lookAheadDate = new Date(now);
   lookAheadDate.setDate(now.getDate() + config.lookAheadDays - 1);
   const lookAheadDateStr = formatLocalDate(lookAheadDate);
 
-  const upcomingInWindow = all(
+  const upcomingInWindow = await all(
     `SELECT date, time, cutoff_time, session_type, is_available
      FROM sessions
      WHERE date >= ? AND date <= ?
@@ -319,7 +319,7 @@ export function getScheduleSummary() {
     [todayStr, lookAheadDateStr]
   );
 
-  const beyondWindow = all(
+  const beyondWindow = (await all(
     `SELECT COUNT(*) as count
      FROM sessions s
      WHERE s.date > ?
@@ -327,9 +327,9 @@ export function getScheduleSummary() {
        AND COALESCE(s.session_type, 'regular_bingo') = 'regular_bingo'
        AND s.deleted_at IS NULL`,
     [lookAheadDateStr]
-  )[0]?.count || 0;
+  ))[0]?.count || 0;
 
-  const prunableBeyondWindow = all(
+  const prunableBeyondWindow = (await all(
     `SELECT COUNT(*) as count
      FROM sessions s
      WHERE s.date > ?
@@ -340,7 +340,7 @@ export function getScheduleSummary() {
          SELECT 1 FROM bookings b WHERE b.session_id = s.id
        )`,
     [lookAheadDateStr]
-  )[0]?.count || 0;
+  ))[0]?.count || 0;
 
   return {
     config,

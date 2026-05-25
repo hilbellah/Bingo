@@ -17,13 +17,14 @@ export function registerAdminBookingRoutes(app, {
   markBookingRefunded,
   markBookingVoided,
 }) {
-  app.get('/api/admin/bookings', adminAuth, (req, res) => {
+  app.get('/api/admin/bookings', adminAuth, async (req, res) => {
+    try {
     const { sessionId } = req.query;
     let whereClause = '';
     const params = [];
     if (sessionId) { whereClause = 'WHERE b.session_id = ?'; params.push(sessionId); }
 
-    const rows = all(`
+    const rows = await all(`
       SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at, b.email,
              b.customer_first_name, b.customer_last_name,
              s.date as session_date, s.time as session_time,
@@ -61,11 +62,12 @@ export function registerAdminBookingRoutes(app, {
         };
       }
 
-      const addons = all(`
+      const addonRows = await all(`
         SELECT ba.*, COALESCE(p.name, sp.name) as package_name FROM booking_addons ba
         LEFT JOIN packages p ON p.id = ba.package_id
         LEFT JOIN session_packages sp ON sp.id = ba.package_id WHERE ba.booking_item_id = ?
-      `, [row.item_id]).map(addon => ({
+      `, [row.item_id]);
+      const addons = addonRows.map(addon => ({
         packageName: addon.package_name,
         quantity: addon.quantity,
         price: addon.price,
@@ -92,15 +94,20 @@ export function registerAdminBookingRoutes(app, {
       });
     }
     res.json(Object.values(bookings));
+    } catch (err) {
+      console.error('GET /api/admin/bookings failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
-  app.get('/api/admin/bookings/export', adminAuth, (req, res) => {
+  app.get('/api/admin/bookings/export', adminAuth, async (req, res) => {
+    try {
     const { sessionId } = req.query;
     let whereClause = '';
     const params = [];
     if (sessionId) { whereClause = 'WHERE b.session_id = ?'; params.push(sessionId); }
 
-    const rows = all(`
+    const rows = await all(`
       SELECT COALESCE(bi.reference_number, b.reference_number) as ticket_reference, b.total_amount, b.payment_status, b.created_at,
              b.email, b.customer_first_name, b.customer_last_name,
              s.date as session_date, s.time as session_time,
@@ -142,19 +149,24 @@ export function registerAdminBookingRoutes(app, {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=bookings-report.csv');
     res.send(lines.join('\n'));
+    } catch (err) {
+      console.error('GET /api/admin/bookings/export failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
-  app.post('/api/admin/bookings/:id/cancel', adminAuth, (req, res) => {
-    const booking = get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
+  app.post('/api/admin/bookings/:id/cancel', adminAuth, async (req, res) => {
+    try {
+    const booking = await get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
-    const items = all('SELECT bi.*, seats.table_number, seats.chair_number FROM booking_items bi JOIN seats ON seats.id = bi.seat_id WHERE bi.booking_id = ?', [req.params.id]);
+    const items = await all('SELECT bi.*, seats.table_number, seats.chair_number FROM booking_items bi JOIN seats ON seats.id = bi.seat_id WHERE bi.booking_id = ?', [req.params.id]);
     for (const item of items) {
-      run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
+      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
     }
-    run("UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?", [req.params.id]);
+    await run("UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?", [req.params.id]);
 
-    logAudit('booking_cancelled', 'booking', req.params.id, {
+    await logAudit('booking_cancelled', 'booking', req.params.id, {
       referenceNumber: booking.reference_number,
       sessionId: booking.session_id,
       totalAmount: booking.total_amount,
@@ -166,11 +178,16 @@ export function registerAdminBookingRoutes(app, {
     });
 
     io.to(`session:${booking.session_id}`).emit('seats:refresh');
-    saveDb();
+    await saveDb();
     res.json({ success: true });
+    } catch (err) {
+      console.error('POST /api/admin/bookings/:id/cancel failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
-  app.post('/api/admin/bookings/go-live-cleanup', adminAuth, (req, res) => {
+  app.post('/api/admin/bookings/go-live-cleanup', adminAuth, async (req, res) => {
+    try {
     if (req.body?.confirm !== 'CLEAR TEST DATA') {
       return res.status(400).json({
         error: 'confirmation_required',
@@ -180,7 +197,7 @@ export function registerAdminBookingRoutes(app, {
 
     const deletableStatuses = ['pending', 'failed', 'cancelled'];
     const placeholders = deletableStatuses.map(() => '?').join(',');
-    const bookings = all(
+    const bookings = await all(
       `SELECT id, reference_number, session_id, payment_status, total_amount
        FROM bookings
        WHERE payment_status IN (${placeholders})`,
@@ -189,37 +206,39 @@ export function registerAdminBookingRoutes(app, {
     const bookingIds = bookings.map(booking => booking.id);
     const bookingPlaceholders = bookingIds.map(() => '?').join(',');
     const items = bookingIds.length > 0
-      ? all(`SELECT seat_id FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`, bookingIds)
+      ? await all(`SELECT seat_id FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`, bookingIds)
       : [];
-    const paidCount = get(`
+    const paidCount = (await get(`
       SELECT COUNT(*) as count
       FROM bookings
       WHERE payment_status NOT IN (${placeholders})
-    `, deletableStatuses)?.count || 0;
+    `, deletableStatuses))?.count || 0;
 
     for (const item of items) {
-      run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
+      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
     }
 
-    const heldCleared = run(
+    const heldClearedResult = await run(
       "UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE status = 'held'"
-    ).changes || 0;
+    );
+    const heldCleared = heldClearedResult.changes || 0;
 
     if (bookingIds.length > 0) {
-      const itemIds = all(
+      const itemRows = await all(
         `SELECT id FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`,
         bookingIds
-      ).map(item => item.id);
+      );
+      const itemIds = itemRows.map(item => item.id);
       if (itemIds.length > 0) {
         const itemPlaceholders = itemIds.map(() => '?').join(',');
-        run(`DELETE FROM booking_addons WHERE booking_item_id IN (${itemPlaceholders})`, itemIds);
+        await run(`DELETE FROM booking_addons WHERE booking_item_id IN (${itemPlaceholders})`, itemIds);
       }
-      run(`DELETE FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`, bookingIds);
-      run(`DELETE FROM payment_events WHERE booking_id IN (${bookingPlaceholders})`, bookingIds);
-      run(`DELETE FROM bookings WHERE id IN (${bookingPlaceholders})`, bookingIds);
+      await run(`DELETE FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`, bookingIds);
+      await run(`DELETE FROM payment_events WHERE booking_id IN (${bookingPlaceholders})`, bookingIds);
+      await run(`DELETE FROM bookings WHERE id IN (${bookingPlaceholders})`, bookingIds);
     }
 
-    run('DELETE FROM email_verifications');
+    await run('DELETE FROM email_verifications');
 
     const sessionIds = [...new Set(bookings.map(booking => booking.session_id).filter(Boolean))];
     for (const sessionId of sessionIds) {
@@ -227,7 +246,7 @@ export function registerAdminBookingRoutes(app, {
     }
     io.to('admin:receipts').emit('bookings:cleared');
 
-    logAudit('go_live_test_data_cleaned', 'booking', 'go_live_cleanup', {
+    await logAudit('go_live_test_data_cleaned', 'booking', 'go_live_cleanup', {
       deletedBookings: bookings.length,
       releasedBookingSeats: items.length,
       clearedHeldSeats: heldCleared,
@@ -236,7 +255,7 @@ export function registerAdminBookingRoutes(app, {
       clearedBy: req.adminUser?.email || null,
     });
 
-    saveDb();
+    await saveDb();
     res.json({
       ok: true,
       deletedBookings: bookings.length,
@@ -247,11 +266,16 @@ export function registerAdminBookingRoutes(app, {
         ? `Cleared ${bookings.length} pending/failed/cancelled test booking(s) and ${heldCleared} held seat(s). Kept ${paidCount} paid/refunded/voided booking(s).`
         : `Cleared ${bookings.length} test booking(s) and ${heldCleared} held seat(s).`,
     });
+    } catch (err) {
+      console.error('POST /api/admin/bookings/go-live-cleanup failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
-  app.delete('/api/admin/bookings/:id', adminAuth, (req, res) => {
+  app.delete('/api/admin/bookings/:id', adminAuth, async (req, res) => {
+    try {
     const identifier = req.params.id;
-    const booking = get(
+    const booking = await get(
       'SELECT * FROM bookings WHERE id = ? OR reference_number = ?',
       [identifier, identifier]
     );
@@ -265,12 +289,12 @@ export function registerAdminBookingRoutes(app, {
       });
     }
 
-    const items = all('SELECT id, seat_id, first_name, last_name FROM booking_items WHERE booking_id = ?', [booking.id]);
+    const items = await all('SELECT id, seat_id, first_name, last_name FROM booking_items WHERE booking_id = ?', [booking.id]);
     for (const item of items) {
-      run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
+      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
     }
 
-    logAudit('booking_deleted', 'booking', booking.id, {
+    await logAudit('booking_deleted', 'booking', booking.id, {
       referenceNumber: booking.reference_number,
       sessionId: booking.session_id,
       paymentStatus: booking.payment_status,
@@ -278,23 +302,28 @@ export function registerAdminBookingRoutes(app, {
       attendees: items.map(item => ({ firstName: item.first_name, lastName: item.last_name })),
     });
 
-    run('DELETE FROM payment_events WHERE booking_id = ?', [booking.id]);
-    run('DELETE FROM booking_addons WHERE booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?)', [booking.id]);
-    run('DELETE FROM booking_items WHERE booking_id = ?', [booking.id]);
-    run('DELETE FROM bookings WHERE id = ?', [booking.id]);
+    await run('DELETE FROM payment_events WHERE booking_id = ?', [booking.id]);
+    await run('DELETE FROM booking_addons WHERE booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?)', [booking.id]);
+    await run('DELETE FROM booking_items WHERE booking_id = ?', [booking.id]);
+    await run('DELETE FROM bookings WHERE id = ?', [booking.id]);
 
     io.to(`session:${booking.session_id}`).emit('seats:refresh');
-    saveDb();
+    await saveDb();
 
     res.json({
       ok: true,
       deleted: booking.reference_number,
       releasedSeats: items.length,
     });
+    } catch (err) {
+      console.error('DELETE /api/admin/bookings/:id failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   app.post('/api/admin/booking-items/:id/refund', adminAuth, async (req, res) => {
-    const item = get(`
+    try {
+    const item = await get(`
       SELECT bi.*, b.id as booking_id, b.reference_number as booking_reference,
              b.payment_status, b.transaction_id, b.total_amount
       FROM booking_items bi
@@ -315,16 +344,16 @@ export function registerAdminBookingRoutes(app, {
       });
     }
 
-    const amountCents = getBookingItemRefundAmount(item.id);
+    const amountCents = await getBookingItemRefundAmount(item.id);
     if (!amountCents || amountCents <= 0) {
       return res.status(400).json({ error: 'Could not determine the ticket refund amount.' });
     }
 
-    const activeItems = get(`
+    const activeItems = (await get(`
       SELECT COUNT(*) as count
       FROM booking_items
       WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'
-    `, [item.booking_id])?.count || 0;
+    `, [item.booking_id]))?.count || 0;
 
     const verify = await verifyTransaction(item.transaction_id);
     if (!verify.ok) {
@@ -363,7 +392,7 @@ export function registerAdminBookingRoutes(app, {
       return res.status(502).json({ error: `${action} failed: ${result.error}` });
     }
 
-    const markResult = markBookingItemRefunded({
+    const markResult = await markBookingItemRefunded({
       bookingId: item.booking_id,
       bookingItemId: item.id,
       transactionId: item.transaction_id,
@@ -385,10 +414,15 @@ export function registerAdminBookingRoutes(app, {
       seatsReleased: markResult.releasedSeats || 0,
       bookingStatus: markResult.bookingStatus,
     });
+    } catch (err) {
+      console.error('POST /api/admin/booking-items/:id/refund failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   app.post('/api/admin/bookings/:id/refund', adminAuth, async (req, res) => {
-    const booking = get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
+    try {
+    const booking = await get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
     if (booking.payment_status !== 'paid') {
@@ -414,7 +448,7 @@ export function registerAdminBookingRoutes(app, {
       action = 'void';
       result = await voidTransaction(booking.transaction_id);
       if (result.ok) {
-        markResult = markBookingVoided({
+        markResult = await markBookingVoided({
           bookingId: booking.id,
           transactionId: booking.transaction_id,
           voidTransactionId: result.voidTransId,
@@ -432,7 +466,7 @@ export function registerAdminBookingRoutes(app, {
         last4: verify.last4,
       });
       if (result.ok) {
-        markResult = markBookingRefunded({
+        markResult = await markBookingRefunded({
           bookingId: booking.id,
           transactionId: booking.transaction_id,
           refundTransactionId: result.refundTransId,
@@ -455,5 +489,9 @@ export function registerAdminBookingRoutes(app, {
       refundTransId: result.refundTransId || result.voidTransId,
       seatsReleased: markResult?.releasedSeats || 0,
     });
+    } catch (err) {
+      console.error('POST /api/admin/bookings/:id/refund failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 }

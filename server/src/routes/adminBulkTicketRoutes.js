@@ -4,7 +4,8 @@ import { sessionTypeSql } from '../services/sessionPackages.js';
 import { formatPrice } from '../utils/format.js';
 
 export function registerAdminBulkTicketRoutes(app, { logAudit }) {
-  app.get('/api/admin/bookings/bulk-tickets', adminAuth, (req, res) => {
+  app.get('/api/admin/bookings/bulk-tickets', adminAuth, async (req, res) => {
+    try {
     const { dateFrom, dateTo } = req.query;
     if (!dateFrom) return res.status(400).json({ error: 'dateFrom query parameter required' });
 
@@ -13,14 +14,14 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
 
     let hasSpecialEvent = false;
     try {
-      all('SELECT is_special_event FROM sessions LIMIT 1');
+      await all('SELECT is_special_event FROM sessions LIMIT 1');
       hasSpecialEvent = true;
     } catch (e) {
       // Older databases without event columns cannot return template tickets.
     }
 
     const specialCols = hasSpecialEvent ? `, s.is_special_event, s.event_title, ${sessionTypeSql('s')} as session_type` : '';
-    const rows = all(`
+    const rows = await all(`
       SELECT b.id as booking_id, b.reference_number, b.total_amount, b.payment_status,
              s.id as session_id, s.date as session_date, s.time as session_time
              ${specialCols},
@@ -91,9 +92,14 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
       sessions: result,
       totalTickets
     });
+    } catch (err) {
+      console.error('GET /api/admin/bookings/bulk-tickets failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
-  app.post('/api/admin/bookings/bulk-tickets/mark-printed', adminAuth, (req, res) => {
+  app.post('/api/admin/bookings/bulk-tickets/mark-printed', adminAuth, async (req, res) => {
+    try {
     const ticketIds = Array.isArray(req.body?.ticketIds)
       ? req.body.ticketIds.map(id => String(id || '').trim()).filter(Boolean)
       : [];
@@ -105,7 +111,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
     const uniqueIds = [...new Set(ticketIds)].slice(0, 1000);
     const placeholders = uniqueIds.map(() => '?').join(',');
     const now = new Date().toISOString();
-    const result = run(
+    const result = await run(
       `UPDATE booking_items
        SET printed_at = ?
        WHERE id IN (${placeholders})
@@ -120,12 +126,16 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
       [now, ...uniqueIds]
     );
 
-    logAudit('template_tickets_marked_printed', 'booking_items', 'bulk', {
+    await logAudit('template_tickets_marked_printed', 'booking_items', 'bulk', {
       requested: uniqueIds.length,
       updated: result.changes,
     });
 
-    saveDb();
+    await saveDb();
     res.json({ success: true, printedAt: now, updated: result.changes });
+    } catch (err) {
+      console.error('POST /api/admin/bookings/bulk-tickets/mark-printed failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 }
