@@ -1,0 +1,101 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '..');
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wolastoq-booking-initiate-'));
+const dbPath = path.join(tmpDir, 'bingo.db');
+
+process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = dbPath;
+process.env.SKIP_LEGACY_DB_COPY = '1';
+process.env.SKIP_RENDER_DISK_CHECK = '1';
+process.env.SESSION_HOLD_MINUTES = '20';
+process.env.PAYMENT_FAILURE_HOLD_MINUTES = '60';
+
+const databaseUrl = pathToFileURL(path.join(repoRoot, 'server/src/database.js'));
+const migrateUrl = pathToFileURL(path.join(repoRoot, 'server/src/migrate.js'));
+const appUrl = pathToFileURL(path.join(repoRoot, 'server/src/index.js'));
+
+const { migrate } = await import(migrateUrl);
+const { getDb, get, run, saveDb } = await import(databaseUrl);
+
+await migrate();
+await getDb();
+
+const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const sessionId = 'booking-initiate-session';
+const seatId = 'booking-initiate-seat-1';
+const holderId = 'booking-initiate-holder';
+const initialHoldUntil = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+
+await run(
+  `INSERT INTO sessions
+    (id, date, time, cutoff_time, is_available, session_type, is_special_event)
+   VALUES (?, ?, '18:30', '12:00', 1, 'regular_bingo', 0)`,
+  [sessionId, futureDate]
+);
+await run(
+  `INSERT INTO seats
+    (id, session_id, table_number, chair_number, status, held_by, held_until)
+   VALUES (?, ?, 1, 1, 'held', ?, ?)`,
+  [seatId, sessionId, holderId, initialHoldUntil]
+);
+await saveDb();
+
+const { app } = await import(appUrl);
+const listener = app.listen(0);
+const baseUrl = `http://127.0.0.1:${listener.address().port}`;
+
+async function postJson(pathname, body) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  return { response, data };
+}
+
+try {
+  const beforeInitiate = Date.now();
+  const result = await postJson('/api/bookings/initiate', {
+    sessionId,
+    holderId,
+    email: 'not-an-email',
+    customerFirstName: 'Test',
+    customerLastName: 'Customer',
+    attendees: [
+      {
+        firstName: 'Test',
+        lastName: 'Customer',
+        seatId,
+        addons: [],
+      },
+    ],
+  });
+  const afterInitiate = Date.now();
+
+  assert.equal(result.response.status, 400);
+  assert.match(result.data.error, /valid email/i);
+
+  const seat = await get('SELECT status, held_by, held_until FROM seats WHERE id = ?', [seatId]);
+  assert.equal(seat.status, 'held');
+  assert.equal(seat.held_by, holderId);
+
+  const heldUntilMs = Date.parse(seat.held_until);
+  assert(Number.isFinite(heldUntilMs), 'seat should still have a valid held_until');
+  assert.notEqual(seat.held_until, initialHoldUntil);
+  assert(
+    heldUntilMs >= beforeInitiate + 4.5 * 60 * 1000 && heldUntilMs <= afterInitiate + 5.5 * 60 * 1000,
+    `expected failed initiate cooldown about 5 minutes out, got ${seat.held_until}`
+  );
+
+  console.log('Booking initiate failure API check passed.');
+} finally {
+  await new Promise(resolve => listener.close(resolve));
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
