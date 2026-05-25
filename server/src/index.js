@@ -695,6 +695,40 @@ async function shortenBookingSeatHolds({ bookingId, minutes = PAYMENT_FAILURE_HO
   return { changedSeats: seats.length, releaseAt };
 }
 
+async function shortenRequestedSeatHolds({ holderId, attendees, minutes = PAYMENT_FAILURE_HOLD_MINUTES }) {
+  const cleanHolderId = String(holderId || '').trim();
+  const seatIds = [...new Set((attendees || []).map(att => String(att?.seatId || '').trim()).filter(Boolean))];
+  const releaseAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+  if (!cleanHolderId || seatIds.length === 0) return { changedSeats: 0, releaseAt };
+
+  try {
+    const placeholders = seatIds.map(() => '?').join(',');
+    const seats = await all(
+      `SELECT id, session_id
+       FROM seats
+       WHERE id IN (${placeholders})
+         AND status = 'held'
+         AND held_by = ?
+         AND (held_until IS NULL OR held_until > ?)`,
+      [...seatIds, cleanHolderId, releaseAt]
+    );
+
+    for (const seat of seats) {
+      await run('UPDATE seats SET held_until = ? WHERE id = ?', [releaseAt, seat.id]);
+    }
+
+    const sessionIds = [...new Set(seats.map(seat => seat.session_id).filter(Boolean))];
+    for (const sessionId of sessionIds) {
+      io.to(`session:${sessionId}`).emit('seats:refresh', { sessionId });
+    }
+    if (seats.length > 0) await saveDb();
+    return { changedSeats: seats.length, releaseAt };
+  } catch (err) {
+    console.error('[bookings] failed to shorten requested seat holds:', err?.message || err);
+    return { changedSeats: 0, releaseAt, error: err?.message || String(err) };
+  }
+}
+
 // Idempotently mark a 'pending' booking as 'failed' (decline / error path).
 // Failed payment seats stay held only briefly so customers/admins see the table
 // open again without waiting for the full checkout hold window.
@@ -1411,11 +1445,20 @@ app.post('/api/bookings', adminAuth, async (req, res) => {
 // Seats are NOT flipped to 'sold' here — they remain 'held' with a refreshed
 // held_until so they survive the time the customer spends on the hosted page.
 app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
+  let failureHoldContext = {
+    holderId: req.body?.holderId,
+    attendees: req.body?.attendees,
+  };
+  let bookingIdForFailure = null;
   try {
     const validation = await validateBookingRequest(req.body, { requireEmailVerification: false });
-    if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
+    if (!validation.ok) {
+      await shortenRequestedSeatHolds(failureHoldContext);
+      return res.status(validation.statusCode).json({ error: validation.error });
+    }
     const {
       sessionId,
+      holderId,
       attendees,
       trimmedEmail,
       customerFirstName,
@@ -1427,9 +1470,13 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
       requiredPkgs,
       sessionType
     } = validation.data;
+    failureHoldContext = { holderId, attendees };
 
     const phdCheck = await validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType, requiredPkgs);
-    if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
+    if (!phdCheck.ok) {
+      await shortenRequestedSeatHolds(failureHoldContext);
+      return res.status(400).json({ error: phdCheck.error });
+    }
 
     let bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken;
     try {
@@ -1445,6 +1492,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
         customerLastName,
         emailVerifiedAt
       }));
+      bookingIdForFailure = bookingId;
 
       // Refresh held_until so seats survive the hosted-page detour.
       // This gives the customer a fresh hold window from clicking Confirm.
@@ -1459,6 +1507,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
       await logPaymentEvent(bookingId, 'initiated', 'server', { totalAmount, refNumber });
     } catch (err) {
       console.error('Initiate booking insert error:', err);
+      await shortenRequestedSeatHolds(failureHoldContext);
       return res.status(500).json({ error: 'Booking initiation failed' });
     }
 
@@ -1496,6 +1545,11 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error('POST /api/bookings/initiate failed:', err);
+    if (bookingIdForFailure) {
+      await markBookingFailed({ bookingId: bookingIdForFailure, reason: err?.message || 'unexpected initiate error', source: 'server' });
+    } else {
+      await shortenRequestedSeatHolds(failureHoldContext);
+    }
     res.status(500).json({ error: 'Internal server error' });
   }
 });
