@@ -13,6 +13,7 @@ const Tutorial = lazy(() => import('./components/Tutorial'));
 function RouteFallback() {
   return (
     <div className="min-h-screen bg-brand-blue-dark text-white flex items-center justify-center">
+      {/* Pipeline verification branch only. */}
       <div className="text-sm text-white/70">Loading...</div>
     </div>
   );
