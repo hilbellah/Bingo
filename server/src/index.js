@@ -390,6 +390,26 @@ async function insertBookingRecord({
   customerLastName,
   emailVerifiedAt
 }) {
+  if (useSessionPkgs && sessionPkgs?.length) {
+    for (const pkg of sessionPkgs) {
+      await run(
+        `INSERT OR IGNORE INTO packages
+          (id, name, price, type, max_quantity, is_active, sort_order, description, is_phd)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+        [
+          pkg.id,
+          pkg.name,
+          pkg.price,
+          pkg.type,
+          pkg.max_quantity || 1,
+          pkg.sort_order || 0,
+          pkg.description || '',
+          pkg.is_phd || 0,
+        ]
+      );
+    }
+  }
+
   let totalAmount = 0;
   const bookingId = uuid();
   const refNumber = generateRef();
