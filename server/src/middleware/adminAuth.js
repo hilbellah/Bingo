@@ -14,7 +14,7 @@ export function isSuperUser(email, source, dbUser = null) {
   return getSuperUserEmails().includes((email || '').toLowerCase());
 }
 
-export function authenticateAdminToken(auth) {
+export async function authenticateAdminToken(auth) {
   if (!auth || !auth.startsWith('Basic ')) return null;
 
   const decoded = Buffer.from(auth.split(' ')[1] || '', 'base64').toString();
@@ -31,7 +31,7 @@ export function authenticateAdminToken(auth) {
     return { email: user, source: 'env', isSuperUser: true };
   }
 
-  const dbUser = get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [user]);
+  const dbUser = await get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [user]);
   if (dbUser && bcrypt.compareSync(pass, dbUser.password_hash)) {
     return {
       id: dbUser.id,
@@ -45,14 +45,19 @@ export function authenticateAdminToken(auth) {
   return null;
 }
 
-export function adminAuth(req, res, next) {
-  const adminUser = authenticateAdminToken(req.headers.authorization);
-  if (adminUser) {
-    req.adminUser = adminUser;
-    return next();
+export async function adminAuth(req, res, next) {
+  try {
+    const adminUser = await authenticateAdminToken(req.headers.authorization);
+    if (adminUser) {
+      req.adminUser = adminUser;
+      return next();
+    }
+    res.status(401).json({ error: req.headers.authorization ? 'Invalid credentials' : 'Unauthorized' });
+  } catch (err) {
+    // Express 4 doesn't auto-catch rejected promises from middleware, so we
+    // explicitly forward errors to the error handler chain.
+    next(err);
   }
-
-  res.status(401).json({ error: req.headers.authorization ? 'Invalid credentials' : 'Unauthorized' });
 }
 
 export function requireSuperUser(req, res, next) {

@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { v4 as uuid } from 'uuid';
 import { get, run, saveDb } from './database.js';
 import { releaseExpiredHolds } from './services/holds.js';
 import { archivePastSessions } from './services/sessionArchive.js';
@@ -16,7 +17,7 @@ export function migrateSeatLayout() {
   // migrations run in migrate.js so they happen before maintenance jobs start.
 }
 
-export function seedInitialAdminFromEnv(logger) {
+export async function seedInitialAdminFromEnv(logger) {
   const email = (process.env.INITIAL_ADMIN_EMAIL || '').trim();
   const password = process.env.INITIAL_ADMIN_PASSWORD || '';
   const displayName = (process.env.INITIAL_ADMIN_DISPLAY_NAME || '').trim() || null;
@@ -39,40 +40,59 @@ export function seedInitialAdminFromEnv(logger) {
     return;
   }
 
-  const existing = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [email]);
+  const existing = await get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [email]);
   if (existing) {
     if (shouldBeSuper) {
-      run("UPDATE admin_users SET is_super_user = 1, updated_at = datetime('now') WHERE id = ?", [existing.id]);
+      await run("UPDATE admin_users SET is_super_user = 1, updated_at = datetime('now') WHERE id = ?", [existing.id]);
     }
     return;
   }
 
   const hash = bcrypt.hashSync(password, 10);
-  run('INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user) VALUES (?, ?, ?, ?, ?)',
-    [uuid(), email, hash, displayName, shouldBeSuper ? 1 : 0]);
+  await run(
+    'INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user) VALUES (?, ?, ?, ?, ?)',
+    [uuid(), email, hash, displayName, shouldBeSuper ? 1 : 0]
+  );
   logger.info('Seeded initial admin user from env', { email, isSuperUser: shouldBeSuper });
 }
 
-export function startMaintenanceTasks(io, { reconcileReversedBookingSeats }) {
-  cleanupOldData();
-  setInterval(cleanupOldData, 24 * 60 * 60 * 1000);
+// Top-level setInterval callbacks are wrapped in async IIFEs so unhandled
+// promise rejections surface in the logs rather than getting swallowed.
+function runAsyncTask(label, fn, logger) {
+  Promise.resolve()
+    .then(() => fn())
+    .catch((err) => {
+      if (logger) logger.error(`${label} failed`, { error: err?.message });
+      else console.error(`[startup] ${label} failed:`, err);
+    });
+}
 
-  openWeeklySessions();
-  ensureGoLiveSalesReportCutoff();
-  normalizeAutoGenerateConfigForGoLive();
-  ensureFutureSessions();
-  pruneFutureSessionsBeyondLookahead();
-  archivePastSessions();
+export async function startMaintenanceTasks(io, { reconcileReversedBookingSeats }, logger = null) {
+  await cleanupOldData();
+  setInterval(() => runAsyncTask('cleanupOldData', cleanupOldData, logger), 24 * 60 * 60 * 1000);
+
+  await openWeeklySessions();
+  await ensureGoLiveSalesReportCutoff();
+  await normalizeAutoGenerateConfigForGoLive();
+  await ensureFutureSessions();
+  await pruneFutureSessionsBeyondLookahead();
+  await archivePastSessions();
+
   setInterval(() => {
-    openWeeklySessions();
-    ensureFutureSessions();
-    pruneFutureSessionsBeyondLookahead();
-    archivePastSessions();
+    runAsyncTask('openWeeklySessions', openWeeklySessions, logger);
+    runAsyncTask('ensureFutureSessions', ensureFutureSessions, logger);
+    runAsyncTask('pruneFutureSessionsBeyondLookahead', pruneFutureSessionsBeyondLookahead, logger);
+    runAsyncTask('archivePastSessions', archivePastSessions, logger);
   }, 60 * 60 * 1000);
 
-  setInterval(() => releaseExpiredHolds(io), 30000);
-  releaseExpiredHolds(io);
-  reconcileReversedBookingSeats();
+  // Seat hold expirer — runs every 30 seconds. Critical for the booking UX:
+  // expired holds must be released so other customers can pick up the seats.
+  setInterval(() => runAsyncTask('releaseExpiredHolds', () => releaseExpiredHolds(io), logger), 30000);
+  await releaseExpiredHolds(io);
+
+  // reconcileReversedBookingSeats may or may not be async depending on
+  // index.js implementation; awaiting a sync function is harmless.
+  await reconcileReversedBookingSeats();
 }
 
 export function registerGracefulShutdown({ server, logger }) {
@@ -80,7 +100,11 @@ export function registerGracefulShutdown({ server, logger }) {
     logger.info('Received shutdown signal', { signal });
     server.close(async () => {
       logger.info('Server closed, flushing database');
-      saveDb();
+      try {
+        await saveDb();
+      } catch (err) {
+        logger.error('Database flush failed during shutdown', { error: err?.message });
+      }
       logger.info('Database flushed, exiting');
       process.exit(0);
     });

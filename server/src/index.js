@@ -193,7 +193,14 @@ app.use(express.static(clientBuild));
 app.get('/health', async (req, res) => {
   try {
     const db = await getDb();
-    db.prepare('SELECT 1').get();
+    // sql.js exposes prepare(); Postgres pool does not. Only probe when we have it.
+    try {
+      if (db && typeof db.prepare === 'function') {
+        db.prepare('SELECT 1').get();
+      }
+    } catch (probeErr) {
+      // Probe is best-effort — DB driver may not support prepare(). Ignore.
+    }
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -213,8 +220,8 @@ app.get('/health', async (req, res) => {
 
 // ============ AUDIT HELPER ============
 
-function logAudit(action, entityType, entityId, details) {
-  run('INSERT INTO audit_log (id, action, entity_type, entity_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+async function logAudit(action, entityType, entityId, details) {
+  await run('INSERT INTO audit_log (id, action, entity_type, entity_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     [uuid(), action, entityType, entityId, typeof details === 'string' ? details : JSON.stringify(details), new Date().toISOString()]);
 }
 
@@ -279,7 +286,7 @@ function validateAttendeeAddons(attendees, optionalPkgs, bookingConfig) {
 // Returns { ok, data: { sessionId, holderId, attendees, trimmedEmail, session,
 //   useSessionPkgs, sessionPkgs, requiredPkg } } on success, or
 // { ok: false, statusCode, error } on failure.
-function validateBookingRequest(body, { requireEmailVerification = true, requireCustomerDetails = true } = {}) {
+async function validateBookingRequest(body, { requireEmailVerification = true, requireCustomerDetails = true } = {}) {
   const { sessionId, holderId, attendees, email, customerFirstName, customerLastName, emailVerificationId } = body || {};
 
   if (!sessionId || !holderId || !attendees?.length) {
@@ -303,14 +310,14 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
     return { ok: false, statusCode: 400, error: 'Customer first and last name are required.' };
   }
 
-  const emailCheck = verifyBookingEmail({
+  const emailCheck = await verifyBookingEmail({
     email: normalizedEmail,
     verificationId: emailVerificationId,
     requireVerification: requireEmailVerification,
   });
   if (!emailCheck.ok) return emailCheck;
 
-  const session = get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+  const session = await get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
   if (!session) return { ok: false, statusCode: 404, error: 'Session not found' };
   const bookingStatus = getSessionBookingStatus(session);
   if (bookingStatus.booking_closed) {
@@ -325,24 +332,24 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
   // Regular bingo always uses the approved global package list.
   const sessionPkgs = currentSessionType === 'regular_bingo'
     ? []
-    : all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [sessionId]);
+    : await all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [sessionId]);
   const useSessionPkgs = sessionPkgs.length > 0;
   const requiredPkgs = useSessionPkgs
     ? sessionPkgs.filter(p => p.type === 'required')
-    : all("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC");
+    : await all("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC");
   const requiredPkg = requiredPkgs[0];
   if (!requiredPkg) return { ok: false, statusCode: 500, error: 'No required package configured' };
 
   const optionalPkgs = useSessionPkgs
     ? sessionPkgs.filter(p => p.type === 'optional')
-    : all("SELECT * FROM packages WHERE type = 'optional' AND is_active = 1 ORDER BY sort_order ASC");
-  const addonCheck = validateAttendeeAddons(attendees, optionalPkgs, getBookingConfig());
+    : await all("SELECT * FROM packages WHERE type = 'optional' AND is_active = 1 ORDER BY sort_order ASC");
+  const addonCheck = validateAttendeeAddons(attendees, optionalPkgs, await getBookingConfig());
   if (!addonCheck.ok) return addonCheck;
 
   // Every seat must currently be held by THIS holder. Prevents booking seats
   // that someone else has held, or seats that aren't held at all.
   for (const att of attendees) {
-    const seat = get('SELECT * FROM seats WHERE id = ?', [att.seatId]);
+    const seat = await get('SELECT * FROM seats WHERE id = ?', [att.seatId]);
     if (!seat || seat.status !== 'held' || seat.held_by !== holderId) {
       return { ok: false, statusCode: 409, error: 'Seat not held by you' };
     }
@@ -371,7 +378,7 @@ function validateBookingRequest(body, { requireEmailVerification = true, require
 // Insert a booking + its items + addons. Always 'pending' status.
 // Does NOT flip seats and does NOT emit any sockets — that happens in markBookingPaid.
 // Returns { bookingId, refNumber, totalAmount, itemRefs }. Throws on DB error.
-function insertBookingRecord({
+async function insertBookingRecord({
   sessionId,
   attendees,
   requiredPkg,
@@ -397,12 +404,12 @@ function insertBookingRecord({
     const primaryRequiredPkg = includedRequiredPkgs[0];
     totalAmount += primaryRequiredPkg.price;
 
-    run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    await run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [itemId, bookingId, att.firstName, att.lastName, att.seatId, primaryRequiredPkg.id, primaryRequiredPkg.price, itemRef]);
 
     for (const requiredAddonPkg of includedRequiredPkgs.slice(1)) {
       totalAmount += requiredAddonPkg.price;
-      run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)',
+      await run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)',
         [uuid(), itemId, requiredAddonPkg.id, 1, requiredAddonPkg.price]);
     }
 
@@ -410,18 +417,18 @@ function insertBookingRecord({
       for (const addon of att.addons) {
         const pkg = useSessionPkgs
           ? sessionPkgs.find(p => p.id === addon.packageId)
-          : get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
+          : await get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
         if (pkg) {
           const addonPrice = pkg.price * addon.quantity;
           totalAmount += addonPrice;
-          run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)',
+          await run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)',
             [uuid(), itemId, addon.packageId, addon.quantity, addonPrice]);
         }
       }
     }
   }
 
-  run(
+  await run(
     `INSERT INTO bookings
       (id, session_id, reference_number, total_amount, payment_status, created_at, email,
        customer_first_name, customer_last_name, email_verified_at, ticket_access_token)
@@ -443,7 +450,7 @@ function insertBookingRecord({
 
   // Preserve the original 'booking_created' audit event so any admin filters
   // / dashboards watching for it keep working after the refactor.
-  logAudit('booking_created', 'booking', bookingId, {
+  await logAudit('booking_created', 'booking', bookingId, {
     referenceNumber: refNumber,
     sessionId,
     totalAmount,
@@ -468,8 +475,8 @@ function insertBookingRecord({
 // Returns { ok, alreadyPaid? }. Safe to call multiple times — second+ calls
 // short-circuit. This is what makes /payment/return and the webhook safe to
 // both fire for the same booking.
-function markBookingPaid({ bookingId, transactionId = null, authCode = null, source = 'instant' }) {
-  const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+async function markBookingPaid({ bookingId, transactionId = null, authCode = null, source = 'instant' }) {
+  const booking = await get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) {
     console.error(`[bookings] markBookingPaid: booking ${bookingId} not found`);
     return { ok: false, error: 'booking_not_found' };
@@ -479,11 +486,11 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
     return { ok: true, alreadyPaid: true };
   }
 
-  const session = get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
-  const items = all('SELECT * FROM booking_items WHERE booking_id = ?', [bookingId]);
+  const session = await get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
+  const items = await all('SELECT * FROM booking_items WHERE booking_id = ?', [bookingId]);
 
   // Update booking row
-  run(`UPDATE bookings SET
+  await run(`UPDATE bookings SET
     payment_status = 'paid',
     transaction_id = ?,
     auth_code = ?,
@@ -491,7 +498,7 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
     WHERE id = ?`,
     [transactionId, authCode, new Date().toISOString(), bookingId]);
 
-  upsertCustomerFromBooking({
+  await upsertCustomerFromBooking({
     ...booking,
     payment_status: 'paid',
     transaction_id: transactionId,
@@ -501,12 +508,12 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
 
   // Flip seats to sold + emit per-seat for live seat-map updates
   for (const it of items) {
-    run(`UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
+    await run(`UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
     io.to(`session:${booking.session_id}`).emit('seat:sold', { seatId: it.seat_id, sessionId: booking.session_id });
   }
 
   // Build receipt data and emit to admin auto-print room
-  const receiptItems = all(`
+  const receiptItems = await all(`
     SELECT bi.id, bi.first_name, bi.last_name, bi.price, bi.reference_number,
            seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name,
@@ -518,7 +525,7 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
     WHERE bi.booking_id = ?
     ORDER BY bi.id
   `, [bookingId]);
-  const receiptAddons = all(`
+  const receiptAddons = await all(`
     SELECT ba.booking_item_id, ba.quantity, ba.price,
            COALESCE(p.name, sp.name) as package_name
     FROM booking_addons ba
@@ -570,7 +577,7 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
   });
 
   // PHD inventory update emit — included PHD packages and PHD add-ons both count.
-  const phdInBooking = get(`
+  const phdInBooking = await get(`
     SELECT
       COALESCE((
         SELECT COUNT(*)
@@ -594,18 +601,18 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
       ), 0) as cnt
   `, [bookingId, bookingId]);
   if (phdInBooking && phdInBooking.cnt > 0) {
-    const phdInventory = getPhdInventoryForSession(booking.session_id);
+    const phdInventory = await getPhdInventoryForSession(booking.session_id);
     io.to('admin:receipts').emit('phd:updated', {
       ...phdInventory,
-      perSession: getPhdUsageBySession(),
+      perSession: await getPhdUsageBySession(),
     });
   }
 
   // Flush to disk — critical write
-  saveDb();
+  await saveDb();
 
-  logPaymentEvent(bookingId, 'approved', source, { transactionId, authCode });
-  logAudit('booking_paid', 'booking', bookingId, {
+  await logPaymentEvent(bookingId, 'approved', source, { transactionId, authCode });
+  await logAudit('booking_paid', 'booking', bookingId, {
     referenceNumber: booking.reference_number,
     sessionId: booking.session_id,
     totalAmount: booking.total_amount,
@@ -622,12 +629,12 @@ function markBookingPaid({ bookingId, transactionId = null, authCode = null, sou
   return { ok: true };
 }
 
-function shortenBookingSeatHolds({ bookingId, minutes = PAYMENT_FAILURE_HOLD_MINUTES }) {
+async function shortenBookingSeatHolds({ bookingId, minutes = PAYMENT_FAILURE_HOLD_MINUTES }) {
   const releaseAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
-  const booking = get('SELECT id, session_id FROM bookings WHERE id = ?', [bookingId]);
+  const booking = await get('SELECT id, session_id FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { changedSeats: 0, releaseAt };
 
-  const seats = all(`
+  const seats = await all(`
     SELECT s.id
     FROM seats s
     JOIN booking_items bi ON bi.seat_id = s.id
@@ -637,7 +644,7 @@ function shortenBookingSeatHolds({ bookingId, minutes = PAYMENT_FAILURE_HOLD_MIN
   `, [bookingId, releaseAt]);
 
   for (const seat of seats) {
-    run('UPDATE seats SET held_until = ? WHERE id = ?', [releaseAt, seat.id]);
+    await run('UPDATE seats SET held_until = ? WHERE id = ?', [releaseAt, seat.id]);
   }
 
   if (seats.length > 0) {
@@ -650,19 +657,19 @@ function shortenBookingSeatHolds({ bookingId, minutes = PAYMENT_FAILURE_HOLD_MIN
 // Idempotently mark a 'pending' booking as 'failed' (decline / error path).
 // Failed payment seats stay held only briefly so customers/admins see the table
 // open again without waiting for the full checkout hold window.
-function markBookingFailed({ bookingId, reason, source = 'server' }) {
-  const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+async function markBookingFailed({ bookingId, reason, source = 'server' }) {
+  const booking = await get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (booking.payment_status === 'paid') return { ok: false, error: 'already_paid' };
   if (booking.payment_status === 'failed') return { ok: true, alreadyFailed: true };
 
-  run(`UPDATE bookings SET payment_status = 'failed', payment_failure_reason = ? WHERE id = ?`,
+  await run(`UPDATE bookings SET payment_status = 'failed', payment_failure_reason = ? WHERE id = ?`,
     [String(reason || 'unknown').slice(0, 500), bookingId]);
   // Shorten the post-payment-error hold to the go-live operational window.
-  const holdShorten = shortenBookingSeatHolds({ bookingId });
-  saveDb();
+  const holdShorten = await shortenBookingSeatHolds({ bookingId });
+  await saveDb();
 
-  logPaymentEvent(bookingId, 'declined', source, {
+  await logPaymentEvent(bookingId, 'declined', source, {
     reason,
     heldSeatsReleaseAt: holdShorten.releaseAt,
     heldSeatsShortened: holdShorten.changedSeats,
@@ -673,36 +680,36 @@ function markBookingFailed({ bookingId, reason, source = 'server' }) {
 // Idempotently mark a 'pending' booking as 'cancelled' (customer clicked Cancel
 // on the Authorize.Net hosted page). Cancelled payment seats use the same short
 // release window as failed payments.
-function markBookingCancelled({ bookingId, source = 'customer' }) {
-  const booking = get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+async function markBookingCancelled({ bookingId, source = 'customer' }) {
+  const booking = await get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (booking.payment_status === 'paid') return { ok: false, error: 'already_paid' };
   if (booking.payment_status === 'cancelled') return { ok: true, alreadyCancelled: true };
 
-  run(`UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?`, [bookingId]);
+  await run(`UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?`, [bookingId]);
   // Treat payment cancellations like payment failures for seat availability.
-  const holdShorten = shortenBookingSeatHolds({ bookingId });
-  saveDb();
+  const holdShorten = await shortenBookingSeatHolds({ bookingId });
+  await saveDb();
 
-  logPaymentEvent(bookingId, 'cancelled', source, {
+  await logPaymentEvent(bookingId, 'cancelled', source, {
     heldSeatsReleaseAt: holdShorten.releaseAt,
     heldSeatsShortened: holdShorten.changedSeats,
   });
   return { ok: true };
 }
 
-function releaseBookingSeats({ bookingId, sessionId }) {
-  const items = all('SELECT seat_id FROM booking_items WHERE booking_id = ?', [bookingId]);
+async function releaseBookingSeats({ bookingId, sessionId }) {
+  const items = await all('SELECT seat_id FROM booking_items WHERE booking_id = ?', [bookingId]);
   for (const it of items) {
-    run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
+    await run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
     io.to(`session:${sessionId}`).emit('seat:unlocked', { seatId: it.seat_id, sessionId });
   }
   io.to(`session:${sessionId}`).emit('seats:refresh', { sessionId });
   return items.length;
 }
 
-function reconcileReversedBookingSeats() {
-  const seatsToRelease = all(`
+async function reconcileReversedBookingSeats() {
+  const seatsToRelease = await all(`
     SELECT DISTINCT s.id, s.session_id
     FROM seats s
     JOIN booking_items reversed_item ON reversed_item.seat_id = s.id
@@ -719,11 +726,11 @@ function reconcileReversedBookingSeats() {
   `);
 
   for (const seat of seatsToRelease) {
-    run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [seat.id]);
+    await run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [seat.id]);
   }
 
   if (seatsToRelease.length > 0) {
-    saveDb();
+    await saveDb();
     logger.info('Released seats from reversed bookings', { count: seatsToRelease.length });
   }
 
@@ -731,13 +738,13 @@ function reconcileReversedBookingSeats() {
 }
 
 function sendRefundNotificationAsync({ bookingId, action, refundTransactionId, bookingItemId = null }) {
-  setImmediate(() => {
+  setImmediate(async () => {
     try {
-      const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+      const booking = await get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
       if (!booking) return;
-      const session = get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
+      const session = await get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
       const item = bookingItemId
-        ? get(`
+        ? await get(`
             SELECT id, first_name, last_name, reference_number, price, refund_amount, refund_action
             FROM booking_items
             WHERE id = ? AND booking_id = ?
@@ -762,8 +769,8 @@ function sendRefundNotificationAsync({ bookingId, action, refundTransactionId, b
 // Idempotently mark a 'paid' booking as 'refunded' (post-settlement reversal).
 // Releases seats, refreshes public seat maps, and emails the customer plus
 // EMAIL_BCC recipients.
-function markBookingRefunded({ bookingId, transactionId = null, refundTransactionId = null, source = 'admin' }) {
-  const booking = get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+async function markBookingRefunded({ bookingId, transactionId = null, refundTransactionId = null, source = 'admin' }) {
+  const booking = await get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (booking.payment_status === 'refunded') return { ok: true, alreadyRefunded: true };
   if (booking.payment_status !== 'paid') {
@@ -771,8 +778,8 @@ function markBookingRefunded({ bookingId, transactionId = null, refundTransactio
   }
 
   const refundedAt = new Date().toISOString();
-  run(`UPDATE bookings SET payment_status = 'refunded' WHERE id = ?`, [bookingId]);
-  run(
+  await run(`UPDATE bookings SET payment_status = 'refunded' WHERE id = ?`, [bookingId]);
+  await run(
     `UPDATE booking_items
      SET refund_status = 'refunded',
          refunded_at = ?,
@@ -782,15 +789,15 @@ function markBookingRefunded({ bookingId, transactionId = null, refundTransactio
      WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
     [refundedAt, refundTransactionId || transactionId, bookingId]
   );
-  const releasedSeats = releaseBookingSeats({ bookingId, sessionId: booking.session_id });
-  saveDb();
+  const releasedSeats = await releaseBookingSeats({ bookingId, sessionId: booking.session_id });
+  await saveDb();
 
-  logPaymentEvent(bookingId, 'refunded', source, { transactionId });
-  logAudit('booking_refunded', 'booking', bookingId, { transactionId, source, releasedSeats });
+  await logPaymentEvent(bookingId, 'refunded', source, { transactionId });
+  await logAudit('booking_refunded', 'booking', bookingId, { transactionId, source, releasedSeats });
   io.to('admin:receipts').emit('booking:refunded', { bookingId, transactionId, releasedSeats });
   io.to('admin:receipts').emit('phd:updated', {
-    ...getPhdInventoryForSession(booking.session_id),
-    perSession: getPhdUsageBySession(),
+    ...(await getPhdInventoryForSession(booking.session_id)),
+    perSession: await getPhdUsageBySession(),
   });
   sendRefundNotificationAsync({ bookingId, action: 'refund', refundTransactionId: refundTransactionId || transactionId });
   return { ok: true, releasedSeats };
@@ -799,8 +806,8 @@ function markBookingRefunded({ bookingId, transactionId = null, refundTransactio
 // Idempotently mark a 'paid' booking as 'voided' (pre-settlement reversal).
 // Same semantics as markBookingRefunded but distinguished in audit logs so
 // admins can tell which type of reversal happened.
-function markBookingVoided({ bookingId, transactionId = null, voidTransactionId = null, source = 'admin' }) {
-  const booking = get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+async function markBookingVoided({ bookingId, transactionId = null, voidTransactionId = null, source = 'admin' }) {
+  const booking = await get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (booking.payment_status === 'voided') return { ok: true, alreadyVoided: true };
   if (booking.payment_status !== 'paid') {
@@ -808,8 +815,8 @@ function markBookingVoided({ bookingId, transactionId = null, voidTransactionId 
   }
 
   const voidedAt = new Date().toISOString();
-  run(`UPDATE bookings SET payment_status = 'voided' WHERE id = ?`, [bookingId]);
-  run(
+  await run(`UPDATE bookings SET payment_status = 'voided' WHERE id = ?`, [bookingId]);
+  await run(
     `UPDATE booking_items
      SET refund_status = 'refunded',
          refunded_at = ?,
@@ -819,28 +826,28 @@ function markBookingVoided({ bookingId, transactionId = null, voidTransactionId 
      WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
     [voidedAt, voidTransactionId || transactionId, bookingId]
   );
-  const releasedSeats = releaseBookingSeats({ bookingId, sessionId: booking.session_id });
-  saveDb();
+  const releasedSeats = await releaseBookingSeats({ bookingId, sessionId: booking.session_id });
+  await saveDb();
 
-  logPaymentEvent(bookingId, 'voided', source, { transactionId });
-  logAudit('booking_voided', 'booking', bookingId, { transactionId, source, releasedSeats });
+  await logPaymentEvent(bookingId, 'voided', source, { transactionId });
+  await logAudit('booking_voided', 'booking', bookingId, { transactionId, source, releasedSeats });
   io.to('admin:receipts').emit('booking:voided', { bookingId, transactionId, releasedSeats });
   io.to('admin:receipts').emit('phd:updated', {
-    ...getPhdInventoryForSession(booking.session_id),
-    perSession: getPhdUsageBySession(),
+    ...(await getPhdInventoryForSession(booking.session_id)),
+    perSession: await getPhdUsageBySession(),
   });
   sendRefundNotificationAsync({ bookingId, action: 'void', refundTransactionId: voidTransactionId || transactionId });
   return { ok: true, releasedSeats };
 }
 
-function getBookingItemRefundAmount(itemId) {
-  const item = get('SELECT price FROM booking_items WHERE id = ?', [itemId]);
+async function getBookingItemRefundAmount(itemId) {
+  const item = await get('SELECT price FROM booking_items WHERE id = ?', [itemId]);
   if (!item) return null;
-  const addons = get('SELECT COALESCE(SUM(price), 0) as total FROM booking_addons WHERE booking_item_id = ?', [itemId]);
+  const addons = await get('SELECT COALESCE(SUM(price), 0) as total FROM booking_addons WHERE booking_item_id = ?', [itemId]);
   return (item.price || 0) + (addons?.total || 0);
 }
 
-function markBookingItemRefunded({
+async function markBookingItemRefunded({
   bookingId,
   bookingItemId,
   transactionId = null,
@@ -849,18 +856,18 @@ function markBookingItemRefunded({
   action = 'refund',
   source = 'admin',
 }) {
-  const booking = get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+  const booking = await get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (!['paid', 'partially_refunded'].includes(booking.payment_status)) {
     return { ok: false, error: `cannot refund ticket in booking status '${booking.payment_status}'` };
   }
 
-  const item = get('SELECT id, seat_id, first_name, last_name, reference_number, refund_status FROM booking_items WHERE id = ? AND booking_id = ?', [bookingItemId, bookingId]);
+  const item = await get('SELECT id, seat_id, first_name, last_name, reference_number, refund_status FROM booking_items WHERE id = ? AND booking_id = ?', [bookingItemId, bookingId]);
   if (!item) return { ok: false, error: 'booking_item_not_found' };
   if (item.refund_status === 'refunded') return { ok: true, alreadyRefunded: true, releasedSeats: 0 };
 
   const refundedAt = new Date().toISOString();
-  run(
+  await run(
     `UPDATE booking_items
      SET refund_status = 'refunded',
          refunded_at = ?,
@@ -870,19 +877,20 @@ function markBookingItemRefunded({
      WHERE id = ?`,
     [refundedAt, refundTransactionId || transactionId, amountCents, action, bookingItemId]
   );
-  run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [item.seat_id]);
+  await run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [item.seat_id]);
 
-  const remaining = get(
+  const remainingRow = await get(
     `SELECT COUNT(*) as count
      FROM booking_items
      WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
     [bookingId]
-  )?.count || 0;
+  );
+  const remaining = remainingRow?.count || 0;
   const nextStatus = remaining > 0 ? 'partially_refunded' : (action === 'void' ? 'voided' : 'refunded');
-  run('UPDATE bookings SET payment_status = ? WHERE id = ?', [nextStatus, bookingId]);
-  saveDb();
+  await run('UPDATE bookings SET payment_status = ? WHERE id = ?', [nextStatus, bookingId]);
+  await saveDb();
 
-  logPaymentEvent(bookingId, action === 'void' ? 'voided' : 'refunded', source, {
+  await logPaymentEvent(bookingId, action === 'void' ? 'voided' : 'refunded', source, {
     transactionId,
     refundTransactionId: refundTransactionId || transactionId,
     bookingItemId,
@@ -890,7 +898,7 @@ function markBookingItemRefunded({
     amountCents,
     partial: remaining > 0,
   });
-  logAudit('booking_item_refunded', 'booking_item', bookingItemId, {
+  await logAudit('booking_item_refunded', 'booking_item', bookingItemId, {
     bookingId,
     transactionId,
     refundTransactionId: refundTransactionId || transactionId,
@@ -905,8 +913,8 @@ function markBookingItemRefunded({
   io.to(`session:${booking.session_id}`).emit('seats:refresh');
   io.to('admin:receipts').emit('booking:item_refunded', { bookingId, bookingItemId, transactionId, amountCents });
   io.to('admin:receipts').emit('phd:updated', {
-    ...getPhdInventoryForSession(booking.session_id),
-    perSession: getPhdUsageBySession(),
+    ...(await getPhdInventoryForSession(booking.session_id)),
+    perSession: await getPhdUsageBySession(),
   });
   sendRefundNotificationAsync({
     bookingId,
@@ -920,11 +928,11 @@ function markBookingItemRefunded({
 // Loads a booking + related rows and fires the confirmation email.
 // Used by markBookingPaid; safe to call standalone for resends.
 async function sendBookingConfirmationEmail(bookingId) {
-  const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+  const booking = await get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return;
-  const session = get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
-  const items = all('SELECT * FROM booking_items WHERE booking_id = ? ORDER BY id', [bookingId]);
-  const addons = all(`
+  const session = await get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
+  const items = await all('SELECT * FROM booking_items WHERE booking_id = ? ORDER BY id', [bookingId]);
+  const addons = await all(`
     SELECT ba.*
     FROM booking_addons ba
     JOIN booking_items bi ON bi.id = ba.booking_item_id
@@ -941,14 +949,15 @@ async function sendBookingConfirmationEmail(bookingId) {
     })),
   }));
 
-  const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ?', [booking.session_id]);
+  const sessionPkgs = await all('SELECT * FROM session_packages WHERE session_id = ?', [booking.session_id]);
   const useSessionPkgs = sessionPkgs.length > 0;
-  const packages = useSessionPkgs ? sessionPkgs : all('SELECT * FROM packages WHERE is_active = 1');
+  const packages = useSessionPkgs ? sessionPkgs : await all('SELECT * FROM packages WHERE is_active = 1');
 
-  const seats = items.map(it => {
-    const s = get('SELECT id, table_number, chair_number FROM seats WHERE id = ?', [it.seat_id]);
-    return s || { id: it.seat_id, table_number: '?', chair_number: '?' };
-  });
+  const seats = [];
+  for (const it of items) {
+    const s = await get('SELECT id, table_number, chair_number FROM seats WHERE id = ?', [it.seat_id]);
+    seats.push(s || { id: it.seat_id, table_number: '?', chair_number: '?' });
+  }
 
   return sendBookingConfirmation({
     to: booking.email,
@@ -969,165 +978,220 @@ async function sendBookingConfirmationEmail(bookingId) {
 // ============ API ROUTES ============
 
 // --- Sessions ---
-app.get('/api/sessions', (req, res) => {
-  releaseExpiredHolds(io);
-  archivePastSessions();
-  const today = formatLocalDate(new Date());
-  const sessions = all(
-    `SELECT s.*,
-      COALESCE(SUM(CASE WHEN st.status = 'vacant' AND st.is_disabled = 0 THEN 1 ELSE 0 END), 0) as available_seats,
-      COALESCE(SUM(CASE WHEN st.status = 'sold' THEN 1 ELSE 0 END), 0) as sold_seats,
-      COALESCE(SUM(CASE WHEN st.status = 'held' THEN 1 ELSE 0 END), 0) as held_seats,
-      COALESCE(SUM(CASE WHEN st.is_disabled = 0 THEN 1 ELSE 0 END), 0) as total_seats
-    FROM sessions s
-    LEFT JOIN seats st ON st.session_id = s.id
-    WHERE s.date >= ? AND s.is_available = 1 AND s.deleted_at IS NULL
-    GROUP BY s.id
-    ORDER BY s.date ASC, s.time ASC`, [today]
-  );
-  res.json(sessions.map(session => withSessionBookingStatus(session, {
-    soldOut: Number(session.total_seats) > 0 && Number(session.sold_seats) >= Number(session.total_seats),
-  })));
+app.get('/api/sessions', async (req, res) => {
+  try {
+    await releaseExpiredHolds(io);
+    await archivePastSessions();
+    const today = formatLocalDate(new Date());
+    const sessions = await all(
+      `SELECT s.*,
+        COALESCE(SUM(CASE WHEN st.status = 'vacant' AND st.is_disabled = 0 THEN 1 ELSE 0 END), 0) as available_seats,
+        COALESCE(SUM(CASE WHEN st.status = 'sold' THEN 1 ELSE 0 END), 0) as sold_seats,
+        COALESCE(SUM(CASE WHEN st.status = 'held' THEN 1 ELSE 0 END), 0) as held_seats,
+        COALESCE(SUM(CASE WHEN st.is_disabled = 0 THEN 1 ELSE 0 END), 0) as total_seats
+      FROM sessions s
+      LEFT JOIN seats st ON st.session_id = s.id
+      WHERE s.date >= ? AND s.is_available = 1 AND s.deleted_at IS NULL
+      GROUP BY s.id
+      ORDER BY s.date ASC, s.time ASC`, [today]
+    );
+    res.json(sessions.map(session => withSessionBookingStatus(session, {
+      soldOut: Number(session.total_seats) > 0 && Number(session.sold_seats) >= Number(session.total_seats),
+    })));
+  } catch (err) {
+    console.error('GET /api/sessions failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // --- Session-specific packages (public) ---
-app.get('/api/sessions/:sessionId/packages', (req, res) => {
-  const session = get('SELECT is_special_event, session_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.sessionId]);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-  const sessionType = normalizeSessionType(session.session_type, session.is_special_event);
-  if (sessionType !== 'regular_bingo') {
-    const sessionPkgs = all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.sessionId]);
-    if (sessionPkgs.length > 0) {
-      return res.json(sessionPkgs);
+app.get('/api/sessions/:sessionId/packages', async (req, res) => {
+  try {
+    const session = await get('SELECT is_special_event, session_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.sessionId]);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    const sessionType = normalizeSessionType(session.session_type, session.is_special_event);
+    if (sessionType !== 'regular_bingo') {
+      const sessionPkgs = await all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.sessionId]);
+      if (sessionPkgs.length > 0) {
+        return res.json(sessionPkgs);
+      }
     }
+    // Otherwise fall back to the global active package list, including PHD packages.
+    // PHD availability is enforced per session by /api/phd-inventory?sessionId=...
+    // and the booking validator, so every session gets its own stock pool.
+    const globalPkgs = await all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC');
+    res.json(globalPkgs);
+  } catch (err) {
+    console.error('GET /api/sessions/:sessionId/packages failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  // Otherwise fall back to the global active package list, including PHD packages.
-  // PHD availability is enforced per session by /api/phd-inventory?sessionId=...
-  // and the booking validator, so every session gets its own stock pool.
-  const globalPkgs = all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC');
-  res.json(globalPkgs);
 });
 
 // --- PHD Inventory status (public) ---
-app.get('/api/phd-inventory', (req, res) => {
-  const sessionId = String(req.query.sessionId || '').trim();
-  res.json(getPhdInventoryForSession(sessionId));
+app.get('/api/phd-inventory', async (req, res) => {
+  try {
+    const sessionId = String(req.query.sessionId || '').trim();
+    res.json(await getPhdInventoryForSession(sessionId));
+  } catch (err) {
+    console.error('GET /api/phd-inventory failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-app.get('/api/booking-config', (req, res) => {
-  res.json(getBookingConfig());
+app.get('/api/booking-config', async (req, res) => {
+  try {
+    res.json(await getBookingConfig());
+  } catch (err) {
+    console.error('GET /api/booking-config failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // --- Theme settings (public) ---
-app.get('/api/theme', (req, res) => {
-  const row = get("SELECT value FROM settings WHERE key = 'theme_config'");
-  if (!row) return res.json({ value: null });
-  try { res.json({ value: JSON.parse(row.value) }); }
-  catch { res.json({ value: null }); }
+app.get('/api/theme', async (req, res) => {
+  try {
+    const row = await get("SELECT value FROM settings WHERE key = 'theme_config'");
+    if (!row) return res.json({ value: null });
+    try { res.json({ value: JSON.parse(row.value) }); }
+    catch { res.json({ value: null }); }
+  } catch (err) {
+    console.error('GET /api/theme failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // --- Announcements (public) ---
-app.get('/api/announcements', (req, res) => {
-  const today = formatLocalDate(new Date());
-  const announcements = all(
-    `SELECT * FROM announcements
-     WHERE is_active = 1
-       AND (start_date IS NULL OR start_date <= ?)
-       AND (end_date IS NULL OR end_date >= ?)
-     ORDER BY sort_order ASC, created_at DESC`, [today, today]
-  );
-  res.json(announcements);
+app.get('/api/announcements', async (req, res) => {
+  try {
+    const today = formatLocalDate(new Date());
+    const announcements = await all(
+      `SELECT * FROM announcements
+       WHERE is_active = 1
+         AND (start_date IS NULL OR start_date <= ?)
+         AND (end_date IS NULL OR end_date >= ?)
+       ORDER BY sort_order ASC, created_at DESC`, [today, today]
+    );
+    res.json(announcements);
+  } catch (err) {
+    console.error('GET /api/announcements failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-app.get('/api/sessions/:id', (req, res) => {
-  releaseExpiredHolds(io);
-  const session = get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-  const seatRow = get(
-    `SELECT
-       COUNT(CASE WHEN status = 'sold' THEN 1 END) as sold_seats,
-       COUNT(CASE WHEN is_disabled = 0 THEN 1 END) as total_seats
-     FROM seats
-     WHERE session_id = ?`,
-    [session.id]
-  );
-  res.json(withSessionBookingStatus(session, {
-    soldOut: Number(seatRow?.total_seats || 0) > 0 && Number(seatRow?.sold_seats || 0) >= Number(seatRow?.total_seats || 0),
-  }));
+app.get('/api/sessions/:id', async (req, res) => {
+  try {
+    await releaseExpiredHolds(io);
+    const session = await get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    const seatRow = await get(
+      `SELECT
+         COUNT(CASE WHEN status = 'sold' THEN 1 END) as sold_seats,
+         COUNT(CASE WHEN is_disabled = 0 THEN 1 END) as total_seats
+       FROM seats
+       WHERE session_id = ?`,
+      [session.id]
+    );
+    res.json(withSessionBookingStatus(session, {
+      soldOut: Number(seatRow?.total_seats || 0) > 0 && Number(seatRow?.sold_seats || 0) >= Number(seatRow?.total_seats || 0),
+    }));
+  } catch (err) {
+    console.error('GET /api/sessions/:id failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // --- Seats ---
-app.get('/api/sessions/:sessionId/seats', (req, res) => {
-  releaseExpiredHolds(io);
-  const holderId = String(req.query.holderId || '').trim();
-  const seats = all(`
-    SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled,
-           CASE WHEN s.status = 'held' AND s.held_by = ? THEN 1 ELSE 0 END as isMyHold
-    FROM seats s
-    WHERE s.session_id = ?
-    ORDER BY s.table_number ASC, s.chair_number ASC
-  `, [holderId, req.params.sessionId]);
-  res.json(seats);
+app.get('/api/sessions/:sessionId/seats', async (req, res) => {
+  try {
+    await releaseExpiredHolds(io);
+    const holderId = String(req.query.holderId || '').trim();
+    const seats = await all(`
+      SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled,
+             CASE WHEN s.status = 'held' AND s.held_by = ? THEN 1 ELSE 0 END as isMyHold
+      FROM seats s
+      WHERE s.session_id = ?
+      ORDER BY s.table_number ASC, s.chair_number ASC
+    `, [holderId, req.params.sessionId]);
+    res.json(seats);
+  } catch (err) {
+    console.error('GET /api/sessions/:sessionId/seats failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // --- Packages ---
-app.get('/api/packages', (req, res) => {
-  res.json(all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC'));
+app.get('/api/packages', async (req, res) => {
+  try {
+    res.json(await all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC'));
+  } catch (err) {
+    console.error('GET /api/packages failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // --- Seat Lock ---
-app.post('/api/seats/:seatId/lock', bookingLimiter, (req, res) => {
-  const { seatId } = req.params;
-  const { holderId } = req.body;
+app.post('/api/seats/:seatId/lock', bookingLimiter, async (req, res) => {
+  try {
+    const { seatId } = req.params;
+    const { holderId } = req.body;
 
-  if (!holderId) return res.status(400).json({ error: 'holderId required' });
+    if (!holderId) return res.status(400).json({ error: 'holderId required' });
 
-  const seat = get('SELECT * FROM seats WHERE id = ?', [seatId]);
-  if (!seat) return res.status(404).json({ error: 'Seat not found' });
-  const session = get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [seat.session_id]);
-  const bookingStatus = getSessionBookingStatus(session);
-  if (bookingStatus.booking_closed) {
-    return res.status(409).json({
-      error: bookingStatus.booking_closed_message,
-      bookingClosed: true,
-      reason: bookingStatus.booking_closed_reason,
-    });
-  }
-  if (seat.is_disabled) return res.status(400).json({ error: 'Seat is disabled' });
-  if (seat.status === 'sold') return res.status(409).json({ error: 'Seat already sold' });
-  if (seat.status === 'held' && seat.held_by !== holderId) {
-    if (new Date(seat.held_until) > new Date()) {
-      return res.status(409).json({ error: 'Seat held by another user' });
+    const seat = await get('SELECT * FROM seats WHERE id = ?', [seatId]);
+    if (!seat) return res.status(404).json({ error: 'Seat not found' });
+    const session = await get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [seat.session_id]);
+    const bookingStatus = getSessionBookingStatus(session);
+    if (bookingStatus.booking_closed) {
+      return res.status(409).json({
+        error: bookingStatus.booking_closed_message,
+        bookingClosed: true,
+        reason: bookingStatus.booking_closed_reason,
+      });
     }
+    if (seat.is_disabled) return res.status(400).json({ error: 'Seat is disabled' });
+    if (seat.status === 'sold') return res.status(409).json({ error: 'Seat already sold' });
+    if (seat.status === 'held' && seat.held_by !== holderId) {
+      if (new Date(seat.held_until) > new Date()) {
+        return res.status(409).json({ error: 'Seat held by another user' });
+      }
+    }
+
+    const holdUntil = new Date(Date.now() + HOLD_MINUTES * 60 * 1000).toISOString();
+    await run(`UPDATE seats SET status = 'held', held_by = ?, held_until = ? WHERE id = ?`,
+      [holderId, holdUntil, seatId]);
+
+    io.to(`session:${seat.session_id}`).emit('seat:locked', {
+      seatId, holderId, holdUntil, sessionId: seat.session_id
+    });
+
+    res.json({ success: true, holdUntil });
+  } catch (err) {
+    console.error('POST /api/seats/:seatId/lock failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  const holdUntil = new Date(Date.now() + HOLD_MINUTES * 60 * 1000).toISOString();
-  run(`UPDATE seats SET status = 'held', held_by = ?, held_until = ? WHERE id = ?`,
-    [holderId, holdUntil, seatId]);
-
-  io.to(`session:${seat.session_id}`).emit('seat:locked', {
-    seatId, holderId, holdUntil, sessionId: seat.session_id
-  });
-
-  res.json({ success: true, holdUntil });
 });
 
 // --- Seat Unlock ---
-app.post('/api/seats/:seatId/unlock', (req, res) => {
-  const { seatId } = req.params;
-  const { holderId } = req.body;
+app.post('/api/seats/:seatId/unlock', async (req, res) => {
+  try {
+    const { seatId } = req.params;
+    const { holderId } = req.body;
 
-  const seat = get('SELECT * FROM seats WHERE id = ?', [seatId]);
-  if (!seat) return res.status(404).json({ error: 'Seat not found' });
-  if (seat.status !== 'held' || seat.held_by !== holderId) {
-    return res.status(403).json({ error: 'Cannot unlock seat you do not hold' });
+    const seat = await get('SELECT * FROM seats WHERE id = ?', [seatId]);
+    if (!seat) return res.status(404).json({ error: 'Seat not found' });
+    if (seat.status !== 'held' || seat.held_by !== holderId) {
+      return res.status(403).json({ error: 'Cannot unlock seat you do not hold' });
+    }
+
+    await run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [seatId]);
+
+    io.to(`session:${seat.session_id}`).emit('seat:unlocked', { seatId, sessionId: seat.session_id });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('POST /api/seats/:seatId/unlock failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [seatId]);
-
-  io.to(`session:${seat.session_id}`).emit('seat:unlocked', { seatId, sessionId: seat.session_id });
-
-  res.json({ success: true });
 });
 
 app.post('/api/email-verifications/send', bookingLimiter, async (req, res) => {
@@ -1142,7 +1206,7 @@ app.post('/api/email-verifications/send', bookingLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Customer first and last name are required.' });
   }
 
-  if (hasPriorPaidBooking(email)) {
+  if (await hasPriorPaidBooking(email)) {
     return res.json({
       ok: true,
       alreadyVerified: true,
@@ -1151,20 +1215,20 @@ app.post('/api/email-verifications/send', bookingLimiter, async (req, res) => {
   }
 
   try {
-    run('DELETE FROM email_verifications WHERE expires_at < ?', [new Date().toISOString()]);
+    await run('DELETE FROM email_verifications WHERE expires_at < ?', [new Date().toISOString()]);
 
     const code = String(crypto.randomInt(100000, 1000000));
     const codeHash = await bcrypt.hash(code, 10);
     const verificationId = uuid();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    run(
+    await run(
       `INSERT INTO email_verifications
         (id, email, code_hash, customer_first_name, customer_last_name, attempts, expires_at, created_at)
        VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
       [verificationId, email, codeHash, customerFirstName, customerLastName, expiresAt, new Date().toISOString()]
     );
-    saveDb();
+    await saveDb();
 
     const emailResult = await sendEmailVerificationCode({
       to: email,
@@ -1198,36 +1262,41 @@ app.post('/api/email-verifications/verify', bookingLimiter, async (req, res) => 
     return res.status(400).json({ error: 'Enter the 6-digit verification code.' });
   }
 
-  const verification = get(
-    `SELECT * FROM email_verifications
-     WHERE id = ? AND LOWER(email) = ?
-     LIMIT 1`,
-    [verificationId, email]
-  );
+  try {
+    const verification = await get(
+      `SELECT * FROM email_verifications
+       WHERE id = ? AND LOWER(email) = ?
+       LIMIT 1`,
+      [verificationId, email]
+    );
 
-  if (!verification) {
-    return res.status(404).json({ error: 'Verification code not found. Please send a new code.' });
-  }
-  if (verification.verified_at) {
-    return res.json({ ok: true, verificationId });
-  }
-  if (verification.expires_at <= new Date().toISOString()) {
-    return res.status(400).json({ error: 'That verification code expired. Please send a new code.' });
-  }
-  if ((verification.attempts || 0) >= 5) {
-    return res.status(429).json({ error: 'Too many incorrect attempts. Please send a new code.' });
-  }
+    if (!verification) {
+      return res.status(404).json({ error: 'Verification code not found. Please send a new code.' });
+    }
+    if (verification.verified_at) {
+      return res.json({ ok: true, verificationId });
+    }
+    if (verification.expires_at <= new Date().toISOString()) {
+      return res.status(400).json({ error: 'That verification code expired. Please send a new code.' });
+    }
+    if ((verification.attempts || 0) >= 5) {
+      return res.status(429).json({ error: 'Too many incorrect attempts. Please send a new code.' });
+    }
 
-  const matches = await bcrypt.compare(code, verification.code_hash);
-  if (!matches) {
-    run('UPDATE email_verifications SET attempts = attempts + 1 WHERE id = ?', [verificationId]);
-    saveDb();
-    return res.status(400).json({ error: 'That code is not correct.' });
-  }
+    const matches = await bcrypt.compare(code, verification.code_hash);
+    if (!matches) {
+      await run('UPDATE email_verifications SET attempts = attempts + 1 WHERE id = ?', [verificationId]);
+      await saveDb();
+      return res.status(400).json({ error: 'That code is not correct.' });
+    }
 
-  run('UPDATE email_verifications SET verified_at = ? WHERE id = ?', [new Date().toISOString(), verificationId]);
-  saveDb();
-  res.json({ ok: true, verificationId });
+    await run('UPDATE email_verifications SET verified_at = ? WHERE id = ?', [new Date().toISOString(), verificationId]);
+    await saveDb();
+    res.json({ ok: true, verificationId });
+  } catch (err) {
+    console.error('POST /api/email-verifications/verify failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // --- Create Booking ---
@@ -1237,28 +1306,28 @@ app.post('/api/email-verifications/verify', bookingLimiter, async (req, res) => 
 // a real payment processor. Originally the only path; now reserved for admin
 // comp/staff bookings or any flow where money was collected elsewhere.
 // Customer-facing UI should hit POST /api/bookings/initiate instead.
-app.post('/api/bookings', adminAuth, (req, res) => {
-  const validation = validateBookingRequest(req.body, { requireEmailVerification: false, requireCustomerDetails: false });
-  if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
-  const {
-    sessionId,
-    attendees,
-    trimmedEmail,
-    customerFirstName,
-    customerLastName,
-    emailVerifiedAt,
-    useSessionPkgs,
-    sessionPkgs,
-    requiredPkg,
-    requiredPkgs,
-    sessionType
-  } = validation.data;
-
-  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType, requiredPkgs);
-  if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
-
+app.post('/api/bookings', adminAuth, async (req, res) => {
   try {
-    const { bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken } = insertBookingRecord({
+    const validation = await validateBookingRequest(req.body, { requireEmailVerification: false, requireCustomerDetails: false });
+    if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
+    const {
+      sessionId,
+      attendees,
+      trimmedEmail,
+      customerFirstName,
+      customerLastName,
+      emailVerifiedAt,
+      useSessionPkgs,
+      sessionPkgs,
+      requiredPkg,
+      requiredPkgs,
+      sessionType
+    } = validation.data;
+
+    const phdCheck = await validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType, requiredPkgs);
+    if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
+
+    const { bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken } = await insertBookingRecord({
       sessionId,
       attendees,
       requiredPkg,
@@ -1273,7 +1342,7 @@ app.post('/api/bookings', adminAuth, (req, res) => {
 
     // No payment processor in this path — flip directly to 'paid'.
     // markBookingPaid handles seat flips, sockets, audit, and email.
-    markBookingPaid({ bookingId, source: 'instant_legacy' });
+    await markBookingPaid({ bookingId, source: 'instant_legacy' });
 
     res.json({
       bookingId,
@@ -1287,7 +1356,7 @@ app.post('/api/bookings', adminAuth, (req, res) => {
       ticketAccessToken,
     });
   } catch (err) {
-    console.error('Booking error:', err);
+    console.error('POST /api/bookings failed:', err);
     res.status(500).json({ error: 'Booking failed' });
   }
 });
@@ -1301,107 +1370,117 @@ app.post('/api/bookings', adminAuth, (req, res) => {
 // Seats are NOT flipped to 'sold' here — they remain 'held' with a refreshed
 // held_until so they survive the time the customer spends on the hosted page.
 app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
-  const validation = validateBookingRequest(req.body, { requireEmailVerification: false });
-  if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
-  const {
-    sessionId,
-    attendees,
-    trimmedEmail,
-    customerFirstName,
-    customerLastName,
-    emailVerifiedAt,
-    useSessionPkgs,
-    sessionPkgs,
-    requiredPkg,
-    requiredPkgs,
-    sessionType
-  } = validation.data;
-
-  const phdCheck = validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType, requiredPkgs);
-  if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
-
-  let bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken;
   try {
-    ({ bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken } = insertBookingRecord({
+    const validation = await validateBookingRequest(req.body, { requireEmailVerification: false });
+    if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
+    const {
       sessionId,
       attendees,
+      trimmedEmail,
+      customerFirstName,
+      customerLastName,
+      emailVerifiedAt,
+      useSessionPkgs,
+      sessionPkgs,
       requiredPkg,
       requiredPkgs,
-      sessionPkgs,
-      useSessionPkgs,
+      sessionType
+    } = validation.data;
+
+    const phdCheck = await validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType, requiredPkgs);
+    if (!phdCheck.ok) return res.status(400).json({ error: phdCheck.error });
+
+    let bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken;
+    try {
+      ({ bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken } = await insertBookingRecord({
+        sessionId,
+        attendees,
+        requiredPkg,
+        requiredPkgs,
+        sessionPkgs,
+        useSessionPkgs,
+        email: trimmedEmail,
+        customerFirstName,
+        customerLastName,
+        emailVerifiedAt
+      }));
+
+      // Refresh held_until so seats survive the hosted-page detour.
+      // This gives the customer a fresh hold window from clicking Confirm.
+      const newHoldUntil = new Date(Date.now() + HOLD_MINUTES * 60 * 1000).toISOString();
+      for (const att of attendees) {
+        await run('UPDATE seats SET held_until = ? WHERE id = ?', [newHoldUntil, att.seatId]);
+      }
+      await run('UPDATE bookings SET payment_attempted_at = ? WHERE id = ?',
+        [new Date().toISOString(), bookingId]);
+
+      await saveDb();
+      await logPaymentEvent(bookingId, 'initiated', 'server', { totalAmount, refNumber });
+    } catch (err) {
+      console.error('Initiate booking insert error:', err);
+      return res.status(500).json({ error: 'Booking initiation failed' });
+    }
+
+    // Get hosted-page token from Authorize.Net.
+    const result = await createHostedPaymentPage({
+      bookingId,
+      amountCents: totalAmount,
+      email: trimmedEmail,
+      firstName: customerFirstName,
+      lastName: customerLastName,
+      refNumber,
+    });
+
+    if (!result.ok) {
+      await markBookingFailed({ bookingId, reason: result.error, source: 'server' });
+      console.error(`[bookings] /initiate failed to get hosted page token: ${result.error}`);
+      return res.status(502).json({ error: 'Could not start payment. Please try again.' });
+    }
+
+    await run('UPDATE bookings SET hosted_token = ? WHERE id = ?', [result.token, bookingId]);
+    await saveDb();
+
+    res.json({
+      bookingId,
+      referenceNumber: refNumber,
+      itemReferences: itemRefs,
+      totalAmount,
+      totalFormatted: '$' + formatPrice(totalAmount),
       email: trimmedEmail,
       customerFirstName,
       customerLastName,
-      emailVerifiedAt
-    }));
-
-    // Refresh held_until so seats survive the hosted-page detour.
-    // This gives the customer a fresh hold window from clicking Confirm.
-    const newHoldUntil = new Date(Date.now() + HOLD_MINUTES * 60 * 1000).toISOString();
-    for (const att of attendees) {
-      run('UPDATE seats SET held_until = ? WHERE id = ?', [newHoldUntil, att.seatId]);
-    }
-    run('UPDATE bookings SET payment_attempted_at = ? WHERE id = ?',
-      [new Date().toISOString(), bookingId]);
-
-    saveDb();
-    logPaymentEvent(bookingId, 'initiated', 'server', { totalAmount, refNumber });
+      redirectUrl: result.redirectUrl,
+      token: result.token,
+      ticketAccessToken,
+    });
   } catch (err) {
-    console.error('Initiate booking insert error:', err);
-    return res.status(500).json({ error: 'Booking initiation failed' });
+    console.error('POST /api/bookings/initiate failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  // Get hosted-page token from Authorize.Net.
-  const result = await createHostedPaymentPage({
-    bookingId,
-    amountCents: totalAmount,
-    email: trimmedEmail,
-    firstName: customerFirstName,
-    lastName: customerLastName,
-    refNumber,
-  });
-
-  if (!result.ok) {
-    markBookingFailed({ bookingId, reason: result.error, source: 'server' });
-    console.error(`[bookings] /initiate failed to get hosted page token: ${result.error}`);
-    return res.status(502).json({ error: 'Could not start payment. Please try again.' });
-  }
-
-  run('UPDATE bookings SET hosted_token = ? WHERE id = ?', [result.token, bookingId]);
-  saveDb();
-
-  res.json({
-    bookingId,
-    referenceNumber: refNumber,
-    itemReferences: itemRefs,
-    totalAmount,
-    totalFormatted: '$' + formatPrice(totalAmount),
-    email: trimmedEmail,
-    customerFirstName,
-    customerLastName,
-    redirectUrl: result.redirectUrl,
-    token: result.token,
-    ticketAccessToken,
-  });
 });
 
 // Status polling — used by the client processing page to check booking state
 // while waiting for /payment/return or the webhook to flip it to paid/failed.
-app.get('/api/bookings/:id/status', (req, res) => {
-  const booking = get(
-    'SELECT id, reference_number, payment_status, total_amount, payment_failure_reason, ticket_access_token FROM bookings WHERE id = ?',
-    [req.params.id]
-  );
-  if (!booking) return res.status(404).json({ error: 'Booking not found' });
-  res.json({
-    bookingId: booking.id,
-    referenceNumber: booking.reference_number,
-    status: booking.payment_status,
-    totalAmount: booking.total_amount,
-    totalFormatted: '$' + formatPrice(booking.total_amount),
-    failureReason: booking.payment_failure_reason,
-    ticketAccessToken: booking.payment_status === 'paid' ? booking.ticket_access_token : undefined,
-  });
+app.get('/api/bookings/:id/status', async (req, res) => {
+  try {
+    const booking = await get(
+      'SELECT id, reference_number, payment_status, total_amount, payment_failure_reason, ticket_access_token FROM bookings WHERE id = ?',
+      [req.params.id]
+    );
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    res.json({
+      bookingId: booking.id,
+      referenceNumber: booking.reference_number,
+      status: booking.payment_status,
+      totalAmount: booking.total_amount,
+      totalFormatted: '$' + formatPrice(booking.total_amount),
+      failureReason: booking.payment_failure_reason,
+      ticketAccessToken: booking.payment_status === 'paid' ? booking.ticket_access_token : undefined,
+    });
+  } catch (err) {
+    console.error('GET /api/bookings/:id/status failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ============ PAYMENT RETURN / CANCEL ============
@@ -1425,7 +1504,7 @@ function firstString(...values) {
   return '';
 }
 
-function findBookingForPaymentReturn(req) {
+async function findBookingForPaymentReturn(req) {
   const body = req.body || {};
   const bookingId = firstString(req.query.bookingId, body.bookingId, body.booking_id);
   const invoiceNumber = firstString(
@@ -1440,12 +1519,12 @@ function findBookingForPaymentReturn(req) {
   );
 
   if (bookingId) {
-    const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+    const booking = await get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
     if (booking) return booking;
   }
 
   if (invoiceNumber) {
-    const booking = get('SELECT * FROM bookings WHERE reference_number = ?', [invoiceNumber]);
+    const booking = await get('SELECT * FROM bookings WHERE reference_number = ?', [invoiceNumber]);
     if (booking) return booking;
   }
 
@@ -1470,7 +1549,7 @@ async function reconcilePaymentReturn(booking, transactionId) {
 
   const verify = await verifyTransaction(transactionId);
   if (!verify.ok) {
-    logPaymentEvent(booking.id, 'return_verify_error', 'authorize_net_browser', {
+    await logPaymentEvent(booking.id, 'return_verify_error', 'authorize_net_browser', {
       transactionId,
       error: verify.error,
     });
@@ -1478,7 +1557,7 @@ async function reconcilePaymentReturn(booking, transactionId) {
   }
 
   if (verify.invoiceNumber !== booking.reference_number) {
-    logPaymentEvent(booking.id, 'return_verify_mismatch', 'authorize_net_browser', {
+    await logPaymentEvent(booking.id, 'return_verify_mismatch', 'authorize_net_browser', {
       transactionId,
       expectedInvoiceNumber: booking.reference_number,
       actualInvoiceNumber: verify.invoiceNumber,
@@ -1487,7 +1566,7 @@ async function reconcilePaymentReturn(booking, transactionId) {
   }
 
   if (verify.amountCents !== booking.total_amount) {
-    logPaymentEvent(booking.id, 'return_verify_mismatch', 'authorize_net_browser', {
+    await logPaymentEvent(booking.id, 'return_verify_mismatch', 'authorize_net_browser', {
       transactionId,
       expectedAmountCents: booking.total_amount,
       actualAmountCents: verify.amountCents,
@@ -1496,7 +1575,7 @@ async function reconcilePaymentReturn(booking, transactionId) {
   }
 
   if (verify.approved) {
-    markBookingPaid({
+    await markBookingPaid({
       bookingId: booking.id,
       transactionId,
       authCode: verify.authCode,
@@ -1506,7 +1585,7 @@ async function reconcilePaymentReturn(booking, transactionId) {
   }
 
   if (['2', '3'].includes(String(verify.responseCode))) {
-    markBookingFailed({
+    await markBookingFailed({
       bookingId: booking.id,
       reason: verify.error || `Authorize.Net response code ${verify.responseCode}`,
       source: 'authorize_net_browser_verified',
@@ -1527,60 +1606,64 @@ function scheduleDeferredWebhookVerification({
   if (!delayMs) return;
 
   const timer = setTimeout(async () => {
-    const booking = get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
-    if (!booking || booking.payment_status === 'paid') return;
+    try {
+      const booking = await get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+      if (!booking || booking.payment_status === 'paid') return;
 
-    const verify = await verifyTransaction(transactionId);
-    if (!verify.ok) {
-      console.error(`[webhooks] deferred verification attempt ${attempt} failed for booking=${bookingId} transId=${transactionId}: ${verify.error || 'unknown error'}`);
-      logPaymentEvent(bookingId, 'webhook_verify_retry_error', 'authorize_net_webhook', {
-        eventType,
-        notificationId,
-        transId: transactionId,
-        invoiceNumber,
-        attempt,
-        error: verify.error || null,
-      });
-      scheduleDeferredWebhookVerification({
-        bookingId,
-        transactionId,
-        eventType,
-        notificationId,
-        invoiceNumber,
-        attempt: attempt + 1,
-      });
-      return;
-    }
+      const verify = await verifyTransaction(transactionId);
+      if (!verify.ok) {
+        console.error(`[webhooks] deferred verification attempt ${attempt} failed for booking=${bookingId} transId=${transactionId}: ${verify.error || 'unknown error'}`);
+        await logPaymentEvent(bookingId, 'webhook_verify_retry_error', 'authorize_net_webhook', {
+          eventType,
+          notificationId,
+          transId: transactionId,
+          invoiceNumber,
+          attempt,
+          error: verify.error || null,
+        });
+        scheduleDeferredWebhookVerification({
+          bookingId,
+          transactionId,
+          eventType,
+          notificationId,
+          invoiceNumber,
+          attempt: attempt + 1,
+        });
+        return;
+      }
 
-    if (verify.invoiceNumber !== booking.reference_number || verify.amountCents !== booking.total_amount) {
-      logPaymentEvent(bookingId, 'webhook_verify_retry_mismatch', 'authorize_net_webhook', {
-        eventType,
-        notificationId,
-        transId: transactionId,
-        expectedInvoiceNumber: booking.reference_number,
-        actualInvoiceNumber: verify.invoiceNumber,
-        expectedAmountCents: booking.total_amount,
-        actualAmountCents: verify.amountCents,
-      });
-      return;
-    }
+      if (verify.invoiceNumber !== booking.reference_number || verify.amountCents !== booking.total_amount) {
+        await logPaymentEvent(bookingId, 'webhook_verify_retry_mismatch', 'authorize_net_webhook', {
+          eventType,
+          notificationId,
+          transId: transactionId,
+          expectedInvoiceNumber: booking.reference_number,
+          actualInvoiceNumber: verify.invoiceNumber,
+          expectedAmountCents: booking.total_amount,
+          actualAmountCents: verify.amountCents,
+        });
+        return;
+      }
 
-    if (verify.approved) {
-      markBookingPaid({
-        bookingId,
-        transactionId,
-        authCode: verify.authCode,
-        source: 'authorize_net_webhook_deferred',
-      });
-      return;
-    }
+      if (verify.approved) {
+        await markBookingPaid({
+          bookingId,
+          transactionId,
+          authCode: verify.authCode,
+          source: 'authorize_net_webhook_deferred',
+        });
+        return;
+      }
 
-    if (['2', '3'].includes(String(verify.responseCode))) {
-      markBookingFailed({
-        bookingId,
-        reason: verify.error || `Authorize.Net response code ${verify.responseCode}`,
-        source: 'authorize_net_webhook_deferred',
-      });
+      if (['2', '3'].includes(String(verify.responseCode))) {
+        await markBookingFailed({
+          bookingId,
+          reason: verify.error || `Authorize.Net response code ${verify.responseCode}`,
+          source: 'authorize_net_webhook_deferred',
+        });
+      }
+    } catch (err) {
+      console.error('[webhooks] deferred verification timer failed:', err?.message || err);
     }
   }, delayMs);
 
@@ -1588,41 +1671,51 @@ function scheduleDeferredWebhookVerification({
 }
 
 app.all('/payment/return', async (req, res) => {
-  const booking = findBookingForPaymentReturn(req);
-  const transactionId = getReturnTransactionId(req);
-  const bookingId = booking?.id;
-  if (!bookingId) {
-    console.warn('[payments] /payment/return called without a matching booking', {
+  try {
+    const booking = await findBookingForPaymentReturn(req);
+    const transactionId = getReturnTransactionId(req);
+    const bookingId = booking?.id;
+    if (!bookingId) {
+      console.warn('[payments] /payment/return called without a matching booking', {
+        method: req.method,
+        bodyKeys: Object.keys(req.body || {}),
+      });
+      return res.redirect('/');
+    }
+    await logPaymentEvent(bookingId, 'returned', 'authorize_net_browser', {
       method: req.method,
+      transactionId: transactionId || null,
       bodyKeys: Object.keys(req.body || {}),
     });
+    try {
+      await reconcilePaymentReturn(booking, transactionId);
+    } catch (err) {
+      console.error('[payments] browser return reconciliation failed:', err?.message || err);
+      await logPaymentEvent(bookingId, 'return_verify_error', 'authorize_net_browser', {
+        transactionId: transactionId || null,
+        error: err?.message || String(err),
+      });
+    }
+    return res.redirect(`/booking/${encodeURIComponent(bookingId)}/processing`);
+  } catch (err) {
+    console.error('ALL /payment/return failed:', err);
     return res.redirect('/');
   }
-  logPaymentEvent(bookingId, 'returned', 'authorize_net_browser', {
-    method: req.method,
-    transactionId: transactionId || null,
-    bodyKeys: Object.keys(req.body || {}),
-  });
-  try {
-    await reconcilePaymentReturn(booking, transactionId);
-  } catch (err) {
-    console.error('[payments] browser return reconciliation failed:', err?.message || err);
-    logPaymentEvent(bookingId, 'return_verify_error', 'authorize_net_browser', {
-      transactionId: transactionId || null,
-      error: err?.message || String(err),
-    });
-  }
-  return res.redirect(`/booking/${encodeURIComponent(bookingId)}/processing`);
 });
 
-app.all('/payment/cancel', (req, res) => {
-  const booking = findBookingForPaymentReturn(req);
-  if (booking?.id) {
-    markBookingCancelled({ bookingId: booking.id, source: 'customer' });
+app.all('/payment/cancel', async (req, res) => {
+  try {
+    const booking = await findBookingForPaymentReturn(req);
+    if (booking?.id) {
+      await markBookingCancelled({ bookingId: booking.id, source: 'customer' });
+    }
+    // Client-side route — shows "Payment cancelled" with a "Try Again" button.
+    // Seats remain 'held' so the customer can retry without losing them.
+    return res.redirect(`/booking/${encodeURIComponent(booking?.id || '')}/cancelled`);
+  } catch (err) {
+    console.error('ALL /payment/cancel failed:', err);
+    return res.redirect('/');
   }
-  // Client-side route — shows "Payment cancelled" with a "Try Again" button.
-  // Seats remain 'held' so the customer can retry without losing them.
-  return res.redirect(`/booking/${encodeURIComponent(booking?.id || '')}/cancelled`);
 });
 
 // ============ AUTHORIZE.NET WEBHOOK ============
@@ -1682,7 +1775,7 @@ app.post('/api/webhooks/authorize-net',
 
     // We set Authorize.Net's invoiceNumber to our reference_number when
     // creating the hosted page, so we can look up the booking from it.
-    const booking = get('SELECT * FROM bookings WHERE reference_number = ?', [invoiceNumber]);
+    const booking = await get('SELECT * FROM bookings WHERE reference_number = ?', [invoiceNumber]);
     if (!booking) {
       console.warn(`[webhooks] booking not found for invoiceNumber=${invoiceNumber} eventType=${eventType}`);
       return res.status(200).end(); // ack so Authorize.Net stops retrying
@@ -1690,7 +1783,7 @@ app.post('/api/webhooks/authorize-net',
 
     if (!signatureValid) {
       console.warn(`[webhooks] signature invalid for booking=${booking.id} ref=${invoiceNumber} eventType=${eventType}`);
-      logPaymentEvent(booking.id, 'webhook_signature_invalid', 'authorize_net_webhook', {
+      await logPaymentEvent(booking.id, 'webhook_signature_invalid', 'authorize_net_webhook', {
         eventType,
         notificationId,
         transId,
@@ -1709,7 +1802,7 @@ app.post('/api/webhooks/authorize-net',
         const verify = await verifyTransaction(transId);
         if (!verify.ok) {
           console.error(`[webhooks] invalid-signature fallback verification failed for ${eventType}: ${verify.error || 'unknown error'}`);
-          logPaymentEvent(booking.id, 'webhook_signature_invalid_verify_error', 'authorize_net_webhook', {
+          await logPaymentEvent(booking.id, 'webhook_signature_invalid_verify_error', 'authorize_net_webhook', {
             eventType,
             notificationId,
             transId,
@@ -1725,7 +1818,7 @@ app.post('/api/webhooks/authorize-net',
           verify.amountCents === booking.total_amount;
 
         if (!verifiedMatch) {
-          logPaymentEvent(booking.id, 'webhook_signature_invalid_rejected', 'authorize_net_webhook', {
+          await logPaymentEvent(booking.id, 'webhook_signature_invalid_rejected', 'authorize_net_webhook', {
             eventType,
             notificationId,
             transId,
@@ -1739,13 +1832,13 @@ app.post('/api/webhooks/authorize-net',
           return res.status(401).end();
         }
 
-        logPaymentEvent(booking.id, 'webhook_signature_invalid_verified', 'authorize_net_webhook', {
+        await logPaymentEvent(booking.id, 'webhook_signature_invalid_verified', 'authorize_net_webhook', {
           eventType,
           notificationId,
           transId,
           invoiceNumber,
         });
-        markBookingPaid({
+        await markBookingPaid({
           bookingId: booking.id,
           transactionId: transId,
           authCode: verify.authCode,
@@ -1754,7 +1847,7 @@ app.post('/api/webhooks/authorize-net',
         return res.status(200).end();
       } catch (err) {
         console.error(`[webhooks] invalid-signature fallback failed for ${eventType}:`, err?.message || err);
-        logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
+        await logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
           eventType,
           notificationId,
           transId,
@@ -1766,7 +1859,7 @@ app.post('/api/webhooks/authorize-net',
     }
 
     // Always log the inbound event for audit / debugging
-    logPaymentEvent(booking.id, 'webhook', 'authorize_net_webhook', {
+    await logPaymentEvent(booking.id, 'webhook', 'authorize_net_webhook', {
       eventType, notificationId, transId, invoiceNumber,
     });
 
@@ -1784,7 +1877,7 @@ app.post('/api/webhooks/authorize-net',
         const verify = await verifyTransaction(transId);
         if (!verify.ok) {
           console.error(`[webhooks] transaction verification deferred for booking=${booking.id} transId=${transId}: ${verify.error || 'unknown error'}`);
-          logPaymentEvent(booking.id, 'webhook_verify_deferred', 'authorize_net_webhook', {
+          await logPaymentEvent(booking.id, 'webhook_verify_deferred', 'authorize_net_webhook', {
             eventType,
             notificationId,
             transId,
@@ -1801,33 +1894,33 @@ app.post('/api/webhooks/authorize-net',
           return res.status(200).end();
         }
         if (verify.approved) {
-          markBookingPaid({
+          await markBookingPaid({
             bookingId: booking.id,
             transactionId: transId,
             authCode: verify.authCode,
             source: 'authorize_net_webhook',
           });
         } else {
-          markBookingFailed({
+          await markBookingFailed({
             bookingId: booking.id,
             reason: verify.error || 'transaction not approved at verify step',
             source: 'authorize_net_webhook',
           });
         }
       } else if (eventType === 'net.authorize.payment.refund.created') {
-        markBookingRefunded({
+        await markBookingRefunded({
           bookingId: booking.id,
           transactionId: transId,
           source: 'authorize_net_webhook',
         });
       } else if (eventType === 'net.authorize.payment.void.created') {
-        markBookingVoided({
+        await markBookingVoided({
           bookingId: booking.id,
           transactionId: transId,
           source: 'authorize_net_webhook',
         });
       } else if (eventType === 'net.authorize.payment.fraud.declined') {
-        markBookingFailed({
+        await markBookingFailed({
           bookingId: booking.id,
           reason: 'fraud_declined',
           source: 'authorize_net_webhook',
@@ -1841,7 +1934,7 @@ app.post('/api/webhooks/authorize-net',
       }
     } catch (err) {
       console.error(`[webhooks] handler error for ${eventType}:`, err?.message || err);
-      logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
+      await logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
         eventType,
         notificationId,
         transId,
@@ -1857,158 +1950,209 @@ app.post('/api/webhooks/authorize-net',
 
 // ============ ADMIN ============
 
-app.post('/api/admin/login', adminLoginLimiter, (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
-  // Check env-var admin
-  if (username.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() && password === process.env.ADMIN_PASSWORD) {
-    const token = Buffer.from(`${username}:${password}`).toString('base64');
-    return res.json({ token, displayName: 'Admin', isSuperUser: true });
+app.post('/api/admin/login', adminLoginLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+    // Check env-var admin
+    if (username.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() && password === process.env.ADMIN_PASSWORD) {
+      const token = Buffer.from(`${username}:${password}`).toString('base64');
+      return res.json({ token, displayName: 'Admin', isSuperUser: true });
+    }
+    // Check DB admin users
+    const dbUser = await get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [username]);
+    if (dbUser && bcrypt.compareSync(password, dbUser.password_hash)) {
+      const token = Buffer.from(`${username}:${password}`).toString('base64');
+      return res.json({
+        token,
+        displayName: dbUser.display_name || dbUser.email,
+        isSuperUser: isSuperUser(dbUser.email, 'db', dbUser),
+      });
+    }
+    res.status(401).json({ error: 'Invalid credentials' });
+  } catch (err) {
+    console.error('POST /api/admin/login failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  // Check DB admin users
-  const dbUser = get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [username]);
-  if (dbUser && bcrypt.compareSync(password, dbUser.password_hash)) {
-    const token = Buffer.from(`${username}:${password}`).toString('base64');
-    return res.json({
-      token,
-      displayName: dbUser.display_name || dbUser.email,
-      isSuperUser: isSuperUser(dbUser.email, 'db', dbUser),
-    });
-  }
-  res.status(401).json({ error: 'Invalid credentials' });
 });
 
 // ============ ADMIN USERS ============
 
-app.get('/api/admin/users', adminAuth, requireSuperUser, (req, res) => {
-  const users = all('SELECT id, email, display_name, is_active, is_super_user, created_at FROM admin_users ORDER BY created_at');
-  res.json(users);
-});
-
-app.post('/api/admin/users', adminAuth, requireSuperUser, (req, res) => {
-  const { email, password, displayName, isSuperUser: makeSuperUser } = req.body;
-  const normalizedEmail = (email || '').trim();
-  if (!normalizedEmail || !password) return res.status(400).json({ error: 'Email and password are required' });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'A valid email address is required' });
-  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-  const existing = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [normalizedEmail]);
-  if (existing) return res.status(409).json({ error: 'User with this email already exists' });
-  const id = uuid();
-  const hash = bcrypt.hashSync(password, 10);
-  run('INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user) VALUES (?, ?, ?, ?, ?)',
-    [id, normalizedEmail, hash, displayName || null, makeSuperUser ? 1 : 0]);
-  logAudit('admin_user_created', 'admin_user', id, {
-    email: normalizedEmail,
-    displayName: displayName || null,
-    isSuperUser: !!makeSuperUser,
-    createdBy: req.adminUser.email,
-  });
-  res.status(201).json({ id, email: normalizedEmail, displayName: displayName || null, isSuperUser: !!makeSuperUser });
-});
-
-app.patch('/api/admin/users/:id', adminAuth, requireSuperUser, (req, res) => {
-  const { email, password, displayName, isActive } = req.body;
-  const user = get('SELECT * FROM admin_users WHERE id = ?', [req.params.id]);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  if (email !== undefined) {
-    const normalizedEmail = (email || '').trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'A valid email address is required' });
-    const existing = get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?) AND id <> ?', [normalizedEmail, req.params.id]);
-    if (existing) return res.status(409).json({ error: 'User with this email already exists' });
-    run('UPDATE admin_users SET email = ?, updated_at = datetime(\'now\') WHERE id = ?', [normalizedEmail, req.params.id]);
+app.get('/api/admin/users', adminAuth, requireSuperUser, async (req, res) => {
+  try {
+    const users = await all('SELECT id, email, display_name, is_active, is_super_user, created_at FROM admin_users ORDER BY created_at');
+    res.json(users);
+  } catch (err) {
+    console.error('GET /api/admin/users failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  if (password && password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-  if (password) run('UPDATE admin_users SET password_hash = ?, updated_at = datetime(\'now\') WHERE id = ?', [bcrypt.hashSync(password, 10), req.params.id]);
-  if (displayName !== undefined) run('UPDATE admin_users SET display_name = ?, updated_at = datetime(\'now\') WHERE id = ?', [displayName, req.params.id]);
-  if (isActive !== undefined) {
-    if (user.email.toLowerCase() === 'kylepaul@stmec.com' && !isActive) {
+});
+
+app.post('/api/admin/users', adminAuth, requireSuperUser, async (req, res) => {
+  try {
+    const { email, password, displayName, isSuperUser: makeSuperUser } = req.body;
+    const normalizedEmail = (email || '').trim();
+    if (!normalizedEmail || !password) return res.status(400).json({ error: 'Email and password are required' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'A valid email address is required' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const existing = await get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?)', [normalizedEmail]);
+    if (existing) return res.status(409).json({ error: 'User with this email already exists' });
+    const id = uuid();
+    const hash = bcrypt.hashSync(password, 10);
+    await run('INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user) VALUES (?, ?, ?, ?, ?)',
+      [id, normalizedEmail, hash, displayName || null, makeSuperUser ? 1 : 0]);
+    await logAudit('admin_user_created', 'admin_user', id, {
+      email: normalizedEmail,
+      displayName: displayName || null,
+      isSuperUser: !!makeSuperUser,
+      createdBy: req.adminUser.email,
+    });
+    res.status(201).json({ id, email: normalizedEmail, displayName: displayName || null, isSuperUser: !!makeSuperUser });
+  } catch (err) {
+    console.error('POST /api/admin/users failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/admin/users/:id', adminAuth, requireSuperUser, async (req, res) => {
+  try {
+    const { email, password, displayName, isActive } = req.body;
+    const user = await get('SELECT * FROM admin_users WHERE id = ?', [req.params.id]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (email !== undefined) {
+      const normalizedEmail = (email || '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'A valid email address is required' });
+      const existing = await get('SELECT id FROM admin_users WHERE LOWER(email) = LOWER(?) AND id <> ?', [normalizedEmail, req.params.id]);
+      if (existing) return res.status(409).json({ error: 'User with this email already exists' });
+      await run('UPDATE admin_users SET email = ?, updated_at = datetime(\'now\') WHERE id = ?', [normalizedEmail, req.params.id]);
+    }
+    if (password && password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    if (password) await run('UPDATE admin_users SET password_hash = ?, updated_at = datetime(\'now\') WHERE id = ?', [bcrypt.hashSync(password, 10), req.params.id]);
+    if (displayName !== undefined) await run('UPDATE admin_users SET display_name = ?, updated_at = datetime(\'now\') WHERE id = ?', [displayName, req.params.id]);
+    if (isActive !== undefined) {
+      if (user.email.toLowerCase() === 'kylepaul@stmec.com' && !isActive) {
+        return res.status(400).json({ error: 'Kyle account must remain active' });
+      }
+      await run('UPDATE admin_users SET is_active = ?, updated_at = datetime(\'now\') WHERE id = ?', [isActive ? 1 : 0, req.params.id]);
+    }
+    if (req.body.isSuperUser !== undefined) {
+      if (user.email.toLowerCase() === 'kylepaul@stmec.com' && !req.body.isSuperUser) {
+        return res.status(400).json({ error: 'Kyle account must remain a super user' });
+      }
+      await run('UPDATE admin_users SET is_super_user = ?, updated_at = datetime(\'now\') WHERE id = ?', [req.body.isSuperUser ? 1 : 0, req.params.id]);
+    }
+    await logAudit('admin_user_updated', 'admin_user', req.params.id, {
+      email: email !== undefined ? email : user.email,
+      updatedBy: req.adminUser.email,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('PATCH /api/admin/users/:id failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/admin/users/:id', adminAuth, requireSuperUser, async (req, res) => {
+  try {
+    const user = await get('SELECT * FROM admin_users WHERE id = ?', [req.params.id]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.email.toLowerCase() === 'kylepaul@stmec.com') {
       return res.status(400).json({ error: 'Kyle account must remain active' });
     }
-    run('UPDATE admin_users SET is_active = ?, updated_at = datetime(\'now\') WHERE id = ?', [isActive ? 1 : 0, req.params.id]);
+    await run('UPDATE admin_users SET is_active = 0, updated_at = datetime(\'now\') WHERE id = ?', [req.params.id]);
+    await logAudit('admin_user_deactivated', 'admin_user', req.params.id, {
+      email: user.email,
+      deactivatedBy: req.adminUser.email,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /api/admin/users/:id failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  if (req.body.isSuperUser !== undefined) {
-    if (user.email.toLowerCase() === 'kylepaul@stmec.com' && !req.body.isSuperUser) {
-      return res.status(400).json({ error: 'Kyle account must remain a super user' });
-    }
-    run('UPDATE admin_users SET is_super_user = ?, updated_at = datetime(\'now\') WHERE id = ?', [req.body.isSuperUser ? 1 : 0, req.params.id]);
-  }
-  logAudit('admin_user_updated', 'admin_user', req.params.id, {
-    email: email !== undefined ? email : user.email,
-    updatedBy: req.adminUser.email,
-  });
-  res.json({ success: true });
-});
-
-app.delete('/api/admin/users/:id', adminAuth, requireSuperUser, (req, res) => {
-  const user = get('SELECT * FROM admin_users WHERE id = ?', [req.params.id]);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  if (user.email.toLowerCase() === 'kylepaul@stmec.com') {
-    return res.status(400).json({ error: 'Kyle account must remain active' });
-  }
-  run('UPDATE admin_users SET is_active = 0, updated_at = datetime(\'now\') WHERE id = ?', [req.params.id]);
-  logAudit('admin_user_deactivated', 'admin_user', req.params.id, {
-    email: user.email,
-    deactivatedBy: req.adminUser.email,
-  });
-  res.json({ success: true });
 });
 
 // ============ SETTINGS ============
 
-app.get('/api/admin/settings/:key', adminAuth, (req, res) => {
-  const row = get('SELECT value FROM settings WHERE key = ?', [req.params.key]);
-  if (!row) return res.json({ value: null });
+app.get('/api/admin/settings/:key', adminAuth, async (req, res) => {
   try {
-    res.json({ value: JSON.parse(row.value) });
-  } catch {
-    res.json({ value: row.value });
+    const row = await get('SELECT value FROM settings WHERE key = ?', [req.params.key]);
+    if (!row) return res.json({ value: null });
+    try {
+      res.json({ value: JSON.parse(row.value) });
+    } catch {
+      res.json({ value: row.value });
+    }
+  } catch (err) {
+    console.error('GET /api/admin/settings/:key failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.put('/api/admin/settings/:key', adminAuth, (req, res) => {
-  const { value } = req.body;
-  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-  const existing = get('SELECT key FROM settings WHERE key = ?', [req.params.key]);
-  if (existing) {
-    run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = ?", [serialized, req.params.key]);
-  } else {
-    run("INSERT INTO settings (key, value) VALUES (?, ?)", [serialized, req.params.key]);
+app.put('/api/admin/settings/:key', adminAuth, async (req, res) => {
+  try {
+    const { value } = req.body;
+    const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+    const existing = await get('SELECT key FROM settings WHERE key = ?', [req.params.key]);
+    if (existing) {
+      await run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = ?", [serialized, req.params.key]);
+    } else {
+      await run("INSERT INTO settings (key, value) VALUES (?, ?)", [serialized, req.params.key]);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /api/admin/settings/:key failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  res.json({ ok: true });
 });
 
 // ============ PHD INVENTORY (Admin) ============
 
-app.get('/api/admin/phd-inventory', adminAuth, (req, res) => {
-  res.json({
-    ...getPhdInventoryForSession(String(req.query.sessionId || getNextPhdSessionId() || '').trim()),
-    perSession: getPhdUsageBySession()
-  });
-});
-
-app.put('/api/admin/phd-inventory', adminAuth, (req, res) => {
-  const { totalStock, perPlayerLimit } = req.body;
-  const config = updateGlobalPhdConfig({ totalStock, perPlayerLimit });
-  logAudit('phd_inventory_updated', 'settings', 'phd_inventory', config);
-  res.json({ ok: true, ...config });
-});
-
-app.put('/api/admin/phd-inventory/sessions/:sessionId', adminAuth, (req, res) => {
-  const sessionId = String(req.params.sessionId || '').trim();
-  const session = get('SELECT id FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-
+app.get('/api/admin/phd-inventory', adminAuth, async (req, res) => {
   try {
-    const config = updatePhdSessionStock(sessionId, req.body?.totalStock);
-    const inventory = getPhdInventoryForSession(sessionId);
-    logAudit('phd_session_inventory_updated', 'session', sessionId, {
-      sessionId,
-      totalStock: inventory.totalStock,
-      hasSessionStockOverride: inventory.hasSessionStockOverride,
+    const sessionId = String(req.query.sessionId || (await getNextPhdSessionId()) || '').trim();
+    res.json({
+      ...(await getPhdInventoryForSession(sessionId)),
+      perSession: await getPhdUsageBySession()
     });
-    res.json({ ok: true, config, inventory });
   } catch (err) {
-    res.status(400).json({ error: err.message || 'Failed to update session PHD stock' });
+    console.error('GET /api/admin/phd-inventory failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.put('/api/admin/phd-inventory', adminAuth, async (req, res) => {
+  try {
+    const { totalStock, perPlayerLimit } = req.body;
+    const config = await updateGlobalPhdConfig({ totalStock, perPlayerLimit });
+    await logAudit('phd_inventory_updated', 'settings', 'phd_inventory', config);
+    res.json({ ok: true, ...config });
+  } catch (err) {
+    console.error('PUT /api/admin/phd-inventory failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.put('/api/admin/phd-inventory/sessions/:sessionId', adminAuth, async (req, res) => {
+  try {
+    const sessionId = String(req.params.sessionId || '').trim();
+    const session = await get('SELECT id FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    try {
+      const config = await updatePhdSessionStock(sessionId, req.body?.totalStock);
+      const inventory = await getPhdInventoryForSession(sessionId);
+      await logAudit('phd_session_inventory_updated', 'session', sessionId, {
+        sessionId,
+        totalStock: inventory.totalStock,
+        hasSessionStockOverride: inventory.hasSessionStockOverride,
+      });
+      res.json({ ok: true, config, inventory });
+    } catch (err) {
+      res.status(400).json({ error: err.message || 'Failed to update session PHD stock' });
+    }
+  } catch (err) {
+    console.error('PUT /api/admin/phd-inventory/sessions/:sessionId failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -2056,13 +2200,13 @@ async function start() {
   logger.info('Migrations applied');
 
   migrateSeatLayout();
-  seedInitialAdminFromEnv(logger);
+  await seedInitialAdminFromEnv(logger);
 
   server.listen(PORT, () => {
     logger.info('Server started', { port: PORT, url: `http://localhost:${PORT}` });
   });
 
-  startMaintenanceTasks(io, { reconcileReversedBookingSeats });
+  await startMaintenanceTasks(io, { reconcileReversedBookingSeats }, logger);
   registerGracefulShutdown({ server, logger });
 }
 

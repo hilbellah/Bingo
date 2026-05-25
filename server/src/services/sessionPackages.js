@@ -74,8 +74,8 @@ export function validateSpecialEventPackageDrafts(pkgs = []) {
   return { ok: true, packages: normalized };
 }
 
-export function getSpecialBingoConfig() {
-  const row = get("SELECT value FROM settings WHERE key = 'special_bingo_config'");
+export async function getSpecialBingoConfig() {
+  const row = await get("SELECT value FROM settings WHERE key = 'special_bingo_config'");
   if (!row) return DEFAULT_SPECIAL_BINGO_CONFIG;
   try {
     return { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...JSON.parse(row.value) };
@@ -93,8 +93,8 @@ export function normalizeBookingConfig(rawConfig = {}) {
   };
 }
 
-export function getBookingConfig() {
-  const row = get("SELECT value FROM settings WHERE key = 'booking_config'");
+export async function getBookingConfig() {
+  const row = await get("SELECT value FROM settings WHERE key = 'booking_config'");
   if (!row) return { ...DEFAULT_BOOKING_CONFIG };
   try {
     return normalizeBookingConfig(JSON.parse(row.value));
@@ -103,8 +103,8 @@ export function getBookingConfig() {
   }
 }
 
-export function getDefaultSpecialBingoPackages() {
-  const config = getSpecialBingoConfig();
+export async function getDefaultSpecialBingoPackages() {
+  const config = await getSpecialBingoConfig();
   return [
     {
       name: config.admissionName,

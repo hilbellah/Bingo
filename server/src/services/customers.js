@@ -18,10 +18,10 @@ export function isValidCustomerName(value) {
   return name.length >= 1 && name.length <= 80;
 }
 
-export function hasPriorPaidBooking(email) {
+export async function hasPriorPaidBooking(email) {
   const normalized = normalizeEmail(email);
   if (!normalized) return false;
-  const row = get(
+  const row = await get(
     `SELECT id FROM bookings
      WHERE LOWER(email) = ?
        AND payment_status IN ('paid', 'refunded', 'voided')
@@ -31,7 +31,7 @@ export function hasPriorPaidBooking(email) {
   return !!row;
 }
 
-export function verifyBookingEmail({ email, verificationId, requireVerification }) {
+export async function verifyBookingEmail({ email, verificationId, requireVerification }) {
   const normalized = normalizeEmail(email);
   const now = new Date().toISOString();
 
@@ -39,7 +39,7 @@ export function verifyBookingEmail({ email, verificationId, requireVerification 
     return { ok: true, trusted: false, verifiedAt: null };
   }
 
-  if (hasPriorPaidBooking(normalized)) {
+  if (await hasPriorPaidBooking(normalized)) {
     return { ok: true, trusted: true, verifiedAt: now, alreadyVerified: true };
   }
 
@@ -47,7 +47,7 @@ export function verifyBookingEmail({ email, verificationId, requireVerification 
     return { ok: false, statusCode: 403, error: 'Please verify your email before continuing to payment.' };
   }
 
-  const verification = get(
+  const verification = await get(
     `SELECT * FROM email_verifications
      WHERE id = ? AND LOWER(email) = ?
      LIMIT 1`,
@@ -65,7 +65,7 @@ export function verifyBookingEmail({ email, verificationId, requireVerification 
   return { ok: true, trusted: true, verifiedAt: verification.verified_at };
 }
 
-export function upsertCustomerFromBooking(booking) {
+export async function upsertCustomerFromBooking(booking) {
   const email = normalizeEmail(booking?.email);
   if (!email || !isValidEmail(email)) return;
 
@@ -74,7 +74,7 @@ export function upsertCustomerFromBooking(booking) {
   const lastName = normalizeCustomerName(booking.customer_last_name) || null;
   const bookingAt = booking.payment_completed_at || now;
 
-  run(
+  await run(
     `INSERT INTO customers
       (id, email, first_name, last_name, email_verified_at, first_booking_at, last_booking_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

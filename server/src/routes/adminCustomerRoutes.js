@@ -8,7 +8,7 @@ function csvCell(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-function getCustomerRows(search = '') {
+async function getCustomerRows(search = '') {
   const normalizedSearch = String(search || '').trim().toLowerCase();
   const params = [];
   let whereClause = '';
@@ -22,7 +22,7 @@ function getCustomerRows(search = '') {
     params.push(like, like, like);
   }
 
-  return all(`
+  return await all(`
     SELECT
       c.id,
       c.email,
@@ -45,8 +45,9 @@ function getCustomerRows(search = '') {
 }
 
 export function registerAdminCustomerRoutes(app) {
-  app.get('/api/admin/customers', adminAuth, (req, res) => {
-    const rows = getCustomerRows(req.query.search);
+  app.get('/api/admin/customers', adminAuth, async (req, res) => {
+    try {
+    const rows = await getCustomerRows(req.query.search);
     res.json(rows.map(row => ({
       id: row.id,
       email: row.email,
@@ -63,10 +64,15 @@ export function registerAdminCustomerRoutes(app) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     })));
+    } catch (err) {
+      console.error('GET /api/admin/customers failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
-  app.get('/api/admin/customers/export', adminAuth, (req, res) => {
-    const rows = getCustomerRows(req.query.search);
+  app.get('/api/admin/customers/export', adminAuth, async (req, res) => {
+    try {
+    const rows = await getCustomerRows(req.query.search);
     const header = [
       'First Name',
       'Last Name',
@@ -96,5 +102,9 @@ export function registerAdminCustomerRoutes(app) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=customers-report.csv');
     res.send(lines.join('\n'));
+    } catch (err) {
+      console.error('GET /api/admin/customers/export failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 }

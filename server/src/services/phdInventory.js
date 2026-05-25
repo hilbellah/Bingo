@@ -25,19 +25,19 @@ function normalizePhdConfig(rawConfig = {}) {
   };
 }
 
-export function savePhdConfig(config) {
+export async function savePhdConfig(config) {
   const normalized = normalizePhdConfig(config);
-  const existing = get("SELECT key FROM settings WHERE key = 'phd_inventory'");
+  const existing = await get("SELECT key FROM settings WHERE key = 'phd_inventory'");
   if (existing) {
-    run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'phd_inventory'", [JSON.stringify(normalized)]);
+    await run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'phd_inventory'", [JSON.stringify(normalized)]);
   } else {
-    run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [JSON.stringify(normalized)]);
+    await run("INSERT INTO settings (key, value) VALUES ('phd_inventory', ?)", [JSON.stringify(normalized)]);
   }
   return normalized;
 }
 
-export function getPhdConfig() {
-  const phdSettingsRow = get("SELECT value FROM settings WHERE key = 'phd_inventory'");
+export async function getPhdConfig() {
+  const phdSettingsRow = await get("SELECT value FROM settings WHERE key = 'phd_inventory'");
   if (!phdSettingsRow) return { ...DEFAULT_PHD_CONFIG };
 
   try {
@@ -47,8 +47,8 @@ export function getPhdConfig() {
   }
 }
 
-export function updateGlobalPhdConfig({ totalStock, perPlayerLimit }) {
-  const existing = getPhdConfig();
+export async function updateGlobalPhdConfig({ totalStock, perPlayerLimit }) {
+  const existing = await getPhdConfig();
   return savePhdConfig({
     ...existing,
     totalStock: totalStock != null ? Number(totalStock) : existing.totalStock,
@@ -56,11 +56,11 @@ export function updateGlobalPhdConfig({ totalStock, perPlayerLimit }) {
   });
 }
 
-export function updatePhdSessionStock(sessionId, totalStock) {
+export async function updatePhdSessionStock(sessionId, totalStock) {
   const cleanSessionId = String(sessionId || '').trim();
   if (!cleanSessionId) throw new Error('Session ID is required');
 
-  const config = getPhdConfig();
+  const config = await getPhdConfig();
   const nextOverrides = { ...config.sessionStockOverrides };
 
   if (totalStock == null || totalStock === '') {
@@ -74,15 +74,22 @@ export function updatePhdSessionStock(sessionId, totalStock) {
   return savePhdConfig({ ...config, sessionStockOverrides: nextOverrides });
 }
 
-export function getPhdTotalStockForSession(sessionId, config = getPhdConfig()) {
+// Pure (non-async) reader — the caller must supply the config object. If config
+// is omitted, we cannot fetch it synchronously, so callers that don't have one
+// in scope should use getPhdInventoryForSession() instead, which awaits the
+// config internally.
+export function getPhdTotalStockForSession(sessionId, config) {
+  if (!config) {
+    throw new Error('getPhdTotalStockForSession requires a config object; call await getPhdConfig() first.');
+  }
   const cleanSessionId = String(sessionId || '').trim();
   const override = cleanSessionId ? config.sessionStockOverrides?.[cleanSessionId] : undefined;
   return Number.isFinite(Number(override)) ? Number(override) : config.totalStock;
 }
 
-export function getPhdUsedForSession(sessionId) {
+export async function getPhdUsedForSession(sessionId) {
   if (!sessionId) return 0;
-  const usedRow = get(`
+  const usedRow = await get(`
     SELECT COUNT(DISTINCT bi.id) as total_used
     FROM booking_items bi
     JOIN bookings b ON b.id = bi.booking_id
@@ -106,10 +113,10 @@ export function getPhdUsedForSession(sessionId) {
   return usedRow?.total_used || 0;
 }
 
-export function getPhdInventoryForSession(sessionId) {
-  const config = getPhdConfig();
+export async function getPhdInventoryForSession(sessionId) {
+  const config = await getPhdConfig();
   const totalStock = getPhdTotalStockForSession(sessionId, config);
-  const totalUsed = getPhdUsedForSession(sessionId);
+  const totalUsed = await getPhdUsedForSession(sessionId);
   return {
     sessionId: sessionId || null,
     totalStock,
@@ -121,10 +128,10 @@ export function getPhdInventoryForSession(sessionId) {
   };
 }
 
-export function getPhdUsageBySession() {
+export async function getPhdUsageBySession() {
   const today = formatLocalDate(new Date());
-  const config = getPhdConfig();
-  const rows = all(`
+  const config = await getPhdConfig();
+  const rows = await all(`
     SELECT * FROM (
       SELECT s.id, s.date, s.time, s.event_title, s.is_special_event,
         (
@@ -169,9 +176,9 @@ export function getPhdUsageBySession() {
   });
 }
 
-export function getNextPhdSessionId() {
+export async function getNextPhdSessionId() {
   const today = formatLocalDate(new Date());
-  const row = get(
+  const row = await get(
     `SELECT id FROM sessions
      WHERE date >= ? AND is_available = 1 AND deleted_at IS NULL
      ORDER BY date ASC, time ASC
@@ -181,14 +188,15 @@ export function getNextPhdSessionId() {
   return row?.id || null;
 }
 
-export function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType = 'regular_bingo', requiredPkgs = [requiredPkg].filter(Boolean)) {
-  const phdConfig = getPhdConfig();
+export async function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessionPkgs, requiredPkg, sessionType = 'regular_bingo', requiredPkgs = [requiredPkg].filter(Boolean)) {
+  const phdConfig = await getPhdConfig();
 
   const phdPkgIds = new Set();
   if (useSessionPkgs) {
     sessionPkgs.filter(pkg => pkg.is_phd).forEach(pkg => phdPkgIds.add(pkg.id));
   } else {
-    all('SELECT id FROM packages WHERE is_phd = 1 AND is_active = 1').forEach(pkg => phdPkgIds.add(pkg.id));
+    const dbPhdPkgs = await all('SELECT id FROM packages WHERE is_phd = 1 AND is_active = 1');
+    dbPhdPkgs.forEach(pkg => phdPkgIds.add(pkg.id));
   }
 
   if (phdPkgIds.size === 0) return { ok: true, phdPkgIds, phdConfig };
@@ -218,7 +226,7 @@ export function validatePhdInventory(sessionId, attendees, useSessionPkgs, sessi
   }
 
   if (totalPhdInBooking > 0) {
-    const totalUsed = getPhdUsedForSession(sessionId);
+    const totalUsed = await getPhdUsedForSession(sessionId);
     const totalStock = getPhdTotalStockForSession(sessionId, phdConfig);
     const remaining = Math.max(0, totalStock - totalUsed);
 
