@@ -23,6 +23,9 @@ export default function ArchiveAuditTab() {
             {/* Deleted Sessions */}
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
               <h3 className="font-semibold text-brand-blue mb-3">Deleted Sessions</h3>
+              <div className="border border-amber-100 bg-amber-50 text-amber-900 rounded-lg px-3 py-2 text-xs leading-relaxed mb-4">
+                <span className="font-semibold">Definition:</span> Archive is session-based. Sessions move here after their event date has passed or when they are deleted. The bookings shown here are the bookings attached to that archived session, not every transaction by payment date.
+              </div>
               {deletedSessions.length === 0 ? (
                 <p className="text-gray-400 text-sm">No deleted sessions.</p>
               ) : (
@@ -88,30 +91,37 @@ export default function ArchiveAuditTab() {
                           </span>
                         </span>
                       </div>
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="text-gray-400 text-left">
-                            <th className="pb-1">Ticket</th>
-                            <th className="pb-1">Name</th>
-                            <th className="pb-1">Table</th>
-                            <th className="pb-1">Chair</th>
-                            <th className="pb-1">Package</th>
-                            <th className="pb-1">Price</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {b.attendees.map((a, i) => (
-                            <tr key={i}>
-                              <td className="py-0.5 font-mono text-brand-blue font-semibold">{a.referenceNumber || b.referenceNumber}</td>
-                              <td className="py-0.5">{a.firstName} {a.lastName}</td>
-                              <td className="py-0.5">{a.tableNumber}</td>
-                              <td className="py-0.5">{a.chairNumber}</td>
-                              <td className="py-0.5">{a.packageName}</td>
-                              <td className="py-0.5">{a.itemPriceFormatted}</td>
+                      {b.attendees.length === 0 ? (
+                        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1">
+                          No ticket rows are attached to this booking record. Status, amount, customer, and transaction data are still preserved.
+                          {b.transactionId && <span className="ml-1 font-mono">Transaction: {b.transactionId}</span>}
+                        </div>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-gray-400 text-left">
+                              <th className="pb-1">Ticket</th>
+                              <th className="pb-1">Name</th>
+                              <th className="pb-1">Table</th>
+                              <th className="pb-1">Chair</th>
+                              <th className="pb-1">Package</th>
+                              <th className="pb-1">Price</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {b.attendees.map((a, i) => (
+                              <tr key={i}>
+                                <td className="py-0.5 font-mono text-brand-blue font-semibold">{a.referenceNumber || b.referenceNumber}</td>
+                                <td className="py-0.5">{a.firstName} {a.lastName}</td>
+                                <td className="py-0.5">{a.tableNumber}</td>
+                                <td className="py-0.5">{a.chairNumber}</td>
+                                <td className="py-0.5">{a.packageName}</td>
+                                <td className="py-0.5">{a.itemPriceFormatted}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   ))
                 )}

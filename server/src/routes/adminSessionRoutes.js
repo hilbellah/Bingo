@@ -468,15 +468,15 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     try {
       const rows = await all(`
         SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at,
-               b.email, b.customer_first_name, b.customer_last_name,
+               b.email, b.customer_first_name, b.customer_last_name, b.transaction_id,
                bi.id as booking_item_id, bi.first_name, bi.last_name, bi.price as item_price,
                bi.reference_number as item_reference_number,
                bi.printed_at as item_printed_at,
                seats.table_number, seats.chair_number,
                COALESCE(p.name, sp.name) as package_name
         FROM bookings b
-        JOIN booking_items bi ON bi.booking_id = b.id
-        JOIN seats ON seats.id = bi.seat_id
+        LEFT JOIN booking_items bi ON bi.booking_id = b.id
+        LEFT JOIN seats ON seats.id = bi.seat_id
         LEFT JOIN packages p ON p.id = bi.package_id
         LEFT JOIN session_packages sp ON sp.id = bi.package_id
         WHERE b.session_id = ?
@@ -496,19 +496,22 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
             email: row.email,
             customerFirstName: row.customer_first_name,
             customerLastName: row.customer_last_name,
+            transactionId: row.transaction_id,
             attendees: []
           };
         }
-        bookings[row.id].attendees.push({
-          firstName: row.first_name,
-          lastName: row.last_name,
-          tableNumber: row.table_number,
-          chairNumber: row.chair_number,
-          referenceNumber: row.item_reference_number,
-          packageName: row.package_name,
-          itemPrice: row.item_price,
-          itemPriceFormatted: '$' + formatPrice(row.item_price)
-        });
+        if (row.booking_item_id) {
+          bookings[row.id].attendees.push({
+            firstName: row.first_name,
+            lastName: row.last_name,
+            tableNumber: row.table_number,
+            chairNumber: row.chair_number,
+            referenceNumber: row.item_reference_number,
+            packageName: row.package_name,
+            itemPrice: row.item_price,
+            itemPriceFormatted: '$' + formatPrice(row.item_price)
+          });
+        }
       }
       res.json(Object.values(bookings));
     } catch (err) {

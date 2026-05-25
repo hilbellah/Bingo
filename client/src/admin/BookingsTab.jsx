@@ -225,6 +225,9 @@ export default function BookingsTab() {
               title="Transactions & Refund Summary"
               description="All payment activity in one place, including paid bookings, refunds, voids, pending payments, failed payments, gross sales, and net total."
             >
+              <div className="border border-blue-100 bg-blue-50 text-blue-900 rounded-lg px-3 py-2 text-xs leading-relaxed mb-4">
+                <span className="font-semibold">Definition:</span> Transactions are payment records listed by payment activity date. They can include bookings for today or future sessions. Archive is separate: a booking appears there only after its session date has passed and that session is archived.
+              </div>
               <div className="flex items-center gap-2 flex-wrap mb-4 pt-4">
                   <input
                     type="text"
