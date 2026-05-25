@@ -96,7 +96,10 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3001;
-const HOLD_MINUTES = parseInt(process.env.SESSION_HOLD_MINUTES || '20');
+const configuredHoldMinutes = parseInt(process.env.SESSION_HOLD_MINUTES || '20', 10);
+const HOLD_MINUTES = Number.isFinite(configuredHoldMinutes)
+  ? Math.min(configuredHoldMinutes, 20)
+  : 20;
 const configuredPaymentFailureHoldMinutes = parseInt(process.env.PAYMENT_FAILURE_HOLD_MINUTES || '5', 10);
 const PAYMENT_FAILURE_HOLD_MINUTES = Number.isFinite(configuredPaymentFailureHoldMinutes)
   ? configuredPaymentFailureHoldMinutes
