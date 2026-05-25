@@ -106,3 +106,10 @@ Set in `server/.env`:
 - Left column: seats 1, 3, 5
 - Right column: seats 2, 4, 6
 - Color coded: Green (available), Blue (your selection), Yellow (held), Gray (sold)
+
+## Production
+
+- Customer site: https://booking.wolastoqcasino.ca
+- Render host: https://bingo-jk2h.onrender.com
+- Deploy: pushes to `main` auto-deploy via `render.yaml` (`autoDeploy: true`), health-checked on `/api/sessions`.
+- Last verified live: 2026-05-25
