@@ -15,6 +15,7 @@
     "test": "npm run build && npm run smoke",
     "seed": "cd server && node src/seed.js",
     "migrate": "cd server && node src/migrate.js",
+    "migrate:postgres": "cd server && node src/migratePostgres.js",
     "setup": "npm install && npm run migrate && npm run seed",
     "start": "cd server && node src/index.js"
   },
