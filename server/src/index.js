@@ -65,7 +65,8 @@ import {
   normalizeSessionType,
 } from './services/sessionPackages.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
@@ -2272,7 +2273,11 @@ async function start() {
   registerGracefulShutdown({ server, logger });
 }
 
-start().catch(err => {
-  logger.error('Failed to start server', { error: err.message, stack: err.stack });
-  process.exit(1);
-});
+export { app, io, server, start };
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  start().catch(err => {
+    logger.error('Failed to start server', { error: err.message, stack: err.stack });
+    process.exit(1);
+  });
+}
