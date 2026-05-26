@@ -78,6 +78,10 @@ function getHostedBaseUrl() {
     : 'https://test.authorize.net/payment/payment';
 }
 
+export function getHostedPaymentRedirectUrl() {
+  return getHostedBaseUrl();
+}
+
 function getMerchantAuth() {
   const loginId = process.env.ANET_API_LOGIN_ID;
   const txKey = process.env.ANET_TRANSACTION_KEY;

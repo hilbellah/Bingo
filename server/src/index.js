@@ -60,7 +60,12 @@ import {
 import { createUploadMiddleware } from './uploads.js';
 import { formatLocalDate, formatPrice, generateRef } from './utils/format.js';
 import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode } from './services/email.js';
-import { createHostedPaymentPage, verifyTransaction, verifyWebhookSignature } from './services/payments.js';
+import {
+  createHostedPaymentPage,
+  getHostedPaymentRedirectUrl,
+  verifyTransaction,
+  verifyWebhookSignature
+} from './services/payments.js';
 import {
   getBookingConfig,
   normalizeSessionType,
@@ -108,9 +113,38 @@ const HOLD_CONFIG = resolveHoldConfig();
 const HOLD_MINUTES = HOLD_CONFIG.holdMinutes;
 const PAYMENT_FAILURE_HOLD_MINUTES = HOLD_CONFIG.paymentFailureHoldMinutes;
 const startTime = Date.now();
+const bookingInitiationLocks = new Map();
 
 function generateTicketAccessToken() {
   return crypto.randomBytes(32).toString('base64url');
+}
+
+function getBookingInitiationKey({ sessionId, holderId, attendees }) {
+  const seatIds = (attendees || [])
+    .map(att => String(att?.seatId || '').trim())
+    .filter(Boolean)
+    .sort();
+  return [String(sessionId || '').trim(), String(holderId || '').trim(), ...seatIds].join('|');
+}
+
+async function withBookingInitiationLock(key, fn) {
+  const existing = bookingInitiationLocks.get(key);
+  if (existing) {
+    const result = await existing;
+    return result?.statusCode === 200
+      ? { ...result, body: { ...result.body, duplicate: true } }
+      : result;
+  }
+
+  const promise = Promise.resolve().then(fn);
+  bookingInitiationLocks.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    if (bookingInitiationLocks.get(key) === promise) {
+      bookingInitiationLocks.delete(key);
+    }
+  }
 }
 
 const { uploadsDir, upload, saveUploadedImage } = createUploadMiddleware(__dirname);
@@ -530,6 +564,99 @@ async function insertBookingRecord({
   }
 
   return { bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken };
+}
+
+function sortedSeatIds(attendees) {
+  return (attendees || [])
+    .map(att => String(att?.seatId || '').trim())
+    .filter(Boolean)
+    .sort();
+}
+
+function sameSeatSet(left, right) {
+  if (left.length !== right.length) return false;
+  return left.every((seatId, index) => seatId === right[index]);
+}
+
+function buildInitiateResponse({
+  bookingId,
+  refNumber,
+  totalAmount,
+  itemRefs,
+  ticketAccessToken,
+  email,
+  customerFirstName,
+  customerLastName,
+  token,
+  duplicate = false,
+}) {
+  return {
+    bookingId,
+    referenceNumber: refNumber,
+    itemReferences: itemRefs,
+    totalAmount,
+    totalFormatted: '$' + formatPrice(totalAmount),
+    email,
+    customerFirstName,
+    customerLastName,
+    redirectUrl: getHostedPaymentRedirectUrl(),
+    token,
+    ticketAccessToken,
+    duplicate,
+  };
+}
+
+async function findReusablePendingBooking({ sessionId, holderId, attendees, email }) {
+  const requestedSeatIds = sortedSeatIds(attendees);
+  if (!sessionId || !holderId || requestedSeatIds.length === 0) return null;
+
+  const candidates = await all(
+    `SELECT id, reference_number, total_amount, hosted_token, ticket_access_token,
+            email, customer_first_name, customer_last_name, payment_attempted_at
+     FROM bookings
+     WHERE session_id = ?
+       AND payment_status = 'pending'
+       AND LOWER(COALESCE(email, '')) = LOWER(?)
+     ORDER BY created_at DESC
+     LIMIT 20`,
+    [sessionId, email || '']
+  );
+
+  for (const booking of candidates) {
+    const itemRows = await all(
+      'SELECT seat_id, reference_number FROM booking_items WHERE booking_id = ? ORDER BY id',
+      [booking.id]
+    );
+    const bookingSeatIds = itemRows.map(row => String(row.seat_id || '').trim()).sort();
+    if (!sameSeatSet(requestedSeatIds, bookingSeatIds)) continue;
+
+    const placeholders = requestedSeatIds.map(() => '?').join(',');
+    const heldSeats = await all(
+      `SELECT id
+       FROM seats
+       WHERE id IN (${placeholders})
+         AND status = 'held'
+         AND held_by = ?
+         AND (held_until IS NULL OR held_until > ?)`,
+      [...requestedSeatIds, holderId, new Date().toISOString()]
+    );
+    if (heldSeats.length !== requestedSeatIds.length) continue;
+
+    return {
+      bookingId: booking.id,
+      refNumber: booking.reference_number,
+      totalAmount: booking.total_amount,
+      itemRefs: itemRows.map(row => row.reference_number).filter(Boolean),
+      ticketAccessToken: booking.ticket_access_token,
+      email: booking.email,
+      customerFirstName: booking.customer_first_name,
+      customerLastName: booking.customer_last_name,
+      token: booking.hosted_token,
+      inProgress: !booking.hosted_token,
+    };
+  }
+
+  return null;
 }
 
 // Idempotently transition a booking from 'pending' to 'paid'. Performs the
@@ -1382,71 +1509,103 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
       return res.status(400).json({ error: phdCheck.error });
     }
 
-    let bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken;
-    try {
-      ({ bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken } = await insertBookingRecord({
+    const initiationKey = getBookingInitiationKey({ sessionId, holderId, attendees });
+    const initiation = await withBookingInitiationLock(initiationKey, async () => {
+      const reusable = await findReusablePendingBooking({
         sessionId,
+        holderId,
         attendees,
-        requiredPkg,
-        requiredPkgs,
-        sessionPkgs,
-        useSessionPkgs,
         email: trimmedEmail,
-        customerFirstName,
-        customerLastName,
-        emailVerifiedAt
-      }));
-      bookingIdForFailure = bookingId;
-
-      // Refresh held_until so seats survive the hosted-page detour.
-      // This gives the customer a fresh hold window from clicking Confirm.
-      const newHoldUntil = holdExpiresAt(HOLD_MINUTES);
-      for (const att of attendees) {
-        await run('UPDATE seats SET held_until = ? WHERE id = ?', [newHoldUntil, att.seatId]);
+      });
+      if (reusable?.inProgress) {
+        return {
+          statusCode: 409,
+          body: {
+            error: 'Booking initiation already in progress. Please wait a moment and try again.',
+            bookingId: reusable.bookingId,
+            referenceNumber: reusable.refNumber,
+          },
+        };
       }
-      await run('UPDATE bookings SET payment_attempted_at = ? WHERE id = ?',
-        [new Date().toISOString(), bookingId]);
+      if (reusable) {
+        return {
+          statusCode: 200,
+          body: buildInitiateResponse({
+            ...reusable,
+            duplicate: true,
+          }),
+        };
+      }
 
+      let bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken;
+      try {
+        ({ bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken } = await insertBookingRecord({
+          sessionId,
+          attendees,
+          requiredPkg,
+          requiredPkgs,
+          sessionPkgs,
+          useSessionPkgs,
+          email: trimmedEmail,
+          customerFirstName,
+          customerLastName,
+          emailVerifiedAt
+        }));
+        bookingIdForFailure = bookingId;
+
+        // Refresh held_until so seats survive the hosted-page detour.
+        // This gives the customer a fresh hold window from clicking Confirm.
+        const newHoldUntil = holdExpiresAt(HOLD_MINUTES);
+        for (const att of attendees) {
+          await run('UPDATE seats SET held_until = ? WHERE id = ?', [newHoldUntil, att.seatId]);
+        }
+        await run('UPDATE bookings SET payment_attempted_at = ? WHERE id = ?',
+          [new Date().toISOString(), bookingId]);
+
+        await saveDb();
+        await logPaymentEvent(bookingId, 'initiated', 'server', { totalAmount, refNumber });
+      } catch (err) {
+        console.error('Initiate booking insert error:', err);
+        await shortenRequestedSeatHolds({ ...failureHoldContext, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
+        return { statusCode: 500, body: { error: 'Booking initiation failed' } };
+      }
+
+      // Get hosted-page token from Authorize.Net.
+      const result = await createHostedPaymentPage({
+        bookingId,
+        amountCents: totalAmount,
+        email: trimmedEmail,
+        firstName: customerFirstName,
+        lastName: customerLastName,
+        refNumber,
+      });
+
+      if (!result.ok) {
+        await markBookingFailed({ bookingId, reason: result.error, source: 'server' });
+        console.error(`[bookings] /initiate failed to get hosted page token: ${result.error}`);
+        return { statusCode: 502, body: { error: 'Could not start payment. Please try again.' } };
+      }
+
+      await run('UPDATE bookings SET hosted_token = ? WHERE id = ?', [result.token, bookingId]);
       await saveDb();
-      await logPaymentEvent(bookingId, 'initiated', 'server', { totalAmount, refNumber });
-    } catch (err) {
-      console.error('Initiate booking insert error:', err);
-      await shortenRequestedSeatHolds({ ...failureHoldContext, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
-      return res.status(500).json({ error: 'Booking initiation failed' });
-    }
 
-    // Get hosted-page token from Authorize.Net.
-    const result = await createHostedPaymentPage({
-      bookingId,
-      amountCents: totalAmount,
-      email: trimmedEmail,
-      firstName: customerFirstName,
-      lastName: customerLastName,
-      refNumber,
+      return {
+        statusCode: 200,
+        body: buildInitiateResponse({
+          bookingId,
+          refNumber,
+          totalAmount,
+          itemRefs,
+          ticketAccessToken,
+          email: trimmedEmail,
+          customerFirstName,
+          customerLastName,
+          token: result.token,
+        }),
+      };
     });
 
-    if (!result.ok) {
-      await markBookingFailed({ bookingId, reason: result.error, source: 'server' });
-      console.error(`[bookings] /initiate failed to get hosted page token: ${result.error}`);
-      return res.status(502).json({ error: 'Could not start payment. Please try again.' });
-    }
-
-    await run('UPDATE bookings SET hosted_token = ? WHERE id = ?', [result.token, bookingId]);
-    await saveDb();
-
-    res.json({
-      bookingId,
-      referenceNumber: refNumber,
-      itemReferences: itemRefs,
-      totalAmount,
-      totalFormatted: '$' + formatPrice(totalAmount),
-      email: trimmedEmail,
-      customerFirstName,
-      customerLastName,
-      redirectUrl: result.redirectUrl,
-      token: result.token,
-      ticketAccessToken,
-    });
+    return res.status(initiation.statusCode).json(initiation.body);
   } catch (err) {
     console.error('POST /api/bookings/initiate failed:', err);
     if (bookingIdForFailure) {
