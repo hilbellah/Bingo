@@ -216,18 +216,15 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, f
     pushSetting('hostedPaymentStyleOptions', { bgColor: theme.bgColor });
     // NOTE: Authorize.Net's merchantName parser rejects apostrophes (and likely
     // other non-alphanumeric punctuation). Keep this string letters/numbers/spaces only.
-    // Customer sees this text on the hosted card-entry page next to the order summary.
-    pushSetting('hostedPaymentOrderOptions', { show: true, merchantName: theme.merchantName });
+    // The app renders its own sale summary beside/above checkout. Hiding the
+    // hosted order block keeps the card form grouped directly under our
+    // required "Name on card" field.
+    pushSetting('hostedPaymentOrderOptions', { show: false, merchantName: theme.merchantName });
     pushSetting('hostedPaymentPaymentOptions', { cardCodeRequired: true, showCreditCard: true, showBankAccount: false });
     pushSetting('hostedPaymentSecurityOptions', { captcha: false });
     pushSetting('hostedPaymentShippingAddressOptions', { show: false, required: false });
-    // UX: hide the billing address form on the hosted page. The customer already
-    // entered their info on our booking form (name, email), so re-collecting it
-    // would feel redundant. They only need to enter card number / exp / CVV on
-    // Authorize.Net's hosted page.
-    // Tradeoff: AVS (Address Verification System) won't run. For low-risk
-    // community bingo transactions this is acceptable. Re-enable show:true if
-    // chargebacks become a concern.
+    // Keep the hosted form focused on card entry. We pass customer name through
+    // billTo for the transaction, but do not ask for the full billing address.
     pushSetting('hostedPaymentBillingAddressOptions', { show: false });
     // Show the email field but pre-filled (from the customer data we passed
     // above) and NOT required — customer can glance at it to confirm without

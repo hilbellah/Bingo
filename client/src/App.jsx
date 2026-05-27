@@ -303,6 +303,41 @@ export default function App() {
       seatId: selectedSeats[index],
       addons: (attendee.addons || []).filter(addon => addon.quantity > 0)
     }));
+    const checkoutSummary = {
+      customerName: [attendees[0]?.firstName, attendees[0]?.lastName].filter(Boolean).join(' ').trim(),
+      items: attendees.map((attendee, index) => {
+        const seat = seats.find(item => item.id === selectedSeats[index]);
+        const addonItems = (attendee.addons || [])
+          .filter(addon => addon.quantity > 0)
+          .map(addon => {
+            const pkg = optionalPkgs.find(item => item.id === addon.packageId);
+            if (!pkg) return null;
+            return {
+              id: pkg.id,
+              name: pkg.name,
+              quantity: addon.quantity,
+              price: pkg.price * addon.quantity,
+              priceFormatted: '$' + (pkg.price * addon.quantity / 100).toFixed(2),
+            };
+          })
+          .filter(Boolean);
+
+        return {
+          name: [attendee.firstName, attendee.lastName].filter(Boolean).join(' ').trim(),
+          seat: seat ? `Table ${seat.table_number}, Chair ${seat.chair_number}` : '',
+          packages: [
+            ...requiredPkgs.map(pkg => ({
+              id: pkg.id,
+              name: pkg.name,
+              quantity: 1,
+              price: pkg.price,
+              priceFormatted: '$' + (pkg.price / 100).toFixed(2),
+            })),
+            ...addonItems,
+          ],
+        };
+      }),
+    };
 
     // /api/bookings/initiate creates the booking as 'pending' and returns a
     // short-lived Authorize.Net hosted-page token + redirect URL.
@@ -316,7 +351,7 @@ export default function App() {
 
     // Render Authorize.Net's hosted card-entry form inside our branded checkout page.
     // Authorize.Net still owns the card iframe, so we never see PAN/CVV.
-    setPaymentSession(result);
+    setPaymentSession({ ...result, checkoutSummary });
     setLoading(false);
   };
 

@@ -358,12 +358,13 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
     return { ok: false, statusCode: 400, error: 'Missing required fields' };
   }
 
-  // Email required for confirmation. Permissive regex — just catches typos.
+  // Email is optional in the payment flow; Authorize.Net may still show its own
+  // optional email field on the hosted card form.
   const trimmedEmail = (email || '').trim();
-  if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
-    return { ok: false, statusCode: 400, error: 'A valid email address is required for the booking confirmation.' };
+  if (trimmedEmail && !isValidEmail(trimmedEmail)) {
+    return { ok: false, statusCode: 400, error: 'Enter a valid email address or leave it blank.' };
   }
-  const normalizedEmail = normalizeEmail(trimmedEmail);
+  const normalizedEmail = trimmedEmail ? normalizeEmail(trimmedEmail) : '';
 
   let trimmedCustomerFirstName = normalizeCustomerName(customerFirstName);
   let trimmedCustomerLastName = normalizeCustomerName(customerLastName);
@@ -375,11 +376,13 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
     return { ok: false, statusCode: 400, error: 'Customer first and last name are required.' };
   }
 
-  const emailCheck = await verifyBookingEmail({
-    email: normalizedEmail,
-    verificationId: emailVerificationId,
-    requireVerification: requireEmailVerification,
-  });
+  const emailCheck = normalizedEmail
+    ? await verifyBookingEmail({
+      email: normalizedEmail,
+      verificationId: emailVerificationId,
+      requireVerification: requireEmailVerification,
+    })
+    : { ok: true, trusted: false, verifiedAt: null };
   if (!emailCheck.ok) return emailCheck;
 
   const session = await get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
@@ -1528,10 +1531,46 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
         };
       }
       if (reusable) {
+        const refreshedHoldUntil = holdExpiresAt(HOLD_MINUTES);
+        for (const att of attendees) {
+          await run('UPDATE seats SET held_until = ? WHERE id = ?', [refreshedHoldUntil, att.seatId]);
+        }
+
+        const result = await createHostedPaymentPage({
+          bookingId: reusable.bookingId,
+          amountCents: reusable.totalAmount,
+          email: trimmedEmail,
+          firstName: customerFirstName,
+          lastName: customerLastName,
+          refNumber: reusable.refNumber,
+        });
+
+        if (!result.ok) {
+          await markBookingFailed({ bookingId: reusable.bookingId, reason: result.error, source: 'server' });
+          console.error(`[bookings] /initiate failed to refresh hosted page token: ${result.error}`);
+          return { statusCode: 502, body: { error: 'Could not start payment. Please try again.' } };
+        }
+
+        await run(
+          `UPDATE bookings
+           SET hosted_token = ?, payment_attempted_at = ?, customer_first_name = ?, customer_last_name = ?
+           WHERE id = ?`,
+          [result.token, new Date().toISOString(), customerFirstName, customerLastName, reusable.bookingId]
+        );
+        await saveDb();
+        await logPaymentEvent(reusable.bookingId, 'initiated', 'server', {
+          totalAmount: reusable.totalAmount,
+          refNumber: reusable.refNumber,
+          refreshed: true,
+        });
+
         return {
           statusCode: 200,
           body: buildInitiateResponse({
             ...reusable,
+            customerFirstName,
+            customerLastName,
+            token: result.token,
             duplicate: true,
           }),
         };

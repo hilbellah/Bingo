@@ -117,13 +117,16 @@ try {
   assert.equal(result.response.status, 200);
   assert.equal(result.data.bookingId, bookingId);
   assert.equal(result.data.referenceNumber, referenceNumber);
-  assert.equal(result.data.token, hostedToken);
+  assert.ok(result.data.token);
+  assert.notEqual(result.data.token, hostedToken, 'duplicate retry should refresh the hosted payment token');
   assert.equal(result.data.ticketAccessToken, ticketAccessToken);
   assert.equal(result.data.duplicate, true);
   assert.deepEqual(result.data.itemReferences, [itemReferenceNumber]);
 
   const bookingRows = await all('SELECT id FROM bookings WHERE session_id = ?', [sessionId]);
   assert.equal(bookingRows.length, 1, 'duplicate confirm should not create a second booking');
+  const refreshedBooking = await get('SELECT hosted_token FROM bookings WHERE id = ?', [bookingId]);
+  assert.equal(refreshedBooking.hosted_token, result.data.token);
 
   console.log('Booking initiate duplicate API check passed.');
 } finally {

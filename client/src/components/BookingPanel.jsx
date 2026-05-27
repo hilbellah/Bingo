@@ -19,36 +19,13 @@ export default function BookingPanel({
   // Steps: 0 = party size & names, 1 = packages & add-ons, 2 = review & pay
   const setStep = onStepChange;
 
-  // Confirmation email — required so the customer receives the booking by email
-  // instead of needing to print on the spot. Pre-filled into Authorize.Net's
-  // hosted page (we pass it via the customer record on the transaction request).
-  const [customerFirstName, setCustomerFirstName] = useState('');
-  const [customerLastName, setCustomerLastName] = useState('');
-  const [email, setEmail] = useState('');
-
-  // Track which fields the user has interacted with so we don't yell at them
-  // about empty fields the moment the panel opens.
-  const [touched, setTouched] = useState({ customerFirstName: false, customerLastName: false, email: false });
-  const markTouched = (field) => setTouched(t => ({ ...t, [field]: true }));
-
-  // Permissive but useful email check — must contain a non-empty local part,
-  // an @, a domain, and a TLD-style segment after the dot. Catches real typos
-  // ("foo@bar", "foo@bar.") without rejecting unusual but valid addresses.
-  const trimmedEmail = (email || '').trim();
-  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
-  const trimmedCustomerFirstName = (customerFirstName || '').trim();
-  const trimmedCustomerLastName = (customerLastName || '').trim();
-  const isCustomerFirstNameValid = trimmedCustomerFirstName.length > 0;
-  const isCustomerLastNameValid = trimmedCustomerLastName.length > 0;
-
-  // Card data is collected on Authorize.Net's hosted page after redirect.
-  const isPaymentValid = isEmailValid && isCustomerFirstNameValid && isCustomerLastNameValid;
+  const primaryAttendee = attendees[0] || {};
+  const trimmedCustomerFirstName = (primaryAttendee.firstName || '').trim();
+  const trimmedCustomerLastName = (primaryAttendee.lastName || '').trim();
 
   const handlePaySubmit = () => {
-    setTouched({ customerFirstName: true, customerLastName: true, email: true });
-    if (!isPaymentValid) return;
     onSubmit({
-      email: trimmedEmail,
+      email: '',
       customerFirstName: trimmedCustomerFirstName,
       customerLastName: trimmedCustomerLastName,
     });
@@ -594,72 +571,6 @@ export default function BookingPanel({
                 <span className="text-brand-gold text-2xl font-bold">{formatPrice(total)}</span>
               </div>
 
-              {/* Email — required so we can send the confirmation/receipt and
-                  so Authorize.Net's hosted page pre-fills it for the customer. */}
-              <div className="mb-5">
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 mb-1 block">
-                      First name
-                    </label>
-                    <input
-                      type="text"
-                      autoComplete="given-name"
-                      value={customerFirstName}
-                      onChange={e => setCustomerFirstName(e.target.value)}
-                      onBlur={() => markTouched('customerFirstName')}
-                      className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
-                        touched.customerFirstName && !isCustomerFirstNameValid
-                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
-                          : 'border-gray-200 focus:border-brand-gold'
-                      }`}
-                      placeholder="First"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 mb-1 block">
-                      Last name
-                    </label>
-                    <input
-                      type="text"
-                      autoComplete="family-name"
-                      value={customerLastName}
-                      onChange={e => setCustomerLastName(e.target.value)}
-                      onBlur={() => markTouched('customerLastName')}
-                      className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
-                        touched.customerLastName && !isCustomerLastNameValid
-                          ? 'border-red-300 bg-red-50/40 focus:border-red-400'
-                          : 'border-gray-200 focus:border-brand-gold'
-                      }`}
-                      placeholder="Last"
-                    />
-                  </div>
-                </div>
-
-                <label className="text-xs font-medium text-gray-500 mb-1 block">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  onBlur={() => markTouched('email')}
-                  className={`w-full px-3 py-2.5 border-2 rounded-xl text-base focus:ring-2 focus:ring-brand-gold/20 outline-none transition ${
-                    touched.email && !isEmailValid
-                      ? 'border-red-300 bg-red-50/40 focus:border-red-400'
-                      : 'border-gray-200 focus:border-brand-gold'
-                  }`}
-                  placeholder="you@example.com"
-                />
-                {touched.email && !isEmailValid ? (
-                  <p className="text-xs text-red-500 mt-1">Enter a valid email so we can send your tickets.</p>
-                ) : (
-                  <p className="text-xs text-gray-400 mt-1">We'll send your ticket confirmation and receipt here.</p>
-                )}
-              </div>
-
               {/* Authorize.Net redirect notice — replaces the old in-page card form.
                   Card details are now collected on Authorize.Net's hosted page
                   (PCI-compliant — we never touch the card on our domain). */}
@@ -675,7 +586,7 @@ export default function BookingPanel({
                 </div>
               </div>
 
-              <button onClick={handlePaySubmit} disabled={loading || !isPaymentValid}
+              <button onClick={handlePaySubmit} disabled={loading}
                 className="w-full bg-gradient-to-r from-brand-gold to-brand-gold-light text-white py-4 rounded-2xl font-bold text-lg transition hover:shadow-xl glow-gold disabled:opacity-50 disabled:cursor-not-allowed">
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -689,11 +600,6 @@ export default function BookingPanel({
                   `Continue to Payment - ${formatPrice(total)}`
                 )}
               </button>
-              {!isPaymentValid && (
-                <p className="text-center text-xs text-gray-400 mt-2">
-                  Enter your name and email to continue
-                </p>
-              )}
             </div>
             );
           })()}

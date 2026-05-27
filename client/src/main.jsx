@@ -24,20 +24,18 @@ function PaymentReturnRoute() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/" element={<App />} />
-          <Route path="/booking/:bookingId/processing" element={<PaymentReturnRoute />} />
-          <Route path="/booking/:bookingId/cancelled" element={<PaymentReturnRoute />} />
-          <Route path="/tickets" element={<PrintableTickets />} />
-          <Route path="/tickets/:ref" element={<PrintableTickets />} />
-          <Route path="/tutorial" element={<Tutorial />} />
-          <Route path="/admin" element={<AdminLogin />} />
-          <Route path="/admin/dashboard" element={<AdminDashboard />} />
-        </Routes>
-      </Suspense>
-    </BrowserRouter>
-  </React.StrictMode>
+  <BrowserRouter>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route path="/" element={<App />} />
+        <Route path="/booking/:bookingId/processing" element={<PaymentReturnRoute />} />
+        <Route path="/booking/:bookingId/cancelled" element={<PaymentReturnRoute />} />
+        <Route path="/tickets" element={<PrintableTickets />} />
+        <Route path="/tickets/:ref" element={<PrintableTickets />} />
+        <Route path="/tutorial" element={<Tutorial />} />
+        <Route path="/admin" element={<AdminLogin />} />
+        <Route path="/admin/dashboard" element={<AdminDashboard />} />
+      </Routes>
+    </Suspense>
+  </BrowserRouter>
 );

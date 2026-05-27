@@ -26,6 +26,20 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
   const submittedRef = useRef(false);
   const [frameSize, setFrameSize] = useState({ width: 700, height: 720 });
   const [statusText, setStatusText] = useState('Secure payment form loading...');
+  const summaryItems = payment.checkoutSummary?.items || [];
+  const bookingCustomerName = [
+    [payment.customerFirstName, payment.customerLastName].filter(Boolean).join(' ').trim(),
+    payment.checkoutSummary?.customerName,
+    summaryItems[0]?.name,
+    payment.email,
+  ].find(value => String(value || '').trim()) || '';
+  const [cardholderName, setCardholderName] = useState('');
+  const trimmedCardholderName = cardholderName.trim();
+
+  useEffect(() => {
+    setCardholderName('');
+    submittedRef.current = false;
+  }, [payment.bookingId]);
 
   const cancelledUrl = useMemo(
     () => `/booking/${encodeURIComponent(payment.bookingId)}/cancelled`,
@@ -139,36 +153,9 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
           </button>
         </div>
 
-        <div className="grid lg:grid-cols-[320px_minmax(0,1fr)] gap-5 items-start">
-          <aside className="rounded-lg bg-white text-brand-blue shadow-2xl overflow-hidden">
-            <div className="bg-brand-gold px-5 py-4 text-white">
-              <p className="text-sm font-semibold uppercase tracking-wide opacity-90">Booking Reference</p>
-              <p className="font-mono text-xl font-bold">{payment.referenceNumber}</p>
-            </div>
-            <div className="p-5 space-y-5">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Customer</p>
-                <p className="font-semibold">
-                  {[payment.customerFirstName, payment.customerLastName].filter(Boolean).join(' ') || payment.email}
-                </p>
-                <p className="text-sm text-gray-500 break-words">{payment.email}</p>
-              </div>
-
-              <div className="border-t border-gray-200 pt-4">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-gray-600 font-medium">Total Due</span>
-                  <span className="text-2xl font-bold text-brand-gold">{payment.totalFormatted}</span>
-                </div>
-              </div>
-
-              <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-gray-700">
-                Card details are handled by Authorize.Net. Wolastoq Bingo does not see or store your card number.
-              </div>
-            </div>
-          </aside>
-
-          <section className="rounded-lg bg-white shadow-2xl overflow-hidden text-brand-blue">
-            <div className="border-b border-gray-200 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-5 items-start">
+          <section className="order-2 lg:order-1 rounded-lg bg-white shadow-2xl overflow-hidden text-brand-blue">
+            <div className="border-b border-gray-200 px-5 py-4 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold">Payment Details</h2>
                 <p className="text-sm text-gray-500">Powered securely by Authorize.Net</p>
@@ -180,12 +167,33 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
             </div>
 
             <div className="p-3 sm:p-5">
-              {statusText && (
-                <div className="mb-3 rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
-                  {statusText}
-                </div>
-              )}
               <div className="w-full overflow-x-auto">
+                {statusText && (
+                  <div className="mx-auto mb-4 rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600"
+                    style={{ width: 'min(100%, 520px)' }}>
+                    {statusText}
+                  </div>
+                )}
+
+                <div
+                  className="mx-auto bg-white px-0 pb-6 pt-8"
+                  style={{ width: 'min(100%, 520px)', transform: 'translateX(-16px)' }}
+                >
+                  <label htmlFor="cardholder-name" className="block text-[18px] font-medium text-gray-700">
+                    Name on card <span className="text-gray-900">*</span>
+                  </label>
+                  <input
+                    id="cardholder-name"
+                    type="text"
+                    required
+                    autoComplete="cc-name"
+                    value={cardholderName}
+                    onChange={event => setCardholderName(event.target.value)}
+                    className="mt-1 w-full border-0 border-b border-gray-500 bg-transparent px-0 py-2 text-[18px] font-medium text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-brand-blue"
+                    placeholder="Name as it appears on the card"
+                  />
+                </div>
+
                 <iframe
                   title="Authorize.Net secure payment form"
                   name="authorizeNetPaymentFrame"
@@ -200,6 +208,59 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
               </div>
             </div>
           </section>
+
+          <aside className="order-1 lg:order-2 rounded-lg bg-white text-brand-blue shadow-2xl overflow-hidden lg:sticky lg:top-6">
+            <div className="bg-brand-gold px-5 py-4 text-white">
+              <p className="text-sm font-semibold uppercase tracking-wide opacity-90">Booking Reference</p>
+              <p className="font-mono text-xl font-bold">{payment.referenceNumber}</p>
+            </div>
+            <div className="p-5 space-y-5">
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Customer</p>
+                <p className="font-semibold">{trimmedCardholderName || bookingCustomerName || payment.email}</p>
+                {payment.email && <p className="text-sm text-gray-500 break-words">{payment.email}</p>}
+              </div>
+
+              {summaryItems.length > 0 && (
+                <div className="border-t border-gray-200 pt-4">
+                  <p className="text-sm font-bold uppercase tracking-wide text-gray-500 mb-3">Sale Summary</p>
+                  <div className="space-y-4">
+                    {summaryItems.map((item, itemIndex) => (
+                      <div key={`${item.name}-${itemIndex}`} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-sm">{item.name || `Player ${itemIndex + 1}`}</p>
+                            {item.seat && <p className="text-xs text-gray-500">{item.seat}</p>}
+                          </div>
+                        </div>
+                        <div className="mt-3 space-y-1.5">
+                          {(item.packages || []).map((pkg, pkgIndex) => (
+                            <div key={`${pkg.id || pkg.name}-${pkgIndex}`} className="flex justify-between gap-3 text-sm">
+                              <span className="text-gray-600">
+                                {pkg.name}{pkg.quantity > 1 ? ` x${pkg.quantity}` : ''}
+                              </span>
+                              <span className="font-medium text-gray-800">{pkg.priceFormatted}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-gray-200 pt-4">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-gray-600 font-medium">Total Due</span>
+                  <span className="text-2xl font-bold text-brand-gold">{payment.totalFormatted}</span>
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-gray-700">
+                Card details are handled by Authorize.Net. Wolastoq Bingo does not see or store your card number.
+              </div>
+            </div>
+          </aside>
         </div>
 
         <form ref={formRef} method="post" action={payment.redirectUrl} target="authorizeNetPaymentFrame" className="hidden">
