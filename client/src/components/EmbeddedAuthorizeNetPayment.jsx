@@ -136,7 +136,7 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
       <div className="max-w-6xl mx-auto px-4 py-6 md:py-10">
         <div className="flex items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-3 min-w-0">
-            <img src="/logo.png" alt="Wolastoq Bingo" className="h-12 w-12 rounded-lg bg-white object-contain p-1" />
+            <img src="/wolastoq-logo.png" alt="Wolastoq Casino" className="h-12 w-auto object-contain" />
             <div className="min-w-0">
               <p className="text-brand-gold font-semibold text-sm uppercase tracking-wide">Saint Mary's Entertainment Centre</p>
               <h1 className="text-2xl md:text-3xl font-bold leading-tight">Secure Checkout</h1>
