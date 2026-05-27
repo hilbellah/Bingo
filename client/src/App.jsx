@@ -22,6 +22,8 @@ import SessionWeekPicker from './components/SessionWeekPicker';
 import VenueClock from './components/VenueClock';
 import { useSocket } from './useSocket';
 
+const CHECKOUT_SERVICE_FEE_CENTS = 200;
+
 // Detect payment-related URLs at app mount. Returns null for the normal
 // booking flow, or { bookingId } when the customer has just returned from
 // Authorize.Net's hosted page via the server's /payment/return or
@@ -104,7 +106,10 @@ export default function App() {
 
   const [sessions, setSessions] = useState([]);
   const [packages, setPackages] = useState([]);
-  const [bookingConfig, setBookingConfig] = useState({ maxOptionalPackagesPerPlayer: 3 });
+  const [bookingConfig, setBookingConfig] = useState({
+    maxOptionalPackagesPerPlayer: 3,
+    serviceFeePerPersonAmount: CHECKOUT_SERVICE_FEE_CENTS,
+  });
   const [phdInventory, setPhdInventory] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
   const [partySize, setPartySize] = useState(0);
@@ -144,7 +149,12 @@ export default function App() {
     }).catch(() => {});
 
     fetchBookingConfig().then(config => {
-      if (config) setBookingConfig({ maxOptionalPackagesPerPlayer: config.maxOptionalPackagesPerPlayer ?? 3 });
+      if (config) {
+        setBookingConfig({
+          maxOptionalPackagesPerPlayer: config.maxOptionalPackagesPerPlayer ?? 3,
+          serviceFeePerPersonAmount: config.serviceFeePerPersonAmount ?? CHECKOUT_SERVICE_FEE_CENTS,
+        });
+      }
     }).catch(() => {});
   }, []);
 
@@ -353,12 +363,14 @@ export default function App() {
     // Render Authorize.Net's hosted card-entry form inside our branded checkout page.
     // Authorize.Net still owns the card iframe, so we never see PAN/CVV.
     const serviceFeeAmount = result.serviceFeeAmount || 0;
+    const serviceFeeQuantity = result.serviceFeeQuantity || attendees.length || 1;
+    const serviceFeeUnitFormatted = result.serviceFeeUnitFormatted || '$' + ((result.serviceFeeUnitAmount || CHECKOUT_SERVICE_FEE_CENTS) / 100).toFixed(2);
     setPaymentSession({
       ...result,
       checkoutSummary: {
         ...checkoutSummary,
         serviceFee: serviceFeeAmount > 0 ? {
-          name: 'Service charge',
+          name: `Service charge (${serviceFeeUnitFormatted} x ${serviceFeeQuantity} ${serviceFeeQuantity === 1 ? 'player' : 'players'})`,
           price: serviceFeeAmount,
           priceFormatted: result.serviceFeeFormatted || '$' + (serviceFeeAmount / 100).toFixed(2),
         } : null,
@@ -475,12 +487,15 @@ export default function App() {
   };
 
   const requiredTotal = requiredPkgs.reduce((sum, pkg) => sum + (pkg?.price || 0), 0);
-  const total = partySize * requiredTotal + attendees.reduce((sum, attendee) => {
+  const orderSubtotal = partySize * requiredTotal + attendees.reduce((sum, attendee) => {
     return sum + (attendee.addons || []).reduce((addonSum, addon) => {
       const pkg = optionalPkgs.find(item => item.id === addon.packageId);
       return pkg ? addonSum + pkg.price * addon.quantity : addonSum;
     }, 0);
   }, 0);
+  const serviceFeeUnitAmount = bookingConfig.serviceFeePerPersonAmount;
+  const serviceFeeAmount = partySize > 0 ? serviceFeeUnitAmount * partySize : 0;
+  const total = orderSubtotal + serviceFeeAmount;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -647,6 +662,8 @@ export default function App() {
         requiredPkg={requiredPkg}
         requiredPkgs={requiredPkgs}
         optionalPkgs={optionalPkgs}
+        serviceFeeUnitAmount={serviceFeeUnitAmount}
+        serviceFeeAmount={serviceFeeAmount}
         maxOptionalPackagesPerPlayer={bookingConfig.maxOptionalPackagesPerPlayer}
         total={total}
         allNamesValid={allNamesValid}

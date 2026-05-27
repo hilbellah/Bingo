@@ -29,8 +29,6 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
   const summaryItems = payment.checkoutSummary?.items || [];
   const bookingCustomerName = [
     [payment.customerFirstName, payment.customerLastName].filter(Boolean).join(' ').trim(),
-    payment.checkoutSummary?.customerName,
-    summaryItems[0]?.name,
     payment.email,
   ].find(value => String(value || '').trim()) || '';
   const [cardholderName, setCardholderName] = useState('');
@@ -216,8 +214,8 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
             </div>
             <div className="p-5 space-y-5">
               <div>
-                <p className="text-sm text-gray-500 font-medium">Customer</p>
-                <p className="font-semibold">{trimmedCardholderName || bookingCustomerName || payment.email}</p>
+                <p className="text-sm text-gray-500 font-medium">Cardholder</p>
+                <p className="font-semibold">{trimmedCardholderName || bookingCustomerName || 'Provided at checkout'}</p>
                 {payment.email && <p className="text-sm text-gray-500 break-words">{payment.email}</p>}
               </div>
 

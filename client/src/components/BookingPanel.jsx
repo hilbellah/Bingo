@@ -11,7 +11,7 @@ import { formatDateShort, formatTime, formatPrice } from '../utils/formatters';
 export default function BookingPanel({
   isOpen, onClose, onPickChairs, session, partySize, onPartySize,
   attendees, onAttendees, selectedSeats, seats,
-  requiredPkg, requiredPkgs, optionalPkgs, total,
+  requiredPkg, requiredPkgs, optionalPkgs, serviceFeeUnitAmount = 0, serviceFeeAmount = 0, total,
   maxOptionalPackagesPerPlayer = 3,
   allNamesValid, allSeatsSelected, loading, onSubmit, holdExpiry,
   step, onStepChange, phdInventory
@@ -473,7 +473,9 @@ export default function BookingPanel({
               {/* Total + next */}
               <div className="mt-5 space-y-3">
                 <div className="bg-brand-blue rounded-xl px-4 py-3 flex justify-between items-center">
-                  <span className="text-white font-medium">Total</span>
+                  <span className="text-white font-medium">
+                    Total{serviceFeeAmount > 0 ? ` incl. ${formatPrice(serviceFeeUnitAmount)} x ${partySize} ${partySize === 1 ? 'player' : 'players'} service charge` : ''}
+                  </span>
                   <span className="text-brand-gold text-2xl font-bold">{formatPrice(total)}</span>
                 </div>
 
@@ -560,6 +562,12 @@ export default function BookingPanel({
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">Add-ons</span>
                       <span className="text-gray-700 font-medium">{formatPrice(addonsTotal)}</span>
+                    </div>
+                  )}
+                  {serviceFeeAmount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Service charge ({formatPrice(serviceFeeUnitAmount)} x {partySize} {partySize === 1 ? 'player' : 'players'})</span>
+                      <span className="text-gray-700 font-medium">{formatPrice(serviceFeeAmount)}</span>
                     </div>
                   )}
                 </div>

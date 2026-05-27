@@ -116,6 +116,10 @@ const CHECKOUT_SERVICE_FEE_CENTS = 200;
 const startTime = Date.now();
 const bookingInitiationLocks = new Map();
 
+function getCheckoutServiceFeeCents(attendees = []) {
+  return CHECKOUT_SERVICE_FEE_CENTS * Math.max(0, attendees.length || 0);
+}
+
 function generateTicketAccessToken() {
   return crypto.randomBytes(32).toString('base64url');
 }
@@ -479,7 +483,7 @@ async function insertBookingRecord({
     }
   }
 
-  let totalAmount = CHECKOUT_SERVICE_FEE_CENTS;
+  let totalAmount = getCheckoutServiceFeeCents(attendees);
   const bookingId = uuid();
   const refNumber = generateRef();
   const ticketAccessToken = generateTicketAccessToken();
@@ -589,7 +593,7 @@ async function calculateRequestedBookingTotal({
   sessionPkgs,
   useSessionPkgs,
 }) {
-  let totalAmount = CHECKOUT_SERVICE_FEE_CENTS;
+  let totalAmount = getCheckoutServiceFeeCents(attendees);
   const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg].filter(Boolean);
 
   for (const att of attendees || []) {
@@ -620,6 +624,8 @@ function buildInitiateResponse({
   customerFirstName,
   customerLastName,
   token,
+  serviceFeeAmount = CHECKOUT_SERVICE_FEE_CENTS,
+  serviceFeeQuantity = 1,
   duplicate = false,
 }) {
   return {
@@ -628,8 +634,11 @@ function buildInitiateResponse({
     itemReferences: itemRefs,
     totalAmount,
     totalFormatted: '$' + formatPrice(totalAmount),
-    serviceFeeAmount: CHECKOUT_SERVICE_FEE_CENTS,
-    serviceFeeFormatted: '$' + formatPrice(CHECKOUT_SERVICE_FEE_CENTS),
+    serviceFeeAmount,
+    serviceFeeFormatted: '$' + formatPrice(serviceFeeAmount),
+    serviceFeeUnitAmount: CHECKOUT_SERVICE_FEE_CENTS,
+    serviceFeeUnitFormatted: '$' + formatPrice(CHECKOUT_SERVICE_FEE_CENTS),
+    serviceFeeQuantity,
     email,
     customerFirstName,
     customerLastName,
@@ -1274,7 +1283,11 @@ app.get('/api/phd-inventory', async (req, res) => {
 
 app.get('/api/booking-config', async (req, res) => {
   try {
-    res.json(await getBookingConfig());
+    res.json({
+      ...(await getBookingConfig()),
+      serviceFeePerPersonAmount: CHECKOUT_SERVICE_FEE_CENTS,
+      serviceFeePerPersonFormatted: '$' + formatPrice(CHECKOUT_SERVICE_FEE_CENTS),
+    });
   } catch (err) {
     console.error('GET /api/booking-config failed:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -1639,6 +1652,8 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
             customerFirstName,
             customerLastName,
             token: result.token,
+            serviceFeeAmount: getCheckoutServiceFeeCents(attendees),
+            serviceFeeQuantity: attendees.length,
             duplicate: true,
           }),
         };
@@ -1708,6 +1723,8 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           customerFirstName,
           customerLastName,
           token: result.token,
+          serviceFeeAmount: getCheckoutServiceFeeCents(attendees),
+          serviceFeeQuantity: attendees.length,
         }),
       };
     });

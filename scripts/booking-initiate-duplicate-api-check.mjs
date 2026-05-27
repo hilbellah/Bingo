@@ -30,11 +30,14 @@ await getDb();
 const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const sessionId = 'booking-duplicate-session';
 const seatId = 'booking-duplicate-seat-1';
+const secondSeatId = 'booking-duplicate-seat-2';
 const holderId = 'booking-duplicate-holder';
 const bookingId = 'booking-duplicate-existing';
 const bookingItemId = 'booking-duplicate-item';
+const secondBookingItemId = 'booking-duplicate-item-2';
 const referenceNumber = 'BNG-DUPE1';
 const itemReferenceNumber = 'BNG-DUPE2';
+const secondItemReferenceNumber = 'BNG-DUPE3';
 const hostedToken = 'existing-hosted-token';
 const ticketAccessToken = 'existing-ticket-token';
 const email = 'duplicate@example.com';
@@ -45,7 +48,8 @@ const createdAt = new Date().toISOString();
 const requiredPkg = await get("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC LIMIT 1");
 const requiredPkgs = await all("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC");
 const checkoutServiceFee = 200;
-const expectedTotalAmount = requiredPkgs.reduce((sum, pkg) => sum + pkg.price, checkoutServiceFee);
+const attendeeCount = 2;
+const expectedTotalAmount = requiredPkgs.reduce((sum, pkg) => sum + pkg.price * attendeeCount, checkoutServiceFee * attendeeCount);
 
 await run(
   `INSERT INTO sessions
@@ -58,6 +62,12 @@ await run(
     (id, session_id, table_number, chair_number, status, held_by, held_until)
    VALUES (?, ?, 1, 1, 'held', ?, ?)`,
   [seatId, sessionId, holderId, holdUntil]
+);
+await run(
+  `INSERT INTO seats
+    (id, session_id, table_number, chair_number, status, held_by, held_until)
+   VALUES (?, ?, 1, 2, 'held', ?, ?)`,
+  [secondSeatId, sessionId, holderId, holdUntil]
 );
 await run(
   `INSERT INTO bookings
@@ -83,6 +93,12 @@ await run(
     (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   [bookingItemId, bookingId, customerFirstName, customerLastName, seatId, requiredPkg.id, requiredPkg.price, itemReferenceNumber]
+);
+await run(
+  `INSERT INTO booking_items
+    (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  [secondBookingItemId, bookingId, 'Second', 'Player', secondSeatId, requiredPkg.id, requiredPkg.price, secondItemReferenceNumber]
 );
 await saveDb();
 
@@ -114,6 +130,12 @@ try {
         seatId,
         addons: [],
       },
+      {
+        firstName: 'Second',
+        lastName: 'Player',
+        seatId: secondSeatId,
+        addons: [],
+      },
     ],
   });
 
@@ -124,9 +146,10 @@ try {
   assert.notEqual(result.data.token, hostedToken, 'duplicate retry should refresh the hosted payment token');
   assert.equal(result.data.ticketAccessToken, ticketAccessToken);
   assert.equal(result.data.duplicate, true);
-  assert.deepEqual(result.data.itemReferences, [itemReferenceNumber]);
+  assert.deepEqual(result.data.itemReferences, [itemReferenceNumber, secondItemReferenceNumber]);
   assert.equal(result.data.totalAmount, expectedTotalAmount);
-  assert.equal(result.data.serviceFeeAmount, checkoutServiceFee);
+  assert.equal(result.data.serviceFeeAmount, checkoutServiceFee * attendeeCount);
+  assert.equal(result.data.serviceFeeQuantity, attendeeCount);
 
   const bookingRows = await all('SELECT id FROM bookings WHERE session_id = ?', [sessionId]);
   assert.equal(bookingRows.length, 1, 'duplicate confirm should not create a second booking');
