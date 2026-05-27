@@ -43,6 +43,9 @@ const customerLastName = 'Customer';
 const holdUntil = new Date(Date.now() + 20 * 60 * 1000).toISOString();
 const createdAt = new Date().toISOString();
 const requiredPkg = await get("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC LIMIT 1");
+const requiredPkgs = await all("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC");
+const checkoutServiceFee = 200;
+const expectedTotalAmount = requiredPkgs.reduce((sum, pkg) => sum + pkg.price, checkoutServiceFee);
 
 await run(
   `INSERT INTO sessions
@@ -122,11 +125,14 @@ try {
   assert.equal(result.data.ticketAccessToken, ticketAccessToken);
   assert.equal(result.data.duplicate, true);
   assert.deepEqual(result.data.itemReferences, [itemReferenceNumber]);
+  assert.equal(result.data.totalAmount, expectedTotalAmount);
+  assert.equal(result.data.serviceFeeAmount, checkoutServiceFee);
 
   const bookingRows = await all('SELECT id FROM bookings WHERE session_id = ?', [sessionId]);
   assert.equal(bookingRows.length, 1, 'duplicate confirm should not create a second booking');
-  const refreshedBooking = await get('SELECT hosted_token FROM bookings WHERE id = ?', [bookingId]);
+  const refreshedBooking = await get('SELECT hosted_token, total_amount FROM bookings WHERE id = ?', [bookingId]);
   assert.equal(refreshedBooking.hosted_token, result.data.token);
+  assert.equal(refreshedBooking.total_amount, expectedTotalAmount);
 
   console.log('Booking initiate duplicate API check passed.');
 } finally {

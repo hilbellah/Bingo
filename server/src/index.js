@@ -582,6 +582,34 @@ function sameSeatSet(left, right) {
   return left.every((seatId, index) => seatId === right[index]);
 }
 
+async function calculateRequestedBookingTotal({
+  attendees,
+  requiredPkg,
+  requiredPkgs = [requiredPkg].filter(Boolean),
+  sessionPkgs,
+  useSessionPkgs,
+}) {
+  let totalAmount = CHECKOUT_SERVICE_FEE_CENTS;
+  const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg].filter(Boolean);
+
+  for (const att of attendees || []) {
+    for (const pkg of includedRequiredPkgs) {
+      totalAmount += Number(pkg.price || 0);
+    }
+
+    for (const addon of att.addons || []) {
+      const pkg = useSessionPkgs
+        ? sessionPkgs.find(p => p.id === addon.packageId)
+        : await get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
+      if (pkg) {
+        totalAmount += Number(pkg.price || 0) * Number(addon.quantity || 0);
+      }
+    }
+  }
+
+  return totalAmount;
+}
+
 function buildInitiateResponse({
   bookingId,
   refNumber,
@@ -1567,10 +1595,17 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
         for (const att of attendees) {
           await run('UPDATE seats SET held_until = ? WHERE id = ?', [refreshedHoldUntil, att.seatId]);
         }
+        const refreshedTotalAmount = await calculateRequestedBookingTotal({
+          attendees,
+          requiredPkg,
+          requiredPkgs,
+          sessionPkgs,
+          useSessionPkgs,
+        });
 
         const result = await createHostedPaymentPage({
           bookingId: reusable.bookingId,
-          amountCents: reusable.totalAmount,
+          amountCents: refreshedTotalAmount,
           email: trimmedEmail,
           firstName: customerFirstName,
           lastName: customerLastName,
@@ -1585,13 +1620,13 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
 
         await run(
           `UPDATE bookings
-           SET hosted_token = ?, payment_attempted_at = ?, customer_first_name = ?, customer_last_name = ?
+           SET hosted_token = ?, payment_attempted_at = ?, customer_first_name = ?, customer_last_name = ?, total_amount = ?
            WHERE id = ?`,
-          [result.token, new Date().toISOString(), customerFirstName, customerLastName, reusable.bookingId]
+          [result.token, new Date().toISOString(), customerFirstName, customerLastName, refreshedTotalAmount, reusable.bookingId]
         );
         await saveDb();
         await logPaymentEvent(reusable.bookingId, 'initiated', 'server', {
-          totalAmount: reusable.totalAmount,
+          totalAmount: refreshedTotalAmount,
           refNumber: reusable.refNumber,
           refreshed: true,
         });
@@ -1600,6 +1635,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           statusCode: 200,
           body: buildInitiateResponse({
             ...reusable,
+            totalAmount: refreshedTotalAmount,
             customerFirstName,
             customerLastName,
             token: result.token,
