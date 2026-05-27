@@ -137,6 +137,14 @@ export async function fetchBookingStatus(bookingId) {
   return res.json();
 }
 
+export async function editPendingBooking(bookingId) {
+  const res = await fetch(`${API}/bookings/${encodeURIComponent(bookingId)}/edit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return res.json();
+}
+
 // Fetches the full ticket details (used to render the post-payment receipt).
 export async function fetchBookingTickets(referenceNumber, options = {}) {
   const params = new URLSearchParams();

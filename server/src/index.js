@@ -112,6 +112,7 @@ const PORT = process.env.PORT || 3001;
 const HOLD_CONFIG = resolveHoldConfig();
 const HOLD_MINUTES = HOLD_CONFIG.holdMinutes;
 const PAYMENT_FAILURE_HOLD_MINUTES = HOLD_CONFIG.paymentFailureHoldMinutes;
+const CHECKOUT_SERVICE_FEE_CENTS = 200;
 const startTime = Date.now();
 const bookingInitiationLocks = new Map();
 
@@ -478,7 +479,7 @@ async function insertBookingRecord({
     }
   }
 
-  let totalAmount = 0;
+  let totalAmount = CHECKOUT_SERVICE_FEE_CENTS;
   const bookingId = uuid();
   const refNumber = generateRef();
   const ticketAccessToken = generateTicketAccessToken();
@@ -599,6 +600,8 @@ function buildInitiateResponse({
     itemReferences: itemRefs,
     totalAmount,
     totalFormatted: '$' + formatPrice(totalAmount),
+    serviceFeeAmount: CHECKOUT_SERVICE_FEE_CENTS,
+    serviceFeeFormatted: '$' + formatPrice(CHECKOUT_SERVICE_FEE_CENTS),
     email,
     customerFirstName,
     customerLastName,
@@ -870,6 +873,35 @@ async function markBookingCancelled({ bookingId, source = 'customer' }) {
     heldSeatsShortened: holdShorten.changedSeats,
   });
   return { ok: true };
+}
+
+async function cancelPendingBookingForEdit({ bookingId, source = 'customer_edit' }) {
+  const booking = await get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) return { ok: false, error: 'booking_not_found' };
+  if (booking.payment_status === 'paid') return { ok: false, error: 'already_paid' };
+  if (booking.payment_status === 'cancelled') return { ok: true, alreadyCancelled: true };
+  if (booking.payment_status !== 'pending') return { ok: false, error: 'not_pending' };
+
+  await run(`UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?`, [bookingId]);
+
+  const holdUntil = holdExpiresAt(HOLD_MINUTES);
+  const items = await all('SELECT seat_id FROM booking_items WHERE booking_id = ?', [bookingId]);
+  for (const item of items) {
+    await run(
+      `UPDATE seats
+       SET held_until = ?
+       WHERE id = ? AND status = 'held'`,
+      [holdUntil, item.seat_id]
+    );
+  }
+  await saveDb();
+
+  await logPaymentEvent(bookingId, 'cancelled_for_edit', source, {
+    heldSeatsRetained: items.length,
+    heldSeatsReleaseAt: holdUntil,
+  });
+
+  return { ok: true, heldUntil };
 }
 
 async function releaseBookingSeats({ bookingId, sessionId }) {
@@ -1652,6 +1684,20 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
     } else {
       await shortenRequestedSeatHolds({ ...failureHoldContext, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
     }
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/bookings/:id/edit', bookingLimiter, async (req, res) => {
+  try {
+    const result = await cancelPendingBookingForEdit({ bookingId: req.params.id });
+    if (!result.ok) {
+      const statusCode = result.error === 'already_paid' ? 409 : result.error === 'booking_not_found' ? 404 : 400;
+      return res.status(statusCode).json({ error: result.error });
+    }
+    res.json({ success: true, heldUntil: result.heldUntil || null });
+  } catch (err) {
+    console.error('POST /api/bookings/:id/edit failed:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

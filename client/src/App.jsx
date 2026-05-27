@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  editPendingBooking,
   fetchBookingConfig,
   initiateBooking,
   fetchPhdInventory,
@@ -351,8 +352,44 @@ export default function App() {
 
     // Render Authorize.Net's hosted card-entry form inside our branded checkout page.
     // Authorize.Net still owns the card iframe, so we never see PAN/CVV.
-    setPaymentSession({ ...result, checkoutSummary });
+    const serviceFeeAmount = result.serviceFeeAmount || 0;
+    setPaymentSession({
+      ...result,
+      checkoutSummary: {
+        ...checkoutSummary,
+        serviceFee: serviceFeeAmount > 0 ? {
+          name: 'Service charge',
+          price: serviceFeeAmount,
+          priceFormatted: result.serviceFeeFormatted || '$' + (serviceFeeAmount / 100).toFixed(2),
+        } : null,
+      },
+    });
     setLoading(false);
+  };
+
+  const handleBackToEditCheckout = async () => {
+    if (!paymentSession?.bookingId) return;
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await editPendingBooking(paymentSession.bookingId);
+      if (!result?.success) {
+        setError(result?.error || 'Could not reopen this booking for editing.');
+        setLoading(false);
+        return;
+      }
+
+      if (result.heldUntil) setHoldExpiry(result.heldUntil);
+      if (selectedSession) {
+        fetchSeats(selectedSession.id, holderId).then(setSeats).catch(() => {});
+      }
+      setPaymentSession(null);
+      setBookingStep(2);
+      setPanelOpen(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const requiredPkgs = packages.filter(pkg => pkg.type === 'required');
@@ -372,6 +409,7 @@ export default function App() {
     return (
       <EmbeddedAuthorizeNetPayment
         payment={paymentSession}
+        onBack={handleBackToEditCheckout}
         onCancel={() => {
           window.location.href = `/payment/cancel?bookingId=${encodeURIComponent(paymentSession.bookingId)}`;
         }}

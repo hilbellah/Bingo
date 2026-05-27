@@ -21,7 +21,7 @@ function parseGatewayMessage(queryString) {
   };
 }
 
-export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
+export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel }) {
   const formRef = useRef(null);
   const submittedRef = useRef(false);
   const [frameSize, setFrameSize] = useState({ width: 700, height: 720 });
@@ -146,10 +146,10 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
           </div>
           <button
             type="button"
-            onClick={onCancel}
+            onClick={onBack}
             className="shrink-0 rounded-lg border border-white/25 px-4 py-2 text-sm font-semibold hover:bg-white/10 transition-colors"
           >
-            Cancel
+            Back to edit
           </button>
         </div>
 
@@ -250,6 +250,12 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
               )}
 
               <div className="border-t border-gray-200 pt-4">
+                {payment.checkoutSummary?.serviceFee && (
+                  <div className="mb-3 flex items-center justify-between gap-4 text-sm">
+                    <span className="text-gray-500">{payment.checkoutSummary.serviceFee.name}</span>
+                    <span className="font-semibold text-gray-700">{payment.checkoutSummary.serviceFee.priceFormatted}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-gray-600 font-medium">Total Due</span>
                   <span className="text-2xl font-bold text-brand-gold">{payment.totalFormatted}</span>
@@ -259,6 +265,13 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onCancel }) {
               <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-gray-700">
                 Card details are handled by Authorize.Net. Wolastoq Bingo does not see or store your card number.
               </div>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancel checkout
+              </button>
             </div>
           </aside>
         </div>
