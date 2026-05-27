@@ -901,7 +901,7 @@ async function cancelPendingBookingForEdit({ bookingId, source = 'customer_edit'
     heldSeatsReleaseAt: holdUntil,
   });
 
-  return { ok: true, heldUntil };
+  return { ok: true, heldUntil: holdUntil };
 }
 
 async function releaseBookingSeats({ bookingId, sessionId }) {
