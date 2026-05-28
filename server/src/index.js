@@ -10,6 +10,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { getDb, all, get, run, saveDb } from './database.js';
 import { migrate } from './migrate.js';
+import { migratePostgres } from './migratePostgres.js';
 import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
 import bcrypt from 'bcryptjs';
@@ -2483,7 +2484,11 @@ async function start() {
   await getDb();
   logger.info('Database connected');
 
-  await migrate();
+  if ((process.env.DB_DRIVER || 'sqlite').toLowerCase().trim() === 'postgres') {
+    await migratePostgres();
+  } else {
+    await migrate();
+  }
   logger.info('Migrations applied');
 
   migrateSeatLayout();
