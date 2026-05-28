@@ -7,10 +7,6 @@ export default function PackagesTab() {
     packages,
     newPackage,
     setNewPackage,
-    bookingConfig,
-    setBookingConfig,
-    bookingConfigSaved,
-    handleSaveBookingConfig,
     handleCreatePackage,
     handleTogglePackage,
     editingPackage,
@@ -28,35 +24,12 @@ export default function PackagesTab() {
         {tab === 'packages' && (
           <div>
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <h3 className="font-semibold text-brand-blue mb-1">Booking Package Limit</h3>
-                  <p className="text-xs text-gray-500">
-                    Applies to non-PHD optional packages per player. PHD stays controlled by the PHD inventory max per player.
-                  </p>
-                </div>
-                <div className="flex items-end gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Non-PHD Max Per Player</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={bookingConfig.maxOptionalPackagesPerPlayer}
-                      onChange={e => setBookingConfig({ ...bookingConfig, maxOptionalPackagesPerPlayer: e.target.value })}
-                      className="w-28 px-3 py-2 border rounded-lg text-sm"
-                    />
-                  </div>
-                  <button
-                    onClick={handleSaveBookingConfig}
-                    className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800"
-                  >
-                    Save Limit
-                  </button>
-                </div>
+              <div>
+                <h3 className="font-semibold text-brand-blue mb-1">Booking Package Limits</h3>
+                <p className="text-xs text-gray-500">
+                  Paper card limits are controlled independently by each package's Qty field below. PHD packages stay controlled by the PHD inventory max per player.
+                </p>
               </div>
-              {bookingConfigSaved && (
-                <p className="mt-3 text-sm text-green-700">Booking package limit saved.</p>
-              )}
             </div>
 
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
@@ -285,5 +258,4 @@ export default function PackagesTab() {
     </>
   );
 }
-
 

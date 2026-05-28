@@ -59,19 +59,10 @@ export default function BookingPanel({
     const pkg = optionalPkgs.find(p => p.id === addon.packageId);
     return sum + (pkg?.is_phd ? addon.quantity : 0);
   }, 0);
-  const getAttendeeNonPhdAddonQty = (attendee) => (attendee?.addons || []).reduce((sum, addon) => {
-    const pkg = optionalPkgs.find(p => p.id === addon.packageId);
-    return sum + (!pkg?.is_phd ? addon.quantity : 0);
-  }, 0);
   const getAddonLimit = (pkg, attendeeIdx = null) => {
     if (!pkg) return 0;
     if (pkg.is_phd) return getOptionalPhdLimit(pkg, attendeeIdx);
-    const packageLimit = pkg.max_quantity || 1;
-    const attendee = attendeeIdx !== null ? attendees[attendeeIdx] : null;
-    const currentPkgQty = attendee ? getAddonQty(attendeeIdx, pkg.id) : 0;
-    const otherNonPhdQty = attendee ? Math.max(0, getAttendeeNonPhdAddonQty(attendee) - currentPkgQty) : 0;
-    const remainingNonPhd = Math.max(0, (maxOptionalPackagesPerPlayer || 0) - otherNonPhdQty);
-    return Math.min(packageLimit, remainingNonPhd);
+    return pkg.max_quantity || 1;
   };
   const getOptionalPhdLimit = (pkg, attendeeIdx = null) => {
     if (!pkg?.is_phd) return pkg?.max_quantity || 1;
@@ -97,7 +88,7 @@ export default function BookingPanel({
     const pkg = optionalPkgs.find(p => p.id === packageId);
     const maxQty = getAddonLimit(pkg, attendeeIdx);
 
-    // Enforce package quantity, non-PHD package cap, and PHD per-player limit.
+    // Enforce package quantity and PHD per-player limit.
     if (!pkg || quantity > maxQty) {
       return;
     }
@@ -351,7 +342,7 @@ export default function BookingPanel({
                 <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-1">Instructions</p>
                 <ul className="text-sm text-blue-700 space-y-1">
                   <li>&#8226; Daily booking cut-off at <strong>12:00 PM</strong></li>
-                  <li>&#8226; Select up to {maxOptionalPackagesPerPlayer} non-PHD optional package{maxOptionalPackagesPerPlayer === 1 ? '' : 's'} per player</li>
+                  <li>&#8226; Paper card limits apply separately to each item</li>
                   <li>&#8226; PHD packages are limited separately to {phdInventory?.perPlayerLimit || 2} per player</li>
                 </ul>
               </div>

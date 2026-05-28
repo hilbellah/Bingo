@@ -295,9 +295,8 @@ async function logAudit(action, entityType, entityId, details) {
     [uuid(), action, entityType, entityId, typeof details === 'string' ? details : JSON.stringify(details), new Date().toISOString()]);
 }
 
-function validateAttendeeAddons(attendees, optionalPkgs, bookingConfig) {
+function validateAttendeeAddons(attendees, optionalPkgs) {
   const optionalById = new Map(optionalPkgs.map(pkg => [pkg.id, pkg]));
-  const maxNonPhd = bookingConfig.maxOptionalPackagesPerPlayer;
   const normalizedAttendees = [];
 
   for (const attendee of attendees) {
@@ -311,7 +310,6 @@ function validateAttendeeAddons(attendees, optionalPkgs, bookingConfig) {
       addonTotals.set(packageId, (addonTotals.get(packageId) || 0) + quantity);
     }
 
-    let nonPhdQty = 0;
     const normalizedAddons = [];
     for (const [packageId, quantity] of addonTotals.entries()) {
       const pkg = optionalById.get(packageId);
@@ -322,16 +320,7 @@ function validateAttendeeAddons(attendees, optionalPkgs, bookingConfig) {
       if (quantity > packageLimit) {
         return { ok: false, statusCode: 400, error: `${pkg.name} is limited to ${packageLimit} per player.` };
       }
-      if (!pkg.is_phd) nonPhdQty += quantity;
       normalizedAddons.push({ packageId, quantity });
-    }
-
-    if (nonPhdQty > maxNonPhd) {
-      return {
-        ok: false,
-        statusCode: 400,
-        error: `Each player can add up to ${maxNonPhd} non-PHD optional package${maxNonPhd === 1 ? '' : 's'}. PHD packages are limited separately.`,
-      };
     }
 
     normalizedAttendees.push({ ...attendee, addons: normalizedAddons });
@@ -416,7 +405,7 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
   const optionalPkgs = useSessionPkgs
     ? sessionPkgs.filter(p => p.type === 'optional')
     : await all("SELECT * FROM packages WHERE type = 'optional' AND is_active = 1 ORDER BY sort_order ASC");
-  const addonCheck = validateAttendeeAddons(attendees, optionalPkgs, await getBookingConfig());
+  const addonCheck = validateAttendeeAddons(attendees, optionalPkgs);
   if (!addonCheck.ok) return addonCheck;
 
   // Every seat must currently be held by THIS holder. Prevents booking seats
