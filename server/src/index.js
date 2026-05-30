@@ -70,6 +70,7 @@ import {
 import {
   getBookingConfig,
   normalizeSessionType,
+  PHD_CREDIT_PACKAGE_ID,
 } from './services/sessionPackages.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -296,8 +297,9 @@ async function logAudit(action, entityType, entityId, details) {
     [uuid(), action, entityType, entityId, typeof details === 'string' ? details : JSON.stringify(details), new Date().toISOString()]);
 }
 
-function validateAttendeeAddons(attendees, optionalPkgs) {
+function validateAttendeeAddons(attendees, optionalPkgs, { requiredPkgs = [] } = {}) {
   const optionalById = new Map(optionalPkgs.map(pkg => [pkg.id, pkg]));
+  const requiredPhdIncluded = requiredPkgs.some(pkg => pkg?.is_phd);
   const normalizedAttendees = [];
 
   for (const attendee of attendees) {
@@ -312,10 +314,14 @@ function validateAttendeeAddons(attendees, optionalPkgs) {
     }
 
     const normalizedAddons = [];
+    const attendeeHasPhdPackage = requiredPhdIncluded || [...addonTotals.keys()].some(packageId => optionalById.get(packageId)?.is_phd);
     for (const [packageId, quantity] of addonTotals.entries()) {
       const pkg = optionalById.get(packageId);
       if (!pkg) {
         return { ok: false, statusCode: 400, error: 'One of the selected add-ons is no longer available.' };
+      }
+      if (packageId === PHD_CREDIT_PACKAGE_ID && !attendeeHasPhdPackage) {
+        return { ok: false, statusCode: 400, error: 'PHD credits are only available when that player purchases a PHD package.' };
       }
       const packageLimit = Math.max(1, parseInt(pkg.max_quantity || 1, 10));
       if (quantity > packageLimit) {
@@ -406,7 +412,7 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
   const optionalPkgs = useSessionPkgs
     ? sessionPkgs.filter(p => p.type === 'optional')
     : await all("SELECT * FROM packages WHERE type = 'optional' AND is_active = 1 ORDER BY sort_order ASC");
-  const addonCheck = validateAttendeeAddons(attendees, optionalPkgs);
+  const addonCheck = validateAttendeeAddons(attendees, optionalPkgs, { requiredPkgs });
   if (!addonCheck.ok) return addonCheck;
 
   // Every seat must currently be held by THIS holder. Prevents booking seats

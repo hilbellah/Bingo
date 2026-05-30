@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { formatDateShort, formatTime, formatPrice } from '../utils/formatters';
 
+const PHD_CREDIT_PACKAGE_ID = 'pkg-regular-optional-phd-credit';
+
 // NOTE: All credit-card collection happens on Authorize.Net's hosted payment
 // page (Accept Hosted integration). This file does NOT and MUST NOT collect
 // card data — doing so would violate our PCI scope (SAQ A) and require
@@ -54,14 +56,20 @@ export default function BookingPanel({
   const sessionType = session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
   const isRegularBingo = sessionType === 'regular_bingo';
   const requiredPhdIncluded = requiredPackageList.some(pkg => pkg?.is_phd);
+  const isPhdCreditPackage = (pkg) => pkg?.id === PHD_CREDIT_PACKAGE_ID;
   const getIncludedPhdTotal = () => requiredPhdIncluded ? attendees.length : 0;
   const getAttendeeOptionalPhdQty = (attendee) => (attendee?.addons || []).reduce((sum, addon) => {
     const pkg = optionalPkgs.find(p => p.id === addon.packageId);
     return sum + (pkg?.is_phd ? addon.quantity : 0);
   }, 0);
+  const attendeeHasPhdPackage = (attendee) => requiredPhdIncluded || getAttendeeOptionalPhdQty(attendee) > 0;
   const getAddonLimit = (pkg, attendeeIdx = null) => {
     if (!pkg) return 0;
     if (pkg.is_phd) return getOptionalPhdLimit(pkg, attendeeIdx);
+    if (isPhdCreditPackage(pkg)) {
+      const attendee = attendeeIdx !== null ? attendees[attendeeIdx] : null;
+      if (!attendee || !attendeeHasPhdPackage(attendee)) return 0;
+    }
     return pkg.max_quantity || 1;
   };
   const getOptionalPhdLimit = (pkg, attendeeIdx = null) => {
@@ -112,6 +120,16 @@ export default function BookingPanel({
       else addons[existing] = { ...addons[existing], quantity };
     } else if (quantity > 0) {
       addons.push({ packageId, quantity });
+    }
+    if (pkg.is_phd && quantity === 0 && !requiredPhdIncluded) {
+      const stillHasPhd = addons.some(addon => {
+        const addonPkg = optionalPkgs.find(p => p.id === addon.packageId);
+        return addonPkg?.is_phd && addon.quantity > 0;
+      });
+      if (!stillHasPhd) {
+        const creditIndex = addons.findIndex(addon => addon.packageId === PHD_CREDIT_PACKAGE_ID);
+        if (creditIndex >= 0) addons.splice(creditIndex, 1);
+      }
     }
     att.addons = addons;
     updated[attendeeIdx] = att;
@@ -413,7 +431,7 @@ export default function BookingPanel({
                             className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none cursor-pointer"
                           >
                             <option value="">+ Add optional items...</option>
-                            {optionalPkgs.map(pkg => {
+                            {optionalPkgs.filter(pkg => !isPhdCreditPackage(pkg) || attendeeHasPhdPackage(attendees[i])).map(pkg => {
                               const attendeeHasPhd = getAttendeeOptionalPhdQty(attendees[i]) > 0;
                               const stockBlocked = !isRegularBingo || !attendeeHasPhd;
                               const optionLimit = getAddonLimit(pkg, i);

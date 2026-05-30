@@ -12,6 +12,8 @@ export const DEFAULT_BOOKING_CONFIG = {
   maxOptionalPackagesPerPlayer: 3,
 };
 
+export const PHD_CREDIT_PACKAGE_ID = 'pkg-regular-optional-phd-credit';
+
 export const REGULAR_BINGO_PACKAGE_DEFINITIONS = [
   { id: 'pkg-regular-required-9-up', name: '9 up', price: 3000, type: 'required', max_quantity: 1, sort_order: 0, is_phd: 0, description: 'Main admission book included for each player.' },
   { id: 'pkg-regular-required-toonie-ball', name: 'Toonie Ball', price: 200, type: 'required', max_quantity: 1, sort_order: 1, is_phd: 0, description: 'Required Toonie Ball entry for each player.' },
@@ -25,6 +27,7 @@ export const REGULAR_BINGO_PACKAGE_DEFINITIONS = [
   { id: 'pkg-regular-optional-phd-4', name: 'PHD #4', price: 5000, type: 'optional', max_quantity: 2, sort_order: 23, is_phd: 1, description: 'Handheld device package level 4.' },
   { id: 'pkg-regular-optional-phd-5', name: 'PHD #5', price: 6000, type: 'optional', max_quantity: 2, sort_order: 24, is_phd: 1, description: 'Handheld device package level 5.' },
   { id: 'pkg-regular-optional-phd-6', name: 'PHD #6', price: 8000, type: 'optional', max_quantity: 2, sort_order: 25, is_phd: 1, description: 'Handheld device package level 6.' },
+  { id: PHD_CREDIT_PACKAGE_ID, name: '$1 Credit', price: 100, type: 'optional', max_quantity: 50, sort_order: 26, is_phd: 0, description: 'PHD credit. Available only when this player purchases a PHD package.' },
 ];
 
 function normalizePackageName(value) {

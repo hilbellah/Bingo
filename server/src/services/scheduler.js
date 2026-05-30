@@ -269,10 +269,8 @@ export async function cleanupOldData() {
     const sessionIds = oldSessions.map(s => s.id);
     const placeholders = sessionIds.map(() => '?').join(',');
 
-    await exec('BEGIN TRANSACTION');
     await run(`DELETE FROM seats WHERE session_id IN (${placeholders})`, sessionIds);
     await run(`DELETE FROM sessions WHERE id IN (${placeholders})`, sessionIds);
-    await exec('COMMIT');
 
     logger.info('Cleaned up old sessions', { count: oldSessions.length });
   }
