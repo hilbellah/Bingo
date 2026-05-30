@@ -389,6 +389,8 @@ export default function BookingPanel({
               <div className="space-y-4">
                 {attendees.map((att, i) => {
                   const seatInfo = getSeatInfo(selectedSeats[i]);
+                  const phdCreditPkg = optionalPkgs.find(isPhdCreditPackage);
+                  const showPhdCreditPrompt = phdCreditPkg && attendeeHasPhdPackage(att) && getAddonQty(i, phdCreditPkg.id) === 0;
                   return (
                     <div key={i} className="border-2 border-gray-100 rounded-xl p-4">
                       <div className="flex items-center gap-2 mb-3">
@@ -431,7 +433,7 @@ export default function BookingPanel({
                             className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none cursor-pointer"
                           >
                             <option value="">+ Add optional items...</option>
-                            {optionalPkgs.filter(pkg => !isPhdCreditPackage(pkg) || attendeeHasPhdPackage(attendees[i])).map(pkg => {
+                            {optionalPkgs.filter(pkg => !isPhdCreditPackage(pkg)).map(pkg => {
                               const attendeeHasPhd = getAttendeeOptionalPhdQty(attendees[i]) > 0;
                               const stockBlocked = !isRegularBingo || !attendeeHasPhd;
                               const optionLimit = getAddonLimit(pkg, i);
@@ -444,6 +446,26 @@ export default function BookingPanel({
                               );
                             })}
                           </select>
+
+                          {showPhdCreditPrompt && (
+                            <div className="flex items-center justify-between rounded-lg px-3 py-2 mt-2 text-sm bg-purple-50 border border-purple-100">
+                              <div className="flex-1 min-w-0">
+                                <div>
+                                  <span className="font-medium">{phdCreditPkg.name}</span>
+                                  <span className="text-[10px] ml-1 text-purple-600 font-bold">PHD CREDIT</span>
+                                  <span className="text-brand-gold font-semibold ml-1">{formatPrice(phdCreditPkg.price)}</span>
+                                </div>
+                                {phdCreditPkg.description ? <p className="mt-0.5 text-xs text-gray-500">{phdCreditPkg.description}</p> : null}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => updateAddon(i, phdCreditPkg.id, 1)}
+                                className="ml-3 px-3 py-1.5 rounded-lg bg-brand-gold hover:bg-brand-gold-light text-white text-xs font-bold"
+                              >
+                                Add
+                              </button>
+                            </div>
+                          )}
 
                           {/* Selected add-ons */}
                           {optionalPkgs.filter(pkg => getAddonQty(i, pkg.id) > 0).map(pkg => {
