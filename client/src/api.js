@@ -316,6 +316,11 @@ export async function fetchAdminBookings(token, sessionId) {
   return readJson(res, 'Could not load admin bookings');
 }
 
+export async function fetchAdminBookingReceipt(token, id) {
+  const res = await fetch(`${API}/admin/bookings/${encodeURIComponent(id)}/receipt`, { headers: adminHeaders(token) });
+  return readJson(res, 'Could not load booking receipt');
+}
+
 export async function cancelAdminBooking(token, id) {
   const res = await fetch(`${API}/admin/bookings/${id}/cancel`, {
     method: 'POST', headers: adminHeaders(token)

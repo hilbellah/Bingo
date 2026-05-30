@@ -9,6 +9,80 @@ function csvCell(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+async function loadAdminBookings(whereClause = '', params = []) {
+  const rows = await all(`
+    SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at, b.email,
+           b.customer_first_name, b.customer_last_name,
+           s.date as session_date, s.time as session_time,
+           bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
+           bi.reference_number as item_reference_number, bi.refund_status,
+           bi.refunded_at, bi.refund_transaction_id, bi.refund_amount, bi.refund_action,
+           seats.table_number, seats.chair_number,
+           COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
+    FROM bookings b
+    JOIN sessions s ON b.session_id = s.id
+    JOIN booking_items bi ON bi.booking_id = b.id
+    JOIN seats ON seats.id = bi.seat_id
+    LEFT JOIN packages p ON p.id = bi.package_id
+    LEFT JOIN session_packages sp ON sp.id = bi.package_id
+    ${whereClause}
+    ORDER BY b.created_at DESC, b.id, bi.id
+  `, params);
+
+  const bookings = {};
+  for (const row of rows) {
+    if (!bookings[row.id]) {
+      bookings[row.id] = {
+        id: row.id,
+        referenceNumber: row.reference_number,
+        totalAmount: row.total_amount,
+        totalFormatted: '$' + formatPrice(row.total_amount),
+        paymentStatus: row.payment_status,
+        createdAt: row.created_at,
+        email: row.email,
+        customerFirstName: row.customer_first_name,
+        customerLastName: row.customer_last_name,
+        sessionDate: row.session_date,
+        sessionTime: row.session_time,
+        items: []
+      };
+    }
+
+    const addonRows = await all(`
+      SELECT ba.*, COALESCE(p.name, sp.name) as package_name FROM booking_addons ba
+      LEFT JOIN packages p ON p.id = ba.package_id
+      LEFT JOIN session_packages sp ON sp.id = ba.package_id WHERE ba.booking_item_id = ?
+    `, [row.item_id]);
+    const addons = addonRows.map(addon => ({
+      packageName: addon.package_name,
+      quantity: addon.quantity,
+      price: addon.price,
+      priceFormatted: '$' + formatPrice(addon.price)
+    }));
+
+    bookings[row.id].items.push({
+      id: row.item_id,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      tableNumber: row.table_number,
+      chairNumber: row.chair_number,
+      referenceNumber: row.item_reference_number,
+      packageName: row.package_name,
+      packagePrice: row.package_price,
+      packagePriceFormatted: '$' + formatPrice(row.package_price),
+      refundStatus: row.refund_status || 'active',
+      refundedAt: row.refunded_at,
+      refundTransactionId: row.refund_transaction_id,
+      refundAmount: row.refund_amount || 0,
+      refundAmountFormatted: '$' + formatPrice(row.refund_amount || 0),
+      refundAction: row.refund_action,
+      addons
+    });
+  }
+
+  return Object.values(bookings);
+}
+
 export function registerAdminBookingRoutes(app, {
   io,
   logAudit,
@@ -19,83 +93,24 @@ export function registerAdminBookingRoutes(app, {
 }) {
   app.get('/api/admin/bookings', adminAuth, async (req, res) => {
     try {
-    const { sessionId } = req.query;
-    let whereClause = '';
-    const params = [];
-    if (sessionId) { whereClause = 'WHERE b.session_id = ?'; params.push(sessionId); }
-
-    const rows = await all(`
-      SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at, b.email,
-             b.customer_first_name, b.customer_last_name,
-             s.date as session_date, s.time as session_time,
-             bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
-             bi.reference_number as item_reference_number, bi.refund_status,
-             bi.refunded_at, bi.refund_transaction_id, bi.refund_amount, bi.refund_action,
-             seats.table_number, seats.chair_number,
-             COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
-      FROM bookings b
-      JOIN sessions s ON b.session_id = s.id
-      JOIN booking_items bi ON bi.booking_id = b.id
-      JOIN seats ON seats.id = bi.seat_id
-      LEFT JOIN packages p ON p.id = bi.package_id
-      LEFT JOIN session_packages sp ON sp.id = bi.package_id
-      ${whereClause}
-      ORDER BY b.created_at DESC, b.id, bi.id
-    `, params);
-
-    const bookings = {};
-    for (const row of rows) {
-      if (!bookings[row.id]) {
-        bookings[row.id] = {
-          id: row.id,
-          referenceNumber: row.reference_number,
-          totalAmount: row.total_amount,
-          totalFormatted: '$' + formatPrice(row.total_amount),
-          paymentStatus: row.payment_status,
-          createdAt: row.created_at,
-          email: row.email,
-          customerFirstName: row.customer_first_name,
-          customerLastName: row.customer_last_name,
-          sessionDate: row.session_date,
-          sessionTime: row.session_time,
-          items: []
-        };
-      }
-
-      const addonRows = await all(`
-        SELECT ba.*, COALESCE(p.name, sp.name) as package_name FROM booking_addons ba
-        LEFT JOIN packages p ON p.id = ba.package_id
-        LEFT JOIN session_packages sp ON sp.id = ba.package_id WHERE ba.booking_item_id = ?
-      `, [row.item_id]);
-      const addons = addonRows.map(addon => ({
-        packageName: addon.package_name,
-        quantity: addon.quantity,
-        price: addon.price,
-        priceFormatted: '$' + formatPrice(addon.price)
-      }));
-
-      bookings[row.id].items.push({
-        id: row.item_id,
-        firstName: row.first_name,
-        lastName: row.last_name,
-        tableNumber: row.table_number,
-        chairNumber: row.chair_number,
-        referenceNumber: row.item_reference_number,
-        packageName: row.package_name,
-        packagePrice: row.package_price,
-        packagePriceFormatted: '$' + formatPrice(row.package_price),
-        refundStatus: row.refund_status || 'active',
-        refundedAt: row.refunded_at,
-        refundTransactionId: row.refund_transaction_id,
-        refundAmount: row.refund_amount || 0,
-        refundAmountFormatted: '$' + formatPrice(row.refund_amount || 0),
-        refundAction: row.refund_action,
-        addons
-      });
-    }
-    res.json(Object.values(bookings));
+      const { sessionId } = req.query;
+      let whereClause = '';
+      const params = [];
+      if (sessionId) { whereClause = 'WHERE b.session_id = ?'; params.push(sessionId); }
+      res.json(await loadAdminBookings(whereClause, params));
     } catch (err) {
       console.error('GET /api/admin/bookings failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/admin/bookings/:id/receipt', adminAuth, async (req, res) => {
+    try {
+      const bookings = await loadAdminBookings('WHERE b.id = ? OR b.reference_number = ?', [req.params.id, req.params.id]);
+      if (bookings.length === 0) return res.status(404).json({ error: 'Booking not found' });
+      res.json(bookings[0]);
+    } catch (err) {
+      console.error('GET /api/admin/bookings/:id/receipt failed:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   });

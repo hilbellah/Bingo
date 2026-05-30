@@ -32,6 +32,7 @@ export default function BookingsTab() {
     setTransactionFilters,
     loadTransactions,
     handlePrintDailySalesReceipt,
+    handleReprintTransactionReceipt,
     handleClearTestBookings,
     handleResetSalesReporting,
   } = useAdminDashboard();
@@ -79,6 +80,7 @@ export default function BookingsTab() {
     if (status === 'pending') return 'bg-amber-100 text-amber-700';
     return 'bg-gray-100 text-gray-600';
   };
+  const canPrintTransactionReceipt = (status) => ['paid', 'partially_refunded', 'refunded', 'voided'].includes(status);
   return (
     <>
         {/* BOOKINGS TAB - Sales & Transactions */}
@@ -317,6 +319,7 @@ export default function BookingsTab() {
                         <th className="pb-2">Status</th>
                         <th className="pb-2">Transaction ID</th>
                         <th className="pb-2 text-right pr-2">Amount</th>
+                        <th className="pb-2 text-right pr-2">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -340,6 +343,20 @@ export default function BookingsTab() {
                           <td className="py-2.5 font-mono text-xs text-gray-500">{item.transactionId || '-'}</td>
                           <td className={`py-2.5 text-right pr-2 font-semibold ${item.amountEffect < 0 ? 'text-red-600' : item.amountEffect > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
                             {item.amountEffectFormatted}
+                          </td>
+                          <td className="py-2.5 text-right pr-2">
+                            {canPrintTransactionReceipt(item.status) ? (
+                              <button
+                                type="button"
+                                onClick={() => handleReprintTransactionReceipt(item.id)}
+                                className="px-2 py-1 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
+                                title="Reprint thermal receipt"
+                              >
+                                Receipt
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -530,5 +547,4 @@ export default function BookingsTab() {
     </>
   );
 }
-
 

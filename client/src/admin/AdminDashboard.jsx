@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, getExportUrl, adminHeaders,
+  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -303,6 +303,11 @@ export default function AdminDashboard() {
 
   const handlePrintBookingReceipt = (booking) => {
     printBookingReceiptDocument(booking);
+  };
+
+  const handleReprintTransactionReceipt = async (bookingId) => {
+    const booking = await fetchAdminBookingReceipt(token, bookingId);
+    printBookingReceipt(booking);
   };
 
   const handleLogout = () => {
@@ -951,6 +956,7 @@ export default function AdminDashboard() {
     setTransactionFilters,
     loadTransactions,
     handlePrintDailySalesReceipt,
+    handleReprintTransactionReceipt,
     bookingSearch,
     setBookingSearch,
     reportSession,
