@@ -45,7 +45,9 @@ await run(
 await saveDb();
 
 const { app } = await import(appUrl);
-const listener = app.listen(0);
+const listener = await new Promise(resolve => {
+  const server = app.listen(0, '127.0.0.1', () => resolve(server));
+});
 const baseUrl = `http://127.0.0.1:${listener.address().port}`;
 
 async function postJson(pathname, body) {
