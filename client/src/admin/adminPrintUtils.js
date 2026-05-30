@@ -116,60 +116,79 @@ export function printAutoBookingReceipt(booking, cfg) {
   const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
   const bodyWidth = paperWidth === '58mm' ? '50mm' : '72mm';
   const receiptTitle = getReceiptTitle(booking, cfg.receiptTitle);
+  const formatUnitPrice = (price, quantity = 1, fallback = '') => {
+    const cents = Number(price || 0);
+    const qty = Number(quantity || 1);
+    if (!Number.isFinite(cents) || cents <= 0 || !Number.isFinite(qty) || qty <= 0) return fallback;
+    return '$' + (cents / qty / 100).toFixed(0);
+  };
+  const packageLabel = (priceText, name) => [priceText, name].filter(Boolean).join(' - ');
+  const totalText = String(booking.totalFormatted || '').replace(/^\$/, '') || String(booking.totalAmount || '');
   const lines = [
-    `<div class="header">${escapeHtml(cfg.businessName)}</div>`,
-    `<div class="sub-header">${escapeHtml(cfg.businessSubtitle)}</div>`,
-    '<div class="line"></div>',
-    `<div class="center bold">${escapeHtml(receiptTitle)}</div>`,
-    booking.sessionTitle ? `<div class="center bold" style="font-size:11px">${escapeHtml(booking.sessionTitle)}</div>` : '',
-    `<div class="center">${escapeHtml(booking.sessionDate)} at ${escapeHtml(booking.sessionTime)}</div>`,
-    '<div class="line"></div>',
+    `<div class="receipt-brand">${escapeHtml(cfg.businessName || 'WOLASTOQ BINGO')}</div>`,
+    cfg.businessSubtitle ? `<div class="receipt-subtitle">${escapeHtml(cfg.businessSubtitle)}</div>` : '',
+    `<div class="receipt-title">${escapeHtml(receiptTitle)}</div>`,
+    booking.sessionTitle ? `<div class="receipt-session">${escapeHtml(booking.sessionTitle)}</div>` : '',
   ].filter(Boolean);
 
-  if (cfg.showRefNumber) {
-    lines.push(`<div class="row"><span>Ref:</span><span class="bold">${escapeHtml(booking.referenceNumber)}</span></div>`);
-    lines.push('<div class="line"></div>');
-  }
-
-  lines.push('<div class="bold">Attendees:</div>');
-  for (const item of booking.items) {
-    lines.push(`<div style="padding:2px 0">${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</div>`);
-    if (item.referenceNumber) {
-      lines.push(`<div style="font-size:10px;color:#555;padding-left:8px">Ticket: ${escapeHtml(item.referenceNumber)}</div>`);
-    }
-    if (cfg.showTableChair) {
-      lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  T${escapeHtml(item.tableNumber)}/C${escapeHtml(item.chairNumber)} - ${escapeHtml(item.packageName)}</span>${cfg.showPackagePrice ? `<span class="item-amt">${escapeHtml(item.packagePriceFormatted || '')}</span>` : ''}</div>`);
-    }
+  for (const item of booking.items || []) {
+    const itemRows = [
+      {
+        label: packageLabel(formatUnitPrice(item.packagePrice, 1, item.packagePriceFormatted), item.packageName),
+        quantity: 1,
+      },
+    ];
     if (cfg.showAddons && item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
-        lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">  + ${escapeHtml(addon.packageName)} x${escapeHtml(addon.quantity)}</span><span class="item-amt">${escapeHtml(addon.priceFormatted)}</span></div>`);
+        itemRows.push({
+          label: packageLabel(formatUnitPrice(addon.price, addon.quantity, addon.priceFormatted), addon.packageName),
+          quantity: addon.quantity,
+        });
       }
     }
+
+    lines.push('<table class="legacy-receipt">');
+    lines.push(`<tr><th>NAME</th><td colspan="2" class="code-blue">: ${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</td></tr>`);
+    lines.push(`<tr><th>BOOKING NO.</th><td colspan="2" class="code-red">: ${escapeHtml(booking.referenceNumber)}</td></tr>`);
+    if (item.referenceNumber) {
+      lines.push(`<tr><th>TICKET NO.</th><td colspan="2" class="code-red">: ${escapeHtml(item.referenceNumber)}</td></tr>`);
+    }
+    lines.push(`<tr><th>PLAY DATE</th><td colspan="2" class="code-blue">: ${escapeHtml(booking.sessionDate)} ${escapeHtml(booking.sessionTime || '')}</td></tr>`);
+    if (cfg.showTableChair) {
+      lines.push(`<tr><th>TABLE NO.</th><td colspan="2" class="code-blue">: ${escapeHtml(item.tableNumber)}</td></tr>`);
+      lines.push(`<tr><th>SEAT NO.</th><td colspan="2" class="code-blue">: ${escapeHtml(item.chairNumber)}</td></tr>`);
+    }
+    lines.push('<tr class="items-head"><th>NO</th><th>PACKAGE ITEMS</th><th>QTY</th></tr>');
+    itemRows.forEach((row, index) => {
+      lines.push(`<tr><td class="no-cell">${index + 1}</td><td class="item-cell">${escapeHtml(row.label)}</td><td class="qty-cell">${escapeHtml(row.quantity)}</td></tr>`);
+    });
+    lines.push('</table>');
   }
 
-  lines.push('<div class="dbl-line"></div>');
-  lines.push(`<div class="total-row"><span>TOTAL</span><span>${escapeHtml(booking.totalFormatted)}</span></div>`);
+  lines.push(`<div class="legacy-total"><div>TOTAL AMOUNT : $</div><strong>${escapeHtml(totalText)}</strong></div>`);
   if (cfg.footerText) {
-    lines.push('<div class="line"></div>');
-    lines.push(`<div class="center" style="font-size:10px;margin-top:4px">${escapeHtml(cfg.footerText)}</div>`);
+    lines.push(`<div class="receipt-footer">${escapeHtml(cfg.footerText)}</div>`);
   }
   if (cfg.showTimestamp) {
-    lines.push(`<div class="center" style="font-size:10px;margin-top:4px">${escapeHtml(new Date(booking.createdAt).toLocaleString())}</div>`);
+    lines.push(`<div class="receipt-footer">${escapeHtml(new Date(booking.createdAt).toLocaleString())}</div>`);
   }
 
   const style = `@page { size: ${paperWidth} auto; margin: 0; }
-body { font-family: 'Courier New', monospace; font-size: 12px; width: ${bodyWidth}; margin: 4mm auto; padding: 0; color: #000; line-height: 1.4; }
-.center { text-align: center; }
-.bold { font-weight: bold; }
-.line { border-top: 1px dashed #000; margin: 4px 0; }
-.dbl-line { border-top: 2px solid #000; margin: 6px 0; }
-.row { display: flex; justify-content: space-between; }
-.header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
-.sub-header { font-size: 10px; text-align: center; color: #333; margin-bottom: 8px; }
-.item-row { display: flex; justify-content: space-between; padding: 1px 0; }
-.item-desc { flex: 1; padding: 0 4px; }
-.item-amt { width: 60px; text-align: right; }
-.total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; padding: 2px 0; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; font-weight: 700; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.15; }
+.receipt-brand { text-align: center; font-size: 14px; font-weight: 900; margin-bottom: 1px; text-transform: uppercase; }
+.receipt-subtitle, .receipt-title, .receipt-session, .receipt-footer { text-align: center; font-size: 10px; font-weight: 800; margin-bottom: 3px; }
+.legacy-receipt { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 3px 0 6px; page-break-inside: avoid; }
+.legacy-receipt th, .legacy-receipt td { border: 1.5px solid #000; padding: 2px 3px; vertical-align: top; font-weight: 800; }
+.legacy-receipt th { width: 34%; text-align: left; white-space: nowrap; }
+.legacy-receipt td { text-align: left; }
+.legacy-receipt .items-head th { text-align: left; }
+.legacy-receipt .items-head th:first-child, .legacy-receipt .no-cell { width: 8%; text-align: center; }
+.legacy-receipt .items-head th:last-child, .legacy-receipt .qty-cell { width: 12%; text-align: center; }
+.legacy-receipt .item-cell { width: 80%; }
+.code-blue { color: #165caa; }
+.code-red { color: #ef2b24; }
+.legacy-total { border-left: 1.5px solid #000; border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; margin: -6px 0 8px; padding: 6px 4px 8px; text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; page-break-inside: avoid; }
+.legacy-total strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
 @media print { body { width: ${bodyWidth}; margin: 0 auto; } }`;
 
   writePrintDocument('Receipt', lines.join(''), style);
