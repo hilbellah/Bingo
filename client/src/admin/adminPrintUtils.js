@@ -125,8 +125,8 @@ export function printAutoBookingReceipt(booking, cfg) {
   const packageLabel = (priceText, name) => [priceText, name].filter(Boolean).join(' - ');
   const totalText = String(booking.totalFormatted || '').replace(/^\$/, '') || String(booking.totalAmount || '');
   const lines = [
-    `<div class="receipt-brand">${escapeHtml(cfg.businessName || 'WOLASTOQ BINGO')}</div>`,
-    cfg.businessSubtitle ? `<div class="receipt-subtitle">${escapeHtml(cfg.businessSubtitle)}</div>` : '',
+    '<div class="receipt-logo"><img src="/wolastoq-logo.png" alt="Wolastoq Casino"></div>',
+    `<div class="receipt-venue">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
     `<div class="receipt-title">${escapeHtml(receiptTitle)}</div>`,
     booking.sessionTitle ? `<div class="receipt-session">${escapeHtml(booking.sessionTitle)}</div>` : '',
   ].filter(Boolean);
@@ -148,6 +148,7 @@ export function printAutoBookingReceipt(booking, cfg) {
     }
 
     lines.push('<table class="legacy-receipt">');
+    lines.push('<colgroup><col class="label-col"><col class="item-col"><col class="qty-col"></colgroup>');
     lines.push(`<tr><th>NAME</th><td colspan="2" class="code-blue">: ${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</td></tr>`);
     lines.push(`<tr><th>BOOKING NO.</th><td colspan="2" class="code-red">: ${escapeHtml(booking.referenceNumber)}</td></tr>`);
     if (item.referenceNumber) {
@@ -174,17 +175,22 @@ export function printAutoBookingReceipt(booking, cfg) {
   }
 
   const style = `@page { size: ${paperWidth} auto; margin: 0; }
-body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; font-weight: 700; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.15; }
-.receipt-brand { text-align: center; font-size: 14px; font-weight: 900; margin-bottom: 1px; text-transform: uppercase; }
-.receipt-subtitle, .receipt-title, .receipt-session, .receipt-footer { text-align: center; font-size: 10px; font-weight: 800; margin-bottom: 3px; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 700; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.15; }
+.receipt-logo { text-align: center; margin: 0 0 2px; }
+.receipt-logo img { display: inline-block; max-width: 48mm; max-height: 14mm; object-fit: contain; }
+.receipt-venue { text-align: center; font-size: 11px; font-weight: 900; margin-bottom: 3px; }
+.receipt-title, .receipt-session, .receipt-footer { text-align: center; font-size: 10px; font-weight: 800; margin-bottom: 3px; }
 .legacy-receipt { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 3px 0 6px; page-break-inside: avoid; }
-.legacy-receipt th, .legacy-receipt td { border: 1.5px solid #000; padding: 2px 3px; vertical-align: top; font-weight: 800; }
-.legacy-receipt th { width: 34%; text-align: left; white-space: nowrap; }
-.legacy-receipt td { text-align: left; }
+.legacy-receipt col.label-col { width: 30%; }
+.legacy-receipt col.item-col { width: 56%; }
+.legacy-receipt col.qty-col { width: 14%; }
+.legacy-receipt th, .legacy-receipt td { border: 1.5px solid #000; padding: 2px 3px; vertical-align: top; font-weight: 800; box-sizing: border-box; }
+.legacy-receipt th { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.legacy-receipt td { text-align: left; overflow-wrap: anywhere; word-break: normal; }
 .legacy-receipt .items-head th { text-align: left; }
-.legacy-receipt .items-head th:first-child, .legacy-receipt .no-cell { width: 8%; text-align: center; }
-.legacy-receipt .items-head th:last-child, .legacy-receipt .qty-cell { width: 12%; text-align: center; }
-.legacy-receipt .item-cell { width: 80%; }
+.legacy-receipt .items-head th:first-child, .legacy-receipt .no-cell { text-align: center; }
+.legacy-receipt .items-head th:last-child, .legacy-receipt .qty-cell { text-align: center; }
+.legacy-receipt .item-cell { white-space: normal; overflow-wrap: anywhere; }
 .code-blue { color: #165caa; }
 .code-red { color: #ef2b24; }
 .legacy-total { border-left: 1.5px solid #000; border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; margin: -6px 0 8px; padding: 6px 4px 8px; text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; page-break-inside: avoid; }
