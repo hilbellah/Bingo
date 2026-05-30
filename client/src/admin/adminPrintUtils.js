@@ -42,6 +42,20 @@ function writePrintDocument(title, body, style) {
     if ('onafterprint' in win) win.onafterprint = cleanup;
     else cleanup();
   };
+  const printWhenImagesReady = () => {
+    const images = Array.from(frame.contentWindow?.document?.images || []);
+    if (images.length === 0) {
+      setTimeout(doPrint, 100);
+      return;
+    }
+    Promise.all(images.map(image => {
+      if (image.complete) return Promise.resolve();
+      return new Promise(resolve => {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+      });
+    })).then(() => setTimeout(doPrint, 100));
+  };
 
   document.body.appendChild(frame);
   const doc = frame.contentWindow?.document;
@@ -49,11 +63,11 @@ function writePrintDocument(title, body, style) {
     cleanup();
     return;
   }
-  frame.onload = () => setTimeout(doPrint, 100);
+  frame.onload = printWhenImagesReady;
   doc.open();
   doc.write(html);
   doc.close();
-  setTimeout(doPrint, 300);
+  setTimeout(printWhenImagesReady, 500);
 }
 
 function getBookingSessionType(booking) {
@@ -177,7 +191,7 @@ export function printAutoBookingReceipt(booking, cfg) {
   const style = `@page { size: ${paperWidth} auto; margin: 0; }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 700; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.15; }
 .receipt-logo { text-align: center; margin: 0 0 2px; }
-.receipt-logo img { display: inline-block; max-width: 48mm; max-height: 14mm; object-fit: contain; }
+.receipt-logo img { display: inline-block; max-width: 48mm; max-height: 14mm; object-fit: contain; filter: brightness(0); -webkit-filter: brightness(0); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .receipt-venue { text-align: center; font-size: 11px; font-weight: 900; margin-bottom: 3px; }
 .receipt-title, .receipt-session, .receipt-footer { text-align: center; font-size: 10px; font-weight: 800; margin-bottom: 3px; }
 .legacy-receipt { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 3px 0 6px; page-break-inside: avoid; }
