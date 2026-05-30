@@ -6,6 +6,7 @@ import { archivePastSessions } from './services/sessionArchive.js';
 import { ensureGoLiveSalesReportCutoff } from './services/salesReporting.js';
 import {
   cleanupOldData,
+  closeGeneratedSessionsWithoutActiveSchedule,
   ensureFutureSessions,
   normalizeAutoGenerateConfigForGoLive,
   openWeeklySessions,
@@ -75,12 +76,14 @@ export async function startMaintenanceTasks(io, { reconcileReversedBookingSeats 
   await ensureGoLiveSalesReportCutoff();
   await normalizeAutoGenerateConfigForGoLive();
   await ensureFutureSessions();
+  await closeGeneratedSessionsWithoutActiveSchedule();
   await pruneFutureSessionsBeyondLookahead();
   await archivePastSessions();
 
   setInterval(() => {
     runAsyncTask('openWeeklySessions', openWeeklySessions, logger);
     runAsyncTask('ensureFutureSessions', ensureFutureSessions, logger);
+    runAsyncTask('closeGeneratedSessionsWithoutActiveSchedule', closeGeneratedSessionsWithoutActiveSchedule, logger);
     runAsyncTask('pruneFutureSessionsBeyondLookahead', pruneFutureSessionsBeyondLookahead, logger);
     runAsyncTask('archivePastSessions', archivePastSessions, logger);
   }, 60 * 60 * 1000);

@@ -263,41 +263,40 @@ export async function syncGeneratedSessionsForRecurringSchedule({ dayOfWeek, tim
   return { changed: result.changes || 0 };
 }
 
-// Legacy hook kept for backward compatibility with index.js. Previously this
-// flipped `is_available = 1` on Mon-Sun for the current week. Auto-generation
-// now creates sessions with is_available = 1 directly, so this is mostly a
-// no-op safety net for any sessions that were created with is_available = 0
-// in the past (or by the previous scheduler implementation). It must still
-// respect inactive recurring days so disabled days are not reopened.
-export async function openWeeklySessions() {
-  const now = new Date();
-  const thisMonday = getWeekMonday(now);
-  const thisSunday = new Date(thisMonday);
-  thisSunday.setDate(thisMonday.getDate() + 6);
-
-  const mondayStr = formatLocalDate(thisMonday);
-  const sundayStr = formatLocalDate(thisSunday);
-
-  const { changes } = await run(
-    `UPDATE sessions SET is_available = 1
-     WHERE date >= ? AND date <= ?
-     AND is_available = 0
-     AND is_special_event = 0
-     AND deleted_at IS NULL
-     AND EXISTS (
-       SELECT 1
-       FROM recurring_schedules rs
-       WHERE rs.is_active = 1
-         AND rs.day_of_week = CAST(strftime('%w', sessions.date) AS INTEGER)
-         AND SUBSTR(rs.time, 1, 2) = SUBSTR(sessions.time, 1, 2)
-         AND COALESCE(rs.session_type, 'regular_bingo') = COALESCE(sessions.session_type, 'regular_bingo')
-     )`,
-    [mondayStr, sundayStr]
+export async function closeGeneratedSessionsWithoutActiveSchedule() {
+  const todayStr = formatLocalDate(new Date());
+  const result = await run(
+    `UPDATE sessions
+        SET is_available = 0
+      WHERE date >= ?
+        AND is_available = 1
+        AND is_special_event = 0
+        AND COALESCE(session_type, 'regular_bingo') = 'regular_bingo'
+        AND deleted_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM recurring_schedules rs
+          WHERE rs.is_active = 1
+            AND rs.day_of_week = CAST(strftime('%w', sessions.date) AS INTEGER)
+            AND SUBSTR(rs.time, 1, 2) = SUBSTR(sessions.time, 1, 2)
+            AND COALESCE(rs.session_type, 'regular_bingo') = COALESCE(sessions.session_type, 'regular_bingo')
+        )`,
+    [todayStr]
   );
 
-  if (changes > 0) {
-    logger.info('Opened weekly sessions (legacy backfill)', { week: mondayStr, count: changes });
+  if (result.changes > 0) {
+    logger.info('Closed generated sessions without an active recurring schedule', { changed: result.changes });
   }
+
+  return { changed: result.changes || 0 };
+}
+
+// Legacy hook kept for backward compatibility with index.js. Previously this
+// flipped `is_available = 1` on Mon-Sun for the current week. That behavior can
+// undo an admin's intentional session disable, so it is now a no-op. Future
+// sessions are created as available by ensureFutureSessions().
+export async function openWeeklySessions() {
+  return { changed: 0, skipped: true };
 }
 
 export async function cleanupOldData() {
