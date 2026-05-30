@@ -226,11 +226,49 @@ export async function pruneFutureSessionsBeyondLookahead() {
   };
 }
 
+export async function syncGeneratedSessionsForRecurringSchedule({ dayOfWeek, time, sessionType, isActive }) {
+  const targetAvailable = isActive ? 1 : 0;
+  const todayStr = formatLocalDate(new Date());
+  const day = String(Number(dayOfWeek));
+  const hour = String(time || '').slice(0, 2);
+  const type = sessionType || 'regular_bingo';
+
+  if (!/^[0-6]$/.test(day) || !/^\d{2}$/.test(hour)) {
+    return { changed: 0 };
+  }
+
+  const result = await run(
+    `UPDATE sessions
+        SET is_available = ?
+      WHERE date >= ?
+        AND strftime('%w', date) = ?
+        AND SUBSTR(time, 1, 2) = ?
+        AND is_available != ?
+        AND is_special_event = 0
+        AND COALESCE(session_type, 'regular_bingo') = ?
+        AND deleted_at IS NULL`,
+    [targetAvailable, todayStr, day, hour, targetAvailable, type]
+  );
+
+  if (result.changes > 0) {
+    logger.info('Synced generated sessions with recurring schedule', {
+      dayOfWeek: Number(day),
+      hour,
+      session_type: type,
+      is_available: targetAvailable,
+      changed: result.changes,
+    });
+  }
+
+  return { changed: result.changes || 0 };
+}
+
 // Legacy hook kept for backward compatibility with index.js. Previously this
 // flipped `is_available = 1` on Mon-Sun for the current week. Auto-generation
 // now creates sessions with is_available = 1 directly, so this is mostly a
 // no-op safety net for any sessions that were created with is_available = 0
-// in the past (or by the previous scheduler implementation).
+// in the past (or by the previous scheduler implementation). It must still
+// respect inactive recurring days so disabled days are not reopened.
 export async function openWeeklySessions() {
   const now = new Date();
   const thisMonday = getWeekMonday(now);
@@ -245,7 +283,15 @@ export async function openWeeklySessions() {
      WHERE date >= ? AND date <= ?
      AND is_available = 0
      AND is_special_event = 0
-     AND deleted_at IS NULL`,
+     AND deleted_at IS NULL
+     AND EXISTS (
+       SELECT 1
+       FROM recurring_schedules rs
+       WHERE rs.is_active = 1
+         AND rs.day_of_week = CAST(strftime('%w', sessions.date) AS INTEGER)
+         AND SUBSTR(rs.time, 1, 2) = SUBSTR(sessions.time, 1, 2)
+         AND COALESCE(rs.session_type, 'regular_bingo') = COALESCE(sessions.session_type, 'regular_bingo')
+     )`,
     [mondayStr, sundayStr]
   );
 

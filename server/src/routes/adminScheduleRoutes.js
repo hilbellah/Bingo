@@ -9,6 +9,7 @@ import {
   listRecurringSchedules,
   openWeeklySessions,
   pruneFutureSessionsBeyondLookahead,
+  syncGeneratedSessionsForRecurringSchedule,
   updateAutoGenerateConfig,
 } from '../services/scheduler.js';
 
@@ -153,9 +154,21 @@ export function registerAdminScheduleRoutes(app, { logAudit }) {
           WHERE id = ?`,
         [norm.day, norm.time, norm.cutoff, norm.sessionType, norm.isActive, req.params.id]
       );
-      await logAudit('recurring_schedule_updated', 'recurring_schedule', req.params.id, payload);
+      let syncedSessions = { changed: 0 };
+      if (Number(existing.is_active) !== Number(norm.isActive)) {
+        syncedSessions = await syncGeneratedSessionsForRecurringSchedule({
+          dayOfWeek: norm.day,
+          time: norm.time,
+          sessionType: norm.sessionType,
+          isActive: norm.isActive,
+        });
+      }
+      await logAudit('recurring_schedule_updated', 'recurring_schedule', req.params.id, {
+        ...payload,
+        syncedGeneratedSessions: syncedSessions.changed,
+      });
       await saveDb();
-      res.json({ success: true });
+      res.json({ success: true, syncedGeneratedSessions: syncedSessions.changed });
     } catch (err) {
       console.error('PATCH /api/admin/recurring-schedules/:id failed:', err);
       res.status(500).json({ error: 'Internal server error' });
