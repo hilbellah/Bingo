@@ -104,8 +104,18 @@ th{text-align:left;color:#999;border-bottom:1px solid #ddd;padding:4px 0}
 td{padding:4px 0;border-bottom:1px solid #f0f0f0}
 @media print{body{padding:0}.booking{break-inside:avoid}}`;
 
-const thermalReceiptStyle = `@page { size: 80mm auto; margin: 0; }
-body { font-family: 'Courier New', monospace; font-size: 12px; width: 72mm; margin: 4mm auto; padding: 0; color: #000; line-height: 1.4; }
+function getThermalReceiptStyle(paperWidth = '80mm') {
+  const width = paperWidth === '58mm' ? '58mm' : '80mm';
+  const bodyWidth = width === '58mm' ? '50mm' : '72mm';
+  const fontSize = width === '58mm' ? '10px' : '12px';
+  const logoWidth = width === '58mm' ? '38mm' : '48mm';
+  const logoHeight = width === '58mm' ? '11mm' : '14mm';
+  const qtyWidth = width === '58mm' ? '7mm' : '9mm';
+  const amountWidth = width === '58mm' ? '14mm' : '18mm';
+
+  return `@page { size: ${width} auto; margin: 0; }
+body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.25; box-sizing: border-box; }
+* { box-sizing: border-box; }
 .center { text-align: center; }
 .right { text-align: right; }
 .bold { font-weight: bold; }
@@ -114,18 +124,22 @@ body { font-family: 'Courier New', monospace; font-size: 12px; width: 72mm; marg
 .row { display: flex; justify-content: space-between; }
 .row span:last-child { text-align: right; }
 .thermal-logo { text-align: center; margin: 0 0 2px; }
-.thermal-logo img { display: inline-block; max-width: 48mm; max-height: 14mm; object-fit: contain; filter: brightness(0); -webkit-filter: brightness(0); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.thermal-logo img { display: inline-block; max-width: ${logoWidth}; max-height: ${logoHeight}; object-fit: contain; filter: brightness(0); -webkit-filter: brightness(0); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
 .sub-header { font-size: 10px; text-align: center; color: #333; margin-bottom: 8px; }
-.item-row { display: flex; justify-content: space-between; padding: 1px 0; }
-.item-qty { width: 30px; text-align: center; }
-.item-desc { flex: 1; padding: 0 4px; }
-.item-amt { width: 60px; text-align: right; }
-.total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; padding: 2px 0; }
-@media print { body { width: 72mm; margin: 0 auto; } }`;
+.item-row { display: grid; grid-template-columns: ${qtyWidth} minmax(0, 1fr) ${amountWidth}; column-gap: 1.5mm; align-items: start; padding: 1px 0; width: 100%; }
+.item-qty { text-align: center; overflow-wrap: anywhere; }
+.item-desc { min-width: 0; overflow-wrap: anywhere; word-break: normal; }
+.item-amt { text-align: right; white-space: nowrap; overflow-wrap: normal; }
+.detail-line { font-size: 9px; color: #555; padding-left: calc(${qtyWidth} + 1.5mm); overflow-wrap: anywhere; line-height: 1.2; }
+.total-row { display: grid; grid-template-columns: minmax(0, 1fr) ${amountWidth}; column-gap: 1.5mm; font-weight: bold; font-size: 12px; padding: 2px 0; }
+.total-label { min-width: 0; overflow-wrap: anywhere; }
+.total-amt { text-align: right; white-space: nowrap; }
+@media print { body { width: ${bodyWidth}; margin: 0 auto; } }`;
+}
 
-function printThermalReceipt(title, lines) {
-  writePrintDocument(title, lines.join(''), thermalReceiptStyle);
+function printThermalReceipt(title, lines, paperWidth) {
+  writePrintDocument(title, lines.join(''), getThermalReceiptStyle(paperWidth));
 }
 
 export function printAutoBookingReceipt(booking, cfg) {
@@ -260,6 +274,7 @@ export function saveSalesDrilldownCsv(salesDrilldown) {
 
 export function printDailySalesReceipt(dailySales, cfg = {}) {
   if (!dailySales || dailySales.items.length === 0) return;
+  const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
   const lines = [
     '<div class="thermal-logo"><img src="/wolastoq-logo.png" alt="Wolastoq Casino"></div>',
     '<div class="header">WOLASTOQ CASINO</div>',
@@ -276,24 +291,24 @@ export function printDailySalesReceipt(dailySales, cfg = {}) {
     const addonTotal = item.addons ? item.addons.reduce((sum, addon) => sum + addon.price, 0) : 0;
     const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
     lines.push(`<div class="item-row"><span class="item-qty">${escapeHtml(item.rowNum)}</span><span class="item-desc">${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</span><span class="item-amt">${escapeHtml(totalPrice)}</span></div>`);
-    lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">${escapeHtml(item.referenceNumber)} - T${escapeHtml(item.tableNumber)}/C${escapeHtml(item.chairNumber)} - ${escapeHtml(item.packageName || '')}</div>`);
+    lines.push(`<div class="detail-line">${escapeHtml(item.referenceNumber)} - T${escapeHtml(item.tableNumber)}/C${escapeHtml(item.chairNumber)} - ${escapeHtml(item.packageName || '')}</div>`);
     if (item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
-        lines.push(`<div style="font-size:10px;color:#555;padding-left:34px">+ ${escapeHtml(addon.packageName)} x${escapeHtml(addon.quantity)} (${escapeHtml(addon.priceFormatted)})</div>`);
+        lines.push(`<div class="detail-line">+ ${escapeHtml(addon.packageName)} x${escapeHtml(addon.quantity)} (${escapeHtml(addon.priceFormatted)})</div>`);
       }
     }
   }
 
   lines.push('<div class="dbl-line"></div>');
   if (dailySales.addonSubtotal > 0) {
-    lines.push(`<div class="item-row"><span class="item-desc">Packages</span><span class="item-amt">${escapeHtml(dailySales.packageSubtotalFormatted)}</span></div>`);
-    lines.push(`<div class="item-row"><span class="item-desc">Add-ons</span><span class="item-amt">${escapeHtml(dailySales.addonSubtotalFormatted)}</span></div>`);
+    lines.push(`<div class="total-row"><span class="total-label">Packages</span><span class="total-amt">${escapeHtml(dailySales.packageSubtotalFormatted)}</span></div>`);
+    lines.push(`<div class="total-row"><span class="total-label">Add-ons</span><span class="total-amt">${escapeHtml(dailySales.addonSubtotalFormatted)}</span></div>`);
     lines.push('<div class="line"></div>');
   }
-  lines.push(`<div class="total-row"><span>TOTAL (${escapeHtml(dailySales.totalTickets)} tickets, ${escapeHtml(dailySales.totalBookings)} bookings)</span><span>${escapeHtml(dailySales.grandTotalFormatted)}</span></div>`);
+  lines.push(`<div class="total-row"><span class="total-label">TOTAL (${escapeHtml(dailySales.totalTickets)} tickets, ${escapeHtml(dailySales.totalBookings)} bookings)</span><span class="total-amt">${escapeHtml(dailySales.grandTotalFormatted)}</span></div>`);
   lines.push('<div class="line"></div>');
   lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${escapeHtml(new Date().toLocaleString())}</div>`);
-  printThermalReceipt('Daily Sales', lines);
+  printThermalReceipt('Daily Sales', lines, paperWidth);
 }
 
 export function printBookingReceipt(booking) {
