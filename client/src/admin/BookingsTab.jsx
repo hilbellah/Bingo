@@ -352,7 +352,7 @@ export default function BookingsTab() {
                                 className="px-2 py-1 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
                                 title="Reprint thermal receipt"
                               >
-                                Receipt
+                                Reprint Receipt
                               </button>
                             ) : (
                               <span className="text-xs text-gray-400">-</span>
@@ -547,4 +547,3 @@ export default function BookingsTab() {
     </>
   );
 }
-

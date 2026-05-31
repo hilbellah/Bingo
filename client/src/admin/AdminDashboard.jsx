@@ -21,7 +21,6 @@ import AdminDashboardContent from './AdminDashboardContent';
 import AdminShell from './AdminShell';
 import {
   printAutoBookingReceipt,
-  printBookingReceipt as printBookingReceiptDocument,
   printDailySalesReceipt as printDailySalesReceiptDocument,
   printPurchasers,
   printSalesDrilldown,
@@ -302,7 +301,7 @@ export default function AdminDashboard() {
   };
 
   const handlePrintBookingReceipt = (booking) => {
-    printBookingReceiptDocument(booking);
+    printBookingReceipt(booking);
   };
 
   const handleReprintTransactionReceipt = async (bookingId) => {

@@ -64,9 +64,9 @@ export default function SalesDrilldownModal() {
                         <button
                           onClick={() => handlePrintBookingReceipt({...b, sessionDate: salesDrilldown.session.date, sessionTime: salesDrilldown.session.time})}
                           className="px-2 py-0.5 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
-                          title="Print thermal receipt"
+                          title="Reprint automatic thermal receipt"
                         >
-                          Receipt
+                          Reprint Receipt
                         </button>
                         {b.paymentStatus === 'paid' && (Array.isArray(b.items) ? b.items : []).every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
                           <button
@@ -145,5 +145,4 @@ export default function SalesDrilldownModal() {
     </>
   );
 }
-
 
