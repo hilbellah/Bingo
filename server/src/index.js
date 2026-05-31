@@ -256,8 +256,31 @@ app.use('/uploads', express.static(uploadsDir, {
   }
 }));
 
-// Serve static build in production
-app.use(express.static(clientBuild));
+function setAppShellNoCache(res) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+}
+
+function setStaticBuildHeaders(res, filePath) {
+  if (path.basename(filePath) === 'index.html') {
+    setAppShellNoCache(res);
+    return;
+  }
+  if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return;
+  }
+  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+}
+
+// Serve static build in production. The SPA shell is sent by explicit routes
+// below so browsers always discover the latest hashed JS bundle after deploy.
+app.use(express.static(clientBuild, {
+  index: false,
+  setHeaders: setStaticBuildHeaders,
+}));
 
 // ============ HEALTH CHECK ============
 app.get('/health', async (req, res) => {
@@ -2482,6 +2505,7 @@ app.use('/api', (req, res) => {
 
 // ============ SPA FALLBACK ============
 app.get('*', (req, res) => {
+  setAppShellNoCache(res);
   res.sendFile(path.join(clientBuild, 'index.html'));
 });
 
