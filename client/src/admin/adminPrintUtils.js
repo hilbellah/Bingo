@@ -113,6 +113,8 @@ body { font-family: 'Courier New', monospace; font-size: 12px; width: 72mm; marg
 .dbl-line { border-top: 2px solid #000; margin: 6px 0; }
 .row { display: flex; justify-content: space-between; }
 .row span:last-child { text-align: right; }
+.thermal-logo { text-align: center; margin: 0 0 2px; }
+.thermal-logo img { display: inline-block; max-width: 48mm; max-height: 14mm; object-fit: contain; filter: brightness(0); -webkit-filter: brightness(0); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
 .sub-header { font-size: 10px; text-align: center; color: #333; margin-bottom: 8px; }
 .item-row { display: flex; justify-content: space-between; padding: 1px 0; }
@@ -256,11 +258,12 @@ export function saveSalesDrilldownCsv(salesDrilldown) {
   downloadCsv(`bookings-${salesDrilldown.session.date}.csv`, rows);
 }
 
-export function printDailySalesReceipt(dailySales) {
+export function printDailySalesReceipt(dailySales, cfg = {}) {
   if (!dailySales || dailySales.items.length === 0) return;
   const lines = [
-    '<div class="header">SMEC BINGO</div>',
-    '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
+    '<div class="thermal-logo"><img src="/wolastoq-logo.png" alt="Wolastoq Casino"></div>',
+    '<div class="header">WOLASTOQ CASINO</div>',
+    `<div class="sub-header">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
     '<div class="line"></div>',
     '<div class="center bold">DAILY SALES REPORT</div>',
     `<div class="center">${escapeHtml(dailySales.date)}</div>`,

@@ -457,9 +457,9 @@ export default function BookingsTab() {
                     <button
                       onClick={handlePrintDailySalesReceipt}
                       className="px-3 py-1.5 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800"
-                      title="Print as thermal receipt"
+                      title="Print the selected day's sales as a thermal report"
                     >
-                      Receipt
+                      Print Daily Report
                     </button>
                   )}
               </div>

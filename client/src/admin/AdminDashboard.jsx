@@ -297,7 +297,7 @@ export default function AdminDashboard() {
   };
 
   const handlePrintDailySalesReceipt = () => {
-    printDailySalesReceiptDocument(dailySales);
+    printDailySalesReceiptDocument(dailySales, receiptConfigRef.current);
   };
 
   const handlePrintBookingReceipt = (booking) => {
