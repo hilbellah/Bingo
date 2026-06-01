@@ -118,6 +118,10 @@ const CHECKOUT_SERVICE_FEE_CENTS = 200;
 const startTime = Date.now();
 const bookingInitiationLocks = new Map();
 
+function isAuthorizeNetWebhookPath(req) {
+  return (req.originalUrl || req.url || '').split('?')[0] === '/api/webhooks/authorize-net';
+}
+
 function getCheckoutServiceFeeCents(attendees = []) {
   return CHECKOUT_SERVICE_FEE_CENTS * Math.max(0, attendees.length || 0);
 }
@@ -215,7 +219,7 @@ app.use('/api/webhooks/authorize-net', express.raw({
 app.use(express.json({
   limit: '1mb',
   verify: (req, res, buf) => {
-    if ((req.originalUrl || '').split('?')[0] === '/api/webhooks/authorize-net') {
+    if (isAuthorizeNetWebhookPath(req)) {
       req.rawBody = Buffer.from(buf);
     }
   }
@@ -227,6 +231,7 @@ const generalLimiter = rateLimit({
   limit: Number(process.env.RATE_LIMIT_GENERAL || 600),
   standardHeaders: true,
   legacyHeaders: false,
+  skip: isAuthorizeNetWebhookPath,
 });
 const bookingLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -240,13 +245,6 @@ const adminLoginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-const webhookLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: Number(process.env.RATE_LIMIT_WEBHOOK || 120),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
 app.use('/api', generalLimiter);
 
 // Serve uploaded files
@@ -2054,8 +2052,189 @@ app.all('/payment/cancel', async (req, res) => {
 //   net.authorize.payment.void.created          — pre-settlement void
 //   net.authorize.payment.fraud.declined        — Authorize.Net's fraud rule rejected
 //   net.authorize.payment.fraud.held            — held for manual fraud review
+async function processAuthorizeNetWebhook({ rawBody, sigHeader, event }) {
+  const { eventType, payload, notificationId } = event || {};
+  const transId = payload?.id;
+  const invoiceNumber = payload?.merchantReferenceId || payload?.invoiceNumber;
+  const signatureValid = verifyWebhookSignature(rawBody, sigHeader);
+
+  if (!invoiceNumber) {
+    console.warn(`[webhooks] event has no invoiceNumber: ${eventType}`);
+    return;
+  }
+
+  // We set Authorize.Net's invoiceNumber to our reference_number when
+  // creating the hosted page, so we can look up the booking from it.
+  const booking = await get('SELECT * FROM bookings WHERE reference_number = ?', [invoiceNumber]);
+  if (!booking) {
+    console.warn(`[webhooks] booking not found for invoiceNumber=${invoiceNumber} eventType=${eventType}`);
+    return;
+  }
+
+  if (!signatureValid) {
+    console.warn(`[webhooks] signature invalid for booking=${booking.id} ref=${invoiceNumber} eventType=${eventType}`);
+    await logPaymentEvent(booking.id, 'webhook_signature_invalid', 'authorize_net_webhook', {
+      eventType,
+      notificationId,
+      transId,
+      invoiceNumber,
+    });
+
+    if (eventType !== 'net.authorize.payment.authcapture.created' || !transId) {
+      return;
+    }
+
+    try {
+      if (booking.payment_status === 'paid' && booking.transaction_id === transId) {
+        return;
+      }
+
+      const verify = await verifyTransaction(transId);
+      if (!verify.ok) {
+        console.error(`[webhooks] invalid-signature fallback verification failed for ${eventType}: ${verify.error || 'unknown error'}`);
+        await logPaymentEvent(booking.id, 'webhook_signature_invalid_verify_error', 'authorize_net_webhook', {
+          eventType,
+          notificationId,
+          transId,
+          invoiceNumber,
+          error: verify.error || null,
+        });
+        return;
+      }
+
+      const verifiedMatch = verify.ok &&
+        verify.approved &&
+        verify.invoiceNumber === booking.reference_number &&
+        verify.amountCents === booking.total_amount;
+
+      if (!verifiedMatch) {
+        await logPaymentEvent(booking.id, 'webhook_signature_invalid_rejected', 'authorize_net_webhook', {
+          eventType,
+          notificationId,
+          transId,
+          invoiceNumber,
+          verifyOk: !!verify.ok,
+          verifyApproved: !!verify.approved,
+          verifyInvoiceNumber: verify.invoiceNumber || null,
+          verifyAmountCents: verify.amountCents ?? null,
+          error: verify.error || null,
+        });
+        return;
+      }
+
+      await logPaymentEvent(booking.id, 'webhook_signature_invalid_verified', 'authorize_net_webhook', {
+        eventType,
+        notificationId,
+        transId,
+        invoiceNumber,
+      });
+      await markBookingPaid({
+        bookingId: booking.id,
+        transactionId: transId,
+        authCode: verify.authCode,
+        source: 'authorize_net_webhook_verified_transaction',
+      });
+      return;
+    } catch (err) {
+      console.error(`[webhooks] invalid-signature fallback failed for ${eventType}:`, err?.message || err);
+      await logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
+        eventType,
+        notificationId,
+        transId,
+        invoiceNumber,
+        error: err?.message || String(err),
+      });
+      return;
+    }
+  }
+
+  // Always log the inbound event for audit / debugging.
+  await logPaymentEvent(booking.id, 'webhook', 'authorize_net_webhook', {
+    eventType, notificationId, transId, invoiceNumber,
+  });
+
+  console.log(`[webhooks] ${eventType} booking=${booking.id} ref=${invoiceNumber} transId=${transId}`);
+
+  try {
+    if (eventType === 'net.authorize.payment.authcapture.created') {
+      // Idempotent — second webhook for the same booking is a no-op.
+      if (booking.payment_status === 'paid') {
+        return;
+      }
+      // Verify the transaction with Authorize.Net before flipping. Defence
+      // in depth: the signature proves the payload is from Authorize.Net,
+      // but a redundant API lookup also confirms the transaction approved.
+      const verify = await verifyTransaction(transId);
+      if (!verify.ok) {
+        console.error(`[webhooks] transaction verification deferred for booking=${booking.id} transId=${transId}: ${verify.error || 'unknown error'}`);
+        await logPaymentEvent(booking.id, 'webhook_verify_deferred', 'authorize_net_webhook', {
+          eventType,
+          notificationId,
+          transId,
+          invoiceNumber,
+          error: verify.error || null,
+        });
+        scheduleDeferredWebhookVerification({
+          bookingId: booking.id,
+          transactionId: transId,
+          eventType,
+          notificationId,
+          invoiceNumber,
+        });
+        return;
+      }
+      if (verify.approved) {
+        await markBookingPaid({
+          bookingId: booking.id,
+          transactionId: transId,
+          authCode: verify.authCode,
+          source: 'authorize_net_webhook',
+        });
+      } else {
+        await markBookingFailed({
+          bookingId: booking.id,
+          reason: verify.error || 'transaction not approved at verify step',
+          source: 'authorize_net_webhook',
+        });
+      }
+    } else if (eventType === 'net.authorize.payment.refund.created') {
+      await markBookingRefunded({
+        bookingId: booking.id,
+        transactionId: transId,
+        source: 'authorize_net_webhook',
+      });
+    } else if (eventType === 'net.authorize.payment.void.created') {
+      await markBookingVoided({
+        bookingId: booking.id,
+        transactionId: transId,
+        source: 'authorize_net_webhook',
+      });
+    } else if (eventType === 'net.authorize.payment.fraud.declined') {
+      await markBookingFailed({
+        bookingId: booking.id,
+        reason: 'fraud_declined',
+        source: 'authorize_net_webhook',
+      });
+    } else if (eventType === 'net.authorize.payment.fraud.held') {
+      // Authorize.Net is holding this for manual fraud review. Don't flip
+      // anything yet — wait for the follow-up event (approved or declined).
+      console.log(`[webhooks] booking ${booking.id} held by Authorize.Net for fraud review`);
+    } else {
+      console.log(`[webhooks] unhandled eventType: ${eventType}`);
+    }
+  } catch (err) {
+    console.error(`[webhooks] handler error for ${eventType}:`, err?.message || err);
+    await logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
+      eventType,
+      notificationId,
+      transId,
+      invoiceNumber,
+      error: err?.message || String(err),
+    });
+  }
+}
+
 app.post('/api/webhooks/authorize-net',
-  webhookLimiter,
   async (req, res) => {
     const rawBody = Buffer.isBuffer(req.rawBody)
       ? req.rawBody
@@ -2069,7 +2248,6 @@ app.post('/api/webhooks/authorize-net',
       return res.status(400).end();
     }
 
-    // Parse the payload
     let event;
     try {
       event = JSON.parse(rawBody.toString('utf8'));
@@ -2078,188 +2256,13 @@ app.post('/api/webhooks/authorize-net',
       return res.status(400).end();
     }
 
-    const { eventType, payload, notificationId } = event || {};
-    const transId = payload?.id;
-    const invoiceNumber = payload?.merchantReferenceId || payload?.invoiceNumber;
-    const signatureValid = verifyWebhookSignature(rawBody, sigHeader);
+    // Authorize.Net disables webhooks after repeated non-200 deliveries.
+    // Acknowledge receipt before database/API/email processing.
+    res.status(200).end();
 
-    if (!invoiceNumber) {
-      console.warn(`[webhooks] event has no invoiceNumber: ${eventType}`);
-      return res.status(200).end(); // ack so Authorize.Net stops retrying
-    }
-
-    // We set Authorize.Net's invoiceNumber to our reference_number when
-    // creating the hosted page, so we can look up the booking from it.
-    const booking = await get('SELECT * FROM bookings WHERE reference_number = ?', [invoiceNumber]);
-    if (!booking) {
-      console.warn(`[webhooks] booking not found for invoiceNumber=${invoiceNumber} eventType=${eventType}`);
-      return res.status(200).end(); // ack so Authorize.Net stops retrying
-    }
-
-    if (!signatureValid) {
-      console.warn(`[webhooks] signature invalid for booking=${booking.id} ref=${invoiceNumber} eventType=${eventType}`);
-      await logPaymentEvent(booking.id, 'webhook_signature_invalid', 'authorize_net_webhook', {
-        eventType,
-        notificationId,
-        transId,
-        invoiceNumber,
-      });
-
-      if (eventType !== 'net.authorize.payment.authcapture.created' || !transId) {
-        return res.status(401).end();
-      }
-
-      try {
-        if (booking.payment_status === 'paid' && booking.transaction_id === transId) {
-          return res.status(200).end();
-        }
-
-        const verify = await verifyTransaction(transId);
-        if (!verify.ok) {
-          console.error(`[webhooks] invalid-signature fallback verification failed for ${eventType}: ${verify.error || 'unknown error'}`);
-          await logPaymentEvent(booking.id, 'webhook_signature_invalid_verify_error', 'authorize_net_webhook', {
-            eventType,
-            notificationId,
-            transId,
-            invoiceNumber,
-            error: verify.error || null,
-          });
-          return res.status(500).end();
-        }
-
-        const verifiedMatch = verify.ok &&
-          verify.approved &&
-          verify.invoiceNumber === booking.reference_number &&
-          verify.amountCents === booking.total_amount;
-
-        if (!verifiedMatch) {
-          await logPaymentEvent(booking.id, 'webhook_signature_invalid_rejected', 'authorize_net_webhook', {
-            eventType,
-            notificationId,
-            transId,
-            invoiceNumber,
-            verifyOk: !!verify.ok,
-            verifyApproved: !!verify.approved,
-            verifyInvoiceNumber: verify.invoiceNumber || null,
-            verifyAmountCents: verify.amountCents ?? null,
-            error: verify.error || null,
-          });
-          return res.status(401).end();
-        }
-
-        await logPaymentEvent(booking.id, 'webhook_signature_invalid_verified', 'authorize_net_webhook', {
-          eventType,
-          notificationId,
-          transId,
-          invoiceNumber,
-        });
-        await markBookingPaid({
-          bookingId: booking.id,
-          transactionId: transId,
-          authCode: verify.authCode,
-          source: 'authorize_net_webhook_verified_transaction',
-        });
-        return res.status(200).end();
-      } catch (err) {
-        console.error(`[webhooks] invalid-signature fallback failed for ${eventType}:`, err?.message || err);
-        await logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
-          eventType,
-          notificationId,
-          transId,
-          invoiceNumber,
-          error: err?.message || String(err),
-        });
-        return res.status(500).end();
-      }
-    }
-
-    // Always log the inbound event for audit / debugging
-    await logPaymentEvent(booking.id, 'webhook', 'authorize_net_webhook', {
-      eventType, notificationId, transId, invoiceNumber,
+    processAuthorizeNetWebhook({ rawBody, sigHeader, event }).catch((err) => {
+      console.error('[webhooks] async handler failed:', err?.message || err);
     });
-
-    console.log(`[webhooks] ${eventType} booking=${booking.id} ref=${invoiceNumber} transId=${transId}`);
-
-    try {
-      if (eventType === 'net.authorize.payment.authcapture.created') {
-        // Idempotent — second webhook for the same booking is a no-op
-        if (booking.payment_status === 'paid') {
-          return res.status(200).end();
-        }
-        // Verify the transaction with Authorize.Net before flipping. Defence
-        // in depth: the signature proves the payload is from Authorize.Net,
-        // but a redundant API lookup also confirms the transaction approved.
-        const verify = await verifyTransaction(transId);
-        if (!verify.ok) {
-          console.error(`[webhooks] transaction verification deferred for booking=${booking.id} transId=${transId}: ${verify.error || 'unknown error'}`);
-          await logPaymentEvent(booking.id, 'webhook_verify_deferred', 'authorize_net_webhook', {
-            eventType,
-            notificationId,
-            transId,
-            invoiceNumber,
-            error: verify.error || null,
-          });
-          scheduleDeferredWebhookVerification({
-            bookingId: booking.id,
-            transactionId: transId,
-            eventType,
-            notificationId,
-            invoiceNumber,
-          });
-          return res.status(200).end();
-        }
-        if (verify.approved) {
-          await markBookingPaid({
-            bookingId: booking.id,
-            transactionId: transId,
-            authCode: verify.authCode,
-            source: 'authorize_net_webhook',
-          });
-        } else {
-          await markBookingFailed({
-            bookingId: booking.id,
-            reason: verify.error || 'transaction not approved at verify step',
-            source: 'authorize_net_webhook',
-          });
-        }
-      } else if (eventType === 'net.authorize.payment.refund.created') {
-        await markBookingRefunded({
-          bookingId: booking.id,
-          transactionId: transId,
-          source: 'authorize_net_webhook',
-        });
-      } else if (eventType === 'net.authorize.payment.void.created') {
-        await markBookingVoided({
-          bookingId: booking.id,
-          transactionId: transId,
-          source: 'authorize_net_webhook',
-        });
-      } else if (eventType === 'net.authorize.payment.fraud.declined') {
-        await markBookingFailed({
-          bookingId: booking.id,
-          reason: 'fraud_declined',
-          source: 'authorize_net_webhook',
-        });
-      } else if (eventType === 'net.authorize.payment.fraud.held') {
-        // Authorize.Net is holding this for manual fraud review. Don't flip
-        // anything yet — wait for the follow-up event (approved or declined).
-        console.log(`[webhooks] booking ${booking.id} held by Authorize.Net for fraud review`);
-      } else {
-        console.log(`[webhooks] unhandled eventType: ${eventType}`);
-      }
-    } catch (err) {
-      console.error(`[webhooks] handler error for ${eventType}:`, err?.message || err);
-      await logPaymentEvent(booking.id, 'webhook_error', 'authorize_net_webhook', {
-        eventType,
-        notificationId,
-        transId,
-        invoiceNumber,
-        error: err?.message || String(err),
-      });
-      return res.status(500).end();
-    }
-
-    return res.status(200).end();
   }
 );
 
