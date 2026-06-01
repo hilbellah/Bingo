@@ -37,6 +37,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
     const departmentPlaceholders = requestedDepartments.map(() => '?').join(',');
     const rows = await all(`
       SELECT b.id as booking_id, b.reference_number, b.total_amount, b.payment_status,
+             b.created_at as booking_created_at,
              s.id as session_id, s.date as session_date, s.time as session_time
              ${specialCols},
              bi.first_name, bi.last_name, bi.price as item_price,
@@ -52,9 +53,33 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
       LEFT JOIN packages p ON p.id = bi.package_id
       LEFT JOIN session_packages sp ON sp.id = bi.package_id
       WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'
+        AND s.deleted_at IS NULL
         ${hasSpecialEvent ? `AND ${sessionTypeSql('s')} IN (${departmentPlaceholders})` : 'AND 1 = 0'}
       ORDER BY s.date ASC, s.time ASC, b.reference_number, seats.table_number, seats.chair_number
     `, hasSpecialEvent ? [dateFrom, endDate, ...requestedDepartments] : [dateFrom, endDate]);
+
+    const itemIds = rows.map(row => row.booking_item_id);
+    const addonRows = itemIds.length > 0
+      ? await all(`
+        SELECT ba.booking_item_id, ba.quantity, ba.price,
+               COALESCE(p.name, sp.name) as package_name
+        FROM booking_addons ba
+        LEFT JOIN packages p ON p.id = ba.package_id
+        LEFT JOIN session_packages sp ON sp.id = ba.package_id
+        WHERE ba.booking_item_id IN (${itemIds.map(() => '?').join(',')})
+        ORDER BY ba.id
+      `, itemIds)
+      : [];
+    const addonsByItemId = addonRows.reduce((map, addon) => {
+      if (!map[addon.booking_item_id]) map[addon.booking_item_id] = [];
+      map[addon.booking_item_id].push({
+        packageName: addon.package_name,
+        quantity: addon.quantity,
+        price: addon.price,
+        priceFormatted: '$' + formatPrice(addon.price),
+      });
+      return map;
+    }, {});
 
     const sessions = {};
     for (const row of rows) {
@@ -72,9 +97,11 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
       const session = sessions[row.session_id];
       if (!session.bookings[row.booking_id]) {
         session.bookings[row.booking_id] = {
+          id: row.booking_id,
           referenceNumber: row.reference_number,
           totalAmount: row.total_amount,
           totalFormatted: '$' + formatPrice(row.total_amount),
+          createdAt: row.booking_created_at,
           tickets: []
         };
       }
@@ -88,7 +115,8 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
         printedAt: row.item_printed_at || null,
         packageName: row.package_name,
         packagePrice: row.package_price,
-        packagePriceFormatted: '$' + formatPrice(row.package_price)
+        packagePriceFormatted: '$' + formatPrice(row.package_price),
+        addons: addonsByItemId[row.booking_item_id] || []
       });
     }
 

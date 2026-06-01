@@ -16,10 +16,10 @@ function writePrintDocument(title, body, style) {
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
   frame.style.position = 'fixed';
-  frame.style.right = '0';
-  frame.style.bottom = '0';
-  frame.style.width = '0';
-  frame.style.height = '0';
+  frame.style.left = '-10000px';
+  frame.style.top = '0';
+  frame.style.width = '1px';
+  frame.style.height = '1px';
   frame.style.border = '0';
   frame.style.opacity = '0';
 
@@ -142,9 +142,8 @@ function printThermalReceipt(title, lines, paperWidth) {
   writePrintDocument(title, lines.join(''), getThermalReceiptStyle(paperWidth));
 }
 
-export function printAutoBookingReceipt(booking, cfg) {
+function buildAutoBookingReceiptLines(booking, cfg = {}) {
   const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
-  const bodyWidth = paperWidth === '58mm' ? '50mm' : '72mm';
   const receiptTitle = getReceiptTitle(booking, cfg.receiptTitle);
   const formatUnitPrice = (price, quantity = 1, fallback = '') => {
     const cents = Number(price || 0);
@@ -164,14 +163,14 @@ export function printAutoBookingReceipt(booking, cfg) {
   for (const item of booking.items || []) {
     const itemRows = [
       {
-        label: packageLabel(formatUnitPrice(item.packagePrice, 1, item.packagePriceFormatted), item.packageName),
+        label: packageLabel(cfg.showPackagePrice === false ? '' : formatUnitPrice(item.packagePrice, 1, item.packagePriceFormatted), item.packageName),
         quantity: 1,
       },
     ];
     if (cfg.showAddons && item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
         itemRows.push({
-          label: packageLabel(formatUnitPrice(addon.price, addon.quantity, addon.priceFormatted), addon.packageName),
+          label: packageLabel(cfg.showPackagePrice === false ? '' : formatUnitPrice(addon.price, addon.quantity, addon.priceFormatted), addon.packageName),
           quantity: addon.quantity,
         });
       }
@@ -180,8 +179,10 @@ export function printAutoBookingReceipt(booking, cfg) {
     lines.push('<table class="legacy-receipt">');
     lines.push('<colgroup><col class="label-col"><col class="item-col"><col class="qty-col"></colgroup>');
     lines.push(`<tr><th>NAME</th><td colspan="2" class="code-blue">: ${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</td></tr>`);
-    lines.push(`<tr><th>BOOKING NO.</th><td colspan="2" class="code-red">: ${escapeHtml(booking.referenceNumber)}</td></tr>`);
-    if (item.referenceNumber) {
+    if (cfg.showRefNumber !== false) {
+      lines.push(`<tr><th>BOOKING NO.</th><td colspan="2" class="code-red">: ${escapeHtml(booking.referenceNumber)}</td></tr>`);
+    }
+    if (cfg.showRefNumber !== false && item.referenceNumber) {
       lines.push(`<tr><th>TICKET NO.</th><td colspan="2" class="code-red">: ${escapeHtml(item.referenceNumber)}</td></tr>`);
     }
     lines.push(`<tr><th>PLAY DATE</th><td colspan="2" class="code-blue">: ${escapeHtml(booking.sessionDate)} ${escapeHtml(booking.sessionTime || '')}</td></tr>`);
@@ -204,7 +205,12 @@ export function printAutoBookingReceipt(booking, cfg) {
     lines.push(`<div class="receipt-footer">${escapeHtml(new Date(booking.createdAt).toLocaleString())}</div>`);
   }
 
-  const style = `@page { size: ${paperWidth} auto; margin: 0; }
+  return { lines, paperWidth };
+}
+
+function getAutoBookingReceiptStyle(paperWidth) {
+  const bodyWidth = paperWidth === '58mm' ? '50mm' : '72mm';
+  return `@page { size: ${paperWidth} auto; margin: 0; }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 700; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.15; }
 .receipt-logo { text-align: center; margin: 0 0 2px; }
 .receipt-logo img { display: inline-block; max-width: 48mm; max-height: 14mm; object-fit: contain; filter: brightness(0); -webkit-filter: brightness(0); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -225,9 +231,24 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 
 .code-red { color: #ef2b24; }
 .legacy-total { border-left: 1.5px solid #000; border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; margin: -6px 0 8px; padding: 6px 4px 8px; text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; page-break-inside: avoid; }
 .legacy-total strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
+.bulk-receipt-break { break-after: page; page-break-after: always; height: 0; }
 @media print { body { width: ${bodyWidth}; margin: 0 auto; } }`;
+}
 
-  writePrintDocument('Receipt', lines.join(''), style);
+export function printAutoBookingReceipt(booking, cfg) {
+  const { lines, paperWidth } = buildAutoBookingReceiptLines(booking, cfg);
+  writePrintDocument('Receipt', lines.join(''), getAutoBookingReceiptStyle(paperWidth));
+}
+
+export function printBulkBookingReceipts(bookings, cfg) {
+  if (!Array.isArray(bookings) || bookings.length === 0) return;
+  const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
+  const body = bookings.map((booking, index) => {
+    const receipt = buildAutoBookingReceiptLines(booking, { ...cfg, paperWidth });
+    const separator = index < bookings.length - 1 ? '<div class="bulk-receipt-break"></div>' : '';
+    return receipt.lines.join('') + separator;
+  }).join('');
+  writePrintDocument('Bulk Receipts', body, getAutoBookingReceiptStyle(paperWidth));
 }
 
 export function printPurchasers(soldModal) {

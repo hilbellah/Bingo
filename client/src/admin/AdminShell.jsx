@@ -191,7 +191,7 @@ export default function AdminShell({
 
   return (
     <div className="min-h-screen bg-brand-light flex">
-      <aside className={`bg-brand-blue text-white flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'} min-h-screen`}>
+      <aside className={`no-print bg-brand-blue text-white flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'} min-h-screen`}>
         <div className="p-4 border-b border-white/10">
           {!collapsed && (
             <>
@@ -234,7 +234,7 @@ export default function AdminShell({
       </aside>
 
       <div className="flex-1 flex flex-col min-h-screen overflow-auto">
-        <header className="bg-white border-b px-6 py-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <header className="no-print bg-white border-b px-6 py-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h2 className="text-lg font-bold text-brand-blue">{headerLabel}</h2>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <VenueClock tone="light" />

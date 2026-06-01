@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { markAdminBulkTicketsPrinted } from '../api';
+import { markAdminBulkTicketsPrinted, saveSettings } from '../api';
+import { printBulkBookingReceipts } from './adminPrintUtils';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { confirmAdminAction } from './adminConfirm';
 
@@ -24,6 +25,8 @@ export default function BulkPrintTab() {
     handleLoadBulkTickets,
     bulkData,
     setBulkData,
+    receiptConfig,
+    setReceiptConfig,
     token,
   } = useAdminDashboard();
 
@@ -31,6 +34,7 @@ export default function BulkPrintTab() {
   const [selectedTicketIds, setSelectedTicketIds] = useState(new Set());
   const [printParts, setPrintParts] = useState({ nameCopy: true, seatCopy: true });
   const [markingPrinted, setMarkingPrinted] = useState(false);
+  const [receiptSettingsSaving, setReceiptSettingsSaving] = useState(false);
 
   const selectedDepartments = useMemo(() => {
     if (!bulkDepartment || bulkDepartment === 'all') return DEPARTMENT_OPTIONS.map(option => option.value);
@@ -70,6 +74,60 @@ export default function BulkPrintTab() {
   const hasPrintableSelectedTickets = selectedTickets.some(ticket =>
     ticket.sessionType === 'event' || printParts.nameCopy || printParts.seatCopy
   );
+  const selectedReceiptBookings = useMemo(() => {
+    if (!bulkData?.sessions || selectedTicketIds.size === 0) return [];
+    const formatMoney = (cents) => '$' + (Math.max(0, Number(cents) || 0) / 100).toFixed(2);
+    const receiptBookings = [];
+
+    for (const session of bulkData.sessions) {
+      for (const booking of session.bookings || []) {
+        const selectedItems = (booking.tickets || []).filter(ticket => selectedTicketIds.has(ticket.id));
+        if (selectedItems.length === 0) continue;
+
+        const allItemsSubtotal = (booking.tickets || []).reduce((sum, ticket) => {
+          const addonTotal = (ticket.addons || []).reduce((addonSum, addon) => addonSum + (Number(addon.price) || 0), 0);
+          return sum + (Number(ticket.packagePrice) || 0) + addonTotal;
+        }, 0);
+        const feePerTicket = booking.tickets?.length
+          ? Math.max(0, Math.round(((Number(booking.totalAmount) || 0) - allItemsSubtotal) / booking.tickets.length))
+          : 0;
+        const totalAmount = selectedItems.reduce((sum, ticket) => {
+          const addonTotal = (ticket.addons || []).reduce((addonSum, addon) => addonSum + (Number(addon.price) || 0), 0);
+          return sum + (Number(ticket.packagePrice) || 0) + addonTotal + feePerTicket;
+        }, 0);
+        const sessionType = session.sessionType || (session.isSpecialEvent ? 'special_bingo' : 'regular_bingo');
+        const sessionTitle = session.eventTitle
+          || (sessionType === 'event' ? 'Live Event / Venue' : sessionType === 'special_bingo' ? 'Special Bingo' : 'Regular Bingo');
+
+        receiptBookings.push({
+          id: booking.id,
+          referenceNumber: booking.referenceNumber,
+          totalAmount,
+          totalFormatted: formatMoney(totalAmount),
+          paymentStatus: 'paid',
+          createdAt: booking.createdAt || new Date().toISOString(),
+          sessionDate: session.sessionDate,
+          sessionTime: session.sessionTime,
+          sessionTitle,
+          sessionType,
+          items: selectedItems.map(ticket => ({
+            id: ticket.id,
+            firstName: ticket.firstName,
+            lastName: ticket.lastName,
+            tableNumber: ticket.tableNumber,
+            chairNumber: ticket.chairNumber,
+            referenceNumber: ticket.referenceNumber,
+            packageName: ticket.packageName,
+            packagePrice: ticket.packagePrice,
+            packagePriceFormatted: ticket.packagePriceFormatted,
+            addons: ticket.addons || [],
+          })),
+        });
+      }
+    }
+
+    return receiptBookings;
+  }, [bulkData, selectedTicketIds]);
 
   const printedCount = allTickets.filter(ticket => ticket.printedAt).length;
   const unprintedCount = allTickets.length - printedCount;
@@ -117,6 +175,21 @@ export default function BulkPrintTab() {
 
   const togglePrintPart = (part) => {
     setPrintParts(prev => ({ ...prev, [part]: !prev[part] }));
+  };
+
+  const updateReceiptConfig = (patch) => {
+    setReceiptConfig({ ...receiptConfig, ...patch });
+  };
+
+  const handleSaveReceiptSettings = async () => {
+    setReceiptSettingsSaving(true);
+    await saveSettings(token, 'receipt_config', receiptConfig);
+    setReceiptSettingsSaving(false);
+  };
+
+  const handlePrintThermalReceipts = () => {
+    if (selectedReceiptBookings.length === 0) return;
+    printBulkBookingReceipts(selectedReceiptBookings, receiptConfig);
   };
 
   const handleMarkPrinted = async () => {
@@ -181,6 +254,13 @@ export default function BulkPrintTab() {
                     disabled={!hasPrintableSelectedTickets}
                     className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-blue/90">
                     Print Selected ({selectedTickets.length})
+                  </button>
+                )}
+                {bulkData && bulkData.totalTickets > 0 && (
+                  <button onClick={handlePrintThermalReceipts}
+                    disabled={selectedReceiptBookings.length === 0}
+                    className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-black disabled:opacity-40">
+                    Print Receipts ({selectedReceiptBookings.length})
                   </button>
                 )}
               </div>
@@ -258,6 +338,60 @@ export default function BulkPrintTab() {
                       />
                       Seat copy
                     </label>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl p-4 shadow-sm mb-4 no-print">
+                  <div className="flex flex-wrap justify-between gap-3 items-start">
+                    <div>
+                      <p className="text-sm font-semibold text-brand-blue mb-1">Thermal Receipts</p>
+                      <p className="text-xs text-gray-500">
+                        Receipt print uses the selected tickets and groups them by booking.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handlePrintThermalReceipts}
+                      disabled={selectedReceiptBookings.length === 0}
+                      className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-40"
+                    >
+                      Print Receipts ({selectedReceiptBookings.length})
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-4 items-center">
+                    <label className="text-sm text-gray-700">
+                      <span className="block text-xs text-gray-400 mb-1">Paper Width</span>
+                      <select
+                        value={receiptConfig.paperWidth}
+                        onChange={e => updateReceiptConfig({ paperWidth: e.target.value })}
+                        className="px-3 py-2 border rounded-lg text-sm"
+                      >
+                        <option value="58mm">58mm</option>
+                        <option value="80mm">80mm</option>
+                      </select>
+                    </label>
+                    {[
+                      { key: 'showRefNumber', label: 'References' },
+                      { key: 'showTableChair', label: 'Table / Seat' },
+                      { key: 'showPackagePrice', label: 'Prices' },
+                      { key: 'showAddons', label: 'Add-ons' },
+                      { key: 'showTimestamp', label: 'Timestamp' },
+                    ].map(option => (
+                      <label key={option.key} className="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={receiptConfig[option.key]}
+                          onChange={e => updateReceiptConfig({ [option.key]: e.target.checked })}
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                    <button
+                      onClick={handleSaveReceiptSettings}
+                      disabled={receiptSettingsSaving}
+                      className="px-3 py-2 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-40"
+                    >
+                      {receiptSettingsSaving ? 'Saving...' : 'Save Settings'}
+                    </button>
                   </div>
                 </div>
 
