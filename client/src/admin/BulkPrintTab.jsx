@@ -252,14 +252,14 @@ export default function BulkPrintTab() {
                   <button onClick={() => window.print()}
                     disabled={!hasPrintableSelectedTickets}
                     className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-blue/90">
-                    Print Selected ({selectedTickets.length})
+                    Print Special Paper ({selectedTickets.length})
                   </button>
                 )}
                 {bulkData && bulkData.totalTickets > 0 && (
                   <button onClick={handlePrintThermalReceipts}
                     disabled={selectedReceiptBookings.length === 0}
                     className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-black disabled:opacity-40">
-                    Print Receipts ({selectedReceiptBookings.length})
+                    Print Thermal Copy ({selectedReceiptBookings.length})
                   </button>
                 )}
               </div>
@@ -319,7 +319,7 @@ export default function BulkPrintTab() {
                 </div>
 
                 <div className="bg-white rounded-xl p-4 shadow-sm mb-4 no-print">
-                  <p className="text-sm font-semibold text-brand-blue mb-2">Regular / Special Bingo Copies</p>
+                  <p className="text-sm font-semibold text-brand-blue mb-2">Special Paper Print</p>
                   <div className="flex flex-wrap gap-3">
                     <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                       <input
@@ -343,9 +343,9 @@ export default function BulkPrintTab() {
                 <div className="bg-white rounded-xl p-4 shadow-sm mb-4 no-print">
                   <div className="flex flex-wrap justify-between gap-3 items-start">
                     <div>
-                      <p className="text-sm font-semibold text-brand-blue mb-1">Thermal Receipts</p>
+                      <p className="text-sm font-semibold text-brand-blue mb-1">Thermal Copy Print</p>
                       <p className="text-xs text-gray-500">
-                        Receipt print uses the selected tickets and groups them by booking.
+                        Thermal copy uses the selected tickets and groups them by booking.
                       </p>
                     </div>
                     <button
@@ -353,7 +353,7 @@ export default function BulkPrintTab() {
                       disabled={selectedReceiptBookings.length === 0}
                       className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-40"
                     >
-                      Print Receipts ({selectedReceiptBookings.length})
+                      Print Thermal Copy ({selectedReceiptBookings.length})
                     </button>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-4 items-center">
