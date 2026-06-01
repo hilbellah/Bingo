@@ -3,6 +3,19 @@ import { adminAuth } from '../middleware/adminAuth.js';
 import { sessionTypeSql } from '../services/sessionPackages.js';
 import { formatPrice } from '../utils/format.js';
 
+const BULK_PRINT_SESSION_TYPES = ['regular_bingo', 'special_bingo', 'event'];
+
+function parseRequestedDepartments(value) {
+  const rawValues = String(value || 'all')
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  if (rawValues.length === 0 || rawValues.includes('all')) return BULK_PRINT_SESSION_TYPES;
+  const selected = rawValues.filter(value => BULK_PRINT_SESSION_TYPES.includes(value));
+  return selected.length > 0 ? [...new Set(selected)] : BULK_PRINT_SESSION_TYPES;
+}
+
 export function registerAdminBulkTicketRoutes(app, { logAudit }) {
   app.get('/api/admin/bookings/bulk-tickets', adminAuth, async (req, res) => {
     try {
@@ -10,7 +23,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
     if (!dateFrom) return res.status(400).json({ error: 'dateFrom query parameter required' });
 
     const endDate = dateTo || dateFrom;
-    const requestedDepartment = req.query.department === 'event' ? 'event' : 'special_bingo';
+    const requestedDepartments = parseRequestedDepartments(req.query.department);
 
     let hasSpecialEvent = false;
     try {
@@ -21,6 +34,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
     }
 
     const specialCols = hasSpecialEvent ? `, s.is_special_event, s.event_title, ${sessionTypeSql('s')} as session_type` : '';
+    const departmentPlaceholders = requestedDepartments.map(() => '?').join(',');
     const rows = await all(`
       SELECT b.id as booking_id, b.reference_number, b.total_amount, b.payment_status,
              s.id as session_id, s.date as session_date, s.time as session_time
@@ -38,9 +52,9 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
       LEFT JOIN packages p ON p.id = bi.package_id
       LEFT JOIN session_packages sp ON sp.id = bi.package_id
       WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'
-        ${hasSpecialEvent ? `AND ${sessionTypeSql('s')} = ?` : 'AND 1 = 0'}
+        ${hasSpecialEvent ? `AND ${sessionTypeSql('s')} IN (${departmentPlaceholders})` : 'AND 1 = 0'}
       ORDER BY s.date ASC, s.time ASC, b.reference_number, seats.table_number, seats.chair_number
-    `, hasSpecialEvent ? [dateFrom, endDate, requestedDepartment] : [dateFrom, endDate]);
+    `, hasSpecialEvent ? [dateFrom, endDate, ...requestedDepartments] : [dateFrom, endDate]);
 
     const sessions = {};
     for (const row of rows) {
@@ -88,7 +102,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
       dateFrom,
       dateTo: endDate,
       printMode: 'template',
-      department: requestedDepartment,
+      departments: requestedDepartments,
       sessions: result,
       totalTickets
     });
@@ -120,7 +134,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
            FROM bookings b
            JOIN sessions s ON s.id = b.session_id
            WHERE b.payment_status = 'paid'
-             AND ${sessionTypeSql('s')} IN ('special_bingo', 'event')
+             AND ${sessionTypeSql('s')} IN ('regular_bingo', 'special_bingo', 'event')
              AND s.deleted_at IS NULL
          )`,
       [now, ...uniqueIds]

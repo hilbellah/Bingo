@@ -3,6 +3,12 @@ import { markAdminBulkTicketsPrinted } from '../api';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { confirmAdminAction } from './adminConfirm';
 
+const DEPARTMENT_OPTIONS = [
+  { value: 'regular_bingo', label: 'Regular Bingo' },
+  { value: 'special_bingo', label: 'Special Bingo' },
+  { value: 'event', label: 'Live Event / Venue' },
+];
+
 export default function BulkPrintTab() {
   const {
     tab,
@@ -23,7 +29,14 @@ export default function BulkPrintTab() {
 
   const [printFilter, setPrintFilter] = useState('unprinted');
   const [selectedTicketIds, setSelectedTicketIds] = useState(new Set());
+  const [printParts, setPrintParts] = useState({ nameCopy: true, seatCopy: true });
   const [markingPrinted, setMarkingPrinted] = useState(false);
+
+  const selectedDepartments = useMemo(() => {
+    if (!bulkDepartment || bulkDepartment === 'all') return DEPARTMENT_OPTIONS.map(option => option.value);
+    const selected = String(bulkDepartment).split(',').filter(Boolean);
+    return selected.length > 0 ? selected : DEPARTMENT_OPTIONS.map(option => option.value);
+  }, [bulkDepartment]);
 
   const allTickets = useMemo(() => {
     if (!bulkData?.sessions) return [];
@@ -35,6 +48,7 @@ export default function BulkPrintTab() {
           sessionDate: session.sessionDate,
           sessionTime: session.sessionTime,
           isSpecialEvent: session.isSpecialEvent,
+          sessionType: session.sessionType,
           eventTitle: session.eventTitle,
           bookingReferenceNumber: booking.referenceNumber,
           referenceNumber: ticket.referenceNumber || booking.referenceNumber,
@@ -53,11 +67,18 @@ export default function BulkPrintTab() {
     () => visibleTickets.filter(ticket => selectedTicketIds.has(ticket.id)),
     [visibleTickets, selectedTicketIds]
   );
+  const hasPrintableSelectedTickets = selectedTickets.some(ticket =>
+    ticket.sessionType === 'event' || printParts.nameCopy || printParts.seatCopy
+  );
 
   const printedCount = allTickets.filter(ticket => ticket.printedAt).length;
   const unprintedCount = allTickets.length - printedCount;
-  const isEventPrint = bulkDepartment === 'event';
-  const departmentLabel = isEventPrint ? 'Live Event / Venue' : 'Special Bingo';
+  const departmentLabel = selectedDepartments.length === DEPARTMENT_OPTIONS.length
+    ? 'All Departments'
+    : DEPARTMENT_OPTIONS
+      .filter(option => selectedDepartments.includes(option.value))
+      .map(option => option.label)
+      .join(', ');
 
   useEffect(() => {
     const defaultTickets = allTickets.filter(ticket => !ticket.printedAt);
@@ -86,6 +107,18 @@ export default function BulkPrintTab() {
     });
   };
 
+  const toggleDepartment = (department) => {
+    const next = selectedDepartments.includes(department)
+      ? selectedDepartments.filter(value => value !== department)
+      : [...selectedDepartments, department];
+    setBulkDepartment(next.length === DEPARTMENT_OPTIONS.length ? 'all' : next.join(',') || 'all');
+    setBulkData(null);
+  };
+
+  const togglePrintPart = (part) => {
+    setPrintParts(prev => ({ ...prev, [part]: !prev[part] }));
+  };
+
   const handleMarkPrinted = async () => {
     if (selectedTickets.length === 0) return;
     if (!confirmAdminAction({
@@ -109,24 +142,25 @@ export default function BulkPrintTab() {
         {tab === 'bulkprint' && (
           <div>
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4 no-print">
-              <h3 className="font-semibold text-brand-blue mb-3">{departmentLabel} Template Tickets</h3>
+              <h3 className="font-semibold text-brand-blue mb-3">Bulk Print Tickets</h3>
               <p className="text-sm text-gray-500 mb-4">
-                Select a date or date range to load template tickets. Special bingo prints 3 per sheet; live events / venues print 6 per sheet. Regular bingo orders print on receipt paper and are not included here.
+                Select a date or date range to load paid tickets. Regular and special bingo print 3 per sheet; live events / venues print 6 per sheet.
               </p>
               <div className="flex flex-wrap gap-3 items-end">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Department</label>
-                  <select
-                    value={bulkDepartment}
-                    onChange={e => {
-                      setBulkDepartment(e.target.value);
-                      setBulkData(null);
-                    }}
-                    className="px-3 py-2 border rounded-lg text-sm"
-                  >
-                    <option value="special_bingo">Special Bingo</option>
-                    <option value="event">Live Event / Venue</option>
-                  </select>
+                <div className="min-w-[260px]">
+                  <label className="block text-xs text-gray-400 mb-1">Departments</label>
+                  <div className="flex flex-wrap gap-2">
+                    {DEPARTMENT_OPTIONS.map(option => (
+                      <label key={option.value} className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg text-sm bg-white">
+                        <input
+                          type="checkbox"
+                          checked={selectedDepartments.includes(option.value)}
+                          onChange={() => toggleDepartment(option.value)}
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">From Date</label>
@@ -144,7 +178,7 @@ export default function BulkPrintTab() {
                 </button>
                 {bulkData && bulkData.totalTickets > 0 && (
                   <button onClick={() => window.print()}
-                    disabled={selectedTickets.length === 0}
+                    disabled={!hasPrintableSelectedTickets}
                     className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-blue/90">
                     Print Selected ({selectedTickets.length})
                   </button>
@@ -160,7 +194,7 @@ export default function BulkPrintTab() {
 
             {bulkData && !bulkData.error && bulkData.totalTickets === 0 && (
               <div className="bg-white rounded-xl p-8 shadow-sm text-center">
-                <p className="text-gray-400">No paid {departmentLabel.toLowerCase()} template tickets found for the selected date range.</p>
+                <p className="text-gray-400">No paid {departmentLabel.toLowerCase()} tickets found for the selected date range.</p>
               </div>
             )}
 
@@ -170,12 +204,12 @@ export default function BulkPrintTab() {
                   <div className="flex flex-wrap justify-between gap-3 items-start">
                     <div>
                       <p className="text-sm text-gray-600">
-                        <span className="font-semibold text-brand-blue">{bulkData.totalTickets}</span> template ticket(s) across{' '}
+                        <span className="font-semibold text-brand-blue">{bulkData.totalTickets}</span> ticket(s) across{' '}
                         <span className="font-semibold">{bulkData.sessions.length}</span> session(s) from{' '}
                         <span className="font-medium">{bulkData.dateFrom}</span> to <span className="font-medium">{bulkData.dateTo}</span>
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        {unprintedCount} unprinted / {printedCount} printed. Selected: {selectedTickets.length}.
+                        {departmentLabel}. {unprintedCount} unprinted / {printedCount} printed. Selected: {selectedTickets.length}.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2 items-center">
@@ -202,6 +236,28 @@ export default function BulkPrintTab() {
                         {markingPrinted ? 'Marking...' : 'Mark Selected Printed'}
                       </button>
                     </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl p-4 shadow-sm mb-4 no-print">
+                  <p className="text-sm font-semibold text-brand-blue mb-2">Regular / Special Bingo Copies</p>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={printParts.nameCopy}
+                        onChange={() => togglePrintPart('nameCopy')}
+                      />
+                      Name copy
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={printParts.seatCopy}
+                        onChange={() => togglePrintPart('seatCopy')}
+                      />
+                      Seat copy
+                    </label>
                   </div>
                 </div>
 
@@ -260,7 +316,9 @@ export default function BulkPrintTab() {
                   const sessionTickets = selectedTickets.filter(ticket => ticket.sessionId === session.sessionId);
                   if (sessionTickets.length === 0) return null;
 
-                  const ticketsPerPage = isEventPrint ? 6 : 3;
+                  const isEventSession = session.sessionType === 'event';
+                  if (!isEventSession && !printParts.nameCopy && !printParts.seatCopy) return null;
+                  const ticketsPerPage = isEventSession ? 6 : 3;
                   const pages = [];
                   for (let i = 0; i < sessionTickets.length; i += ticketsPerPage) {
                     pages.push(sessionTickets.slice(i, i + ticketsPerPage));
@@ -281,9 +339,13 @@ export default function BulkPrintTab() {
                       </div>
 
                       {pages.map((pageTickets, pageIdx) => (
-                        <div className={isEventPrint ? 'event-ticket-page' : 'bulk-ticket-page'} key={`${session.sessionId}-${pageIdx}`}>
+                        <div className={isEventSession ? 'event-ticket-page' : 'bulk-ticket-page'} key={`${session.sessionId}-${pageIdx}`}>
                           {pageTickets.map((ticket, i) => {
-                            const displayTitle = (session.isSpecialEvent && session.eventTitle) ? session.eventTitle : 'Mega Bucks Bingo';
+                            const displayTitle = session.eventTitle
+                              ? session.eventTitle
+                              : session.sessionType === 'regular_bingo'
+                                ? 'Regular Bingo'
+                                : 'Mega Bucks Bingo';
                             const fmtDate = (() => {
                               const d = new Date(session.sessionDate + 'T12:00:00');
                               const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -297,7 +359,7 @@ export default function BulkPrintTab() {
                               return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
                             })();
                             return (
-                            isEventPrint ? (
+                            isEventSession ? (
                             <div className="event-ticket-card" key={i}>
                               <div className="event-ticket-title">{displayTitle}</div>
                               <div className="event-ticket-name">{ticket.firstName} {ticket.lastName}</div>
@@ -309,9 +371,10 @@ export default function BulkPrintTab() {
                               <div className="event-ticket-ref">{ticket.referenceNumber}</div>
                             </div>
                             ) : (
-                            <div className="ticket-card" key={i}>
+                            <div className={`ticket-card ${printParts.nameCopy && printParts.seatCopy ? '' : 'ticket-card-single'}`} key={i}>
                               <div className="ticket-inner">
                                 {/* Left half: Client copy — name prominent */}
+                                {printParts.nameCopy && (
                                 <div className="ticket-half ticket-half-left">
                                   <div className="ticket-name-prominent">
                                     {ticket.firstName} {ticket.lastName}
@@ -340,7 +403,9 @@ export default function BulkPrintTab() {
                                     <span className="ticket-ref-value">{ticket.referenceNumber}</span>
                                   </div>
                                 </div>
+                                )}
                                 {/* Right half: Customer copy — table/seat prominent */}
+                                {printParts.seatCopy && (
                                 <div className="ticket-half ticket-half-right">
                                   <h2 className="ticket-title">{displayTitle}</h2>
                                   <div className="ticket-logo">
@@ -368,6 +433,7 @@ export default function BulkPrintTab() {
                                     <span className="ticket-ref-value">{ticket.referenceNumber}</span>
                                   </div>
                                 </div>
+                                )}
                               </div>
                             </div>
                             )
@@ -501,6 +567,13 @@ export default function BulkPrintTab() {
               }
               .bulk-ticket-page .ticket-half-left {
                 border-right: 2px dashed #c5a55a;
+              }
+              .bulk-ticket-page .ticket-card-single .ticket-inner {
+                justify-content: center;
+              }
+              .bulk-ticket-page .ticket-card-single .ticket-half {
+                flex: 0 1 50%;
+                border-right: 0;
               }
               .bulk-ticket-page .ticket-half-row {
                 display: flex; gap: 16px;

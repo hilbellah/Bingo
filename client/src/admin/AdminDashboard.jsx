@@ -94,7 +94,7 @@ export default function AdminDashboard() {
   const [editForm, setEditForm] = useState({ date: '', time: '', cutoff_time: '', is_special_event: false, event_title: '', event_description: '' });
   const [bulkDateFrom, setBulkDateFrom] = useState('');
   const [bulkDateTo, setBulkDateTo] = useState('');
-  const [bulkDepartment, setBulkDepartment] = useState('special_bingo');
+  const [bulkDepartment, setBulkDepartment] = useState('all');
   const [bulkData, setBulkData] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [soldModal, setSoldModal] = useState(null); // { session, bookings } when open
