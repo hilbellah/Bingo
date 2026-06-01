@@ -48,14 +48,15 @@ for (const [index, sessionType] of ['regular_bingo', 'special_bingo', 'event'].e
 
   await run(
     `INSERT INTO sessions
-      (id, date, time, cutoff_time, is_available, is_special_event, event_title, session_type)
-     VALUES (?, ?, '18:30', '12:00', 1, ?, ?, ?)`,
+      (id, date, time, cutoff_time, is_available, is_special_event, event_title, session_type, deleted_at)
+     VALUES (?, ?, '18:30', '12:00', 1, ?, ?, ?, ?)`,
     [
       sessionId,
       date,
       sessionType === 'regular_bingo' ? 0 : 1,
       sessionType === 'regular_bingo' ? null : `Bulk ${sessionType}`,
       sessionType,
+      new Date().toISOString(),
     ]
   );
   await run(
