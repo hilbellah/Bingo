@@ -30,7 +30,7 @@ export default function BulkPrintTab() {
     token,
   } = useAdminDashboard();
 
-  const [printFilter, setPrintFilter] = useState('unprinted');
+  const [printFilter, setPrintFilter] = useState('all');
   const [selectedTicketIds, setSelectedTicketIds] = useState(new Set());
   const [printParts, setPrintParts] = useState({ nameCopy: true, seatCopy: true });
   const [markingPrinted, setMarkingPrinted] = useState(false);
@@ -139,9 +139,8 @@ export default function BulkPrintTab() {
       .join(', ');
 
   useEffect(() => {
-    const defaultTickets = allTickets.filter(ticket => !ticket.printedAt);
-    setSelectedTicketIds(new Set(defaultTickets.map(ticket => ticket.id)));
-    setPrintFilter('unprinted');
+    setSelectedTicketIds(new Set(allTickets.map(ticket => ticket.id)));
+    setPrintFilter('all');
   }, [allTickets]);
 
   const toggleTicket = (ticketId) => {

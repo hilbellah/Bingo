@@ -13,7 +13,7 @@
     "audit:prod": "cd client && npm audit --omit=dev && cd ../server && npm audit --omit=dev",
     "smoke": "node scripts/smoke-check.mjs",
     "test:holds": "node scripts/hold-config-check.mjs",
-    "test:api": "node scripts/seat-lock-api-check.mjs && node scripts/booking-initiate-failure-api-check.mjs && node scripts/booking-initiate-duplicate-api-check.mjs && node scripts/paper-card-limits-api-check.mjs && node scripts/phd-credit-api-check.mjs && node scripts/recurring-schedule-toggle-check.mjs && node scripts/authorize-net-webhook-ack-check.mjs",
+    "test:api": "node scripts/seat-lock-api-check.mjs && node scripts/booking-initiate-failure-api-check.mjs && node scripts/booking-initiate-duplicate-api-check.mjs && node scripts/paper-card-limits-api-check.mjs && node scripts/phd-credit-api-check.mjs && node scripts/recurring-schedule-toggle-check.mjs && node scripts/authorize-net-webhook-ack-check.mjs && node scripts/bulk-ticket-session-types-api-check.mjs",
     "test": "npm run build && npm run smoke && npm run test:holds && npm run test:api",
     "seed": "cd server && node src/seed.js",
     "migrate": "cd server && node src/migrate.js",
