@@ -108,8 +108,6 @@ function getThermalReceiptStyle(paperWidth = '80mm') {
   const width = paperWidth === '58mm' ? '58mm' : '80mm';
   const bodyWidth = width === '58mm' ? '50mm' : '72mm';
   const fontSize = width === '58mm' ? '10px' : '12px';
-  const logoWidth = width === '58mm' ? '38mm' : '48mm';
-  const logoHeight = width === '58mm' ? '11mm' : '14mm';
   const qtyWidth = width === '58mm' ? '7mm' : '9mm';
   const amountWidth = width === '58mm' ? '14mm' : '18mm';
 
@@ -123,8 +121,7 @@ body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${b
 .dbl-line { border-top: 2px solid #000; margin: 6px 0; }
 .row { display: flex; justify-content: space-between; }
 .row span:last-child { text-align: right; }
-.thermal-logo { text-align: center; margin: 0 0 2px; }
-.thermal-logo img { display: inline-block; max-width: ${logoWidth}; max-height: ${logoHeight}; object-fit: contain; filter: grayscale(1) invert(1); -webkit-filter: grayscale(1) invert(1); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.thermal-logo-text { text-align: center; font-size: 18px; font-weight: 900; line-height: 1; margin: 0 0 3px; }
 .header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
 .sub-header { font-size: 10px; text-align: center; color: #333; margin-bottom: 8px; }
 .item-row { display: grid; grid-template-columns: ${qtyWidth} minmax(0, 1fr) ${amountWidth}; column-gap: 1.5mm; align-items: start; padding: 1px 0; width: 100%; }
@@ -135,7 +132,7 @@ body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${b
 .total-row { display: grid; grid-template-columns: minmax(0, 1fr) ${amountWidth}; column-gap: 1.5mm; font-weight: bold; font-size: 12px; padding: 2px 0; }
 .total-label { min-width: 0; overflow-wrap: anywhere; }
 .total-amt { text-align: right; white-space: nowrap; }
-@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } img { filter: grayscale(1) invert(1) !important; -webkit-filter: grayscale(1) invert(1) !important; } }`;
+@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } }`;
 }
 
 function printThermalReceipt(title, lines, paperWidth) {
@@ -188,7 +185,7 @@ function buildAutoBookingReceiptLines(booking, cfg = {}) {
   const receiptTotals = getReceiptTotals(booking);
   const totalText = receiptTotals.totalWithServiceFormatted.replace(/^\$/, '');
   const lines = [
-    '<div class="receipt-logo"><img src="/wolastoq-logo.png" alt="Wolastoq Casino"></div>',
+    '<div class="receipt-logo-text">WOLASTOQ CASINO</div>',
     `<div class="receipt-venue">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
     `<div class="receipt-title">${escapeHtml(receiptTitle)}</div>`,
     booking.sessionTitle ? `<div class="receipt-session">${escapeHtml(booking.sessionTitle)}</div>` : '',
@@ -250,8 +247,7 @@ function getAutoBookingReceiptStyle(paperWidth) {
   const bodyWidth = paperWidth === '58mm' ? '50mm' : '72mm';
   return `@page { size: ${paperWidth} auto; margin: 0; }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 700; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.15; }
-.receipt-logo { text-align: center; margin: 0 0 2px; }
-.receipt-logo img { display: inline-block; max-width: 48mm; max-height: 14mm; object-fit: contain; filter: grayscale(1) invert(1); -webkit-filter: grayscale(1) invert(1); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.receipt-logo-text { text-align: center; font-size: 18px; font-weight: 900; line-height: 1; margin: 0 0 3px; }
 .receipt-venue { text-align: center; font-size: 11px; font-weight: 900; margin-bottom: 3px; }
 .receipt-title, .receipt-session, .receipt-footer { text-align: center; font-size: 10px; font-weight: 800; margin-bottom: 3px; }
 .legacy-receipt { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 3px 0 6px; page-break-inside: avoid; }
@@ -272,8 +268,8 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 
 .legacy-total-row strong { font-size: 11px; font-weight: 900; white-space: nowrap; }
 .legacy-total-main { text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; margin-top: 3px; }
 .legacy-total-main strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
-.bulk-receipt-break { border-top: 1px dashed #000; margin: 2mm 0; height: 0; }
-@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } img { filter: grayscale(1) invert(1) !important; -webkit-filter: grayscale(1) invert(1) !important; } }`;
+.bulk-receipt-break { border-top: 1px dashed #000; margin: 5mm 0; height: 0; }
+@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } }`;
 }
 
 export function printAutoBookingReceipt(booking, cfg) {
@@ -338,8 +334,7 @@ export function printDailySalesReceipt(dailySales, cfg = {}) {
   if (!dailySales || dailySales.items.length === 0) return;
   const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
   const lines = [
-    '<div class="thermal-logo"><img src="/wolastoq-logo.png" alt="Wolastoq Casino"></div>',
-    '<div class="header">WOLASTOQ CASINO</div>',
+    '<div class="thermal-logo-text">WOLASTOQ CASINO</div>',
     `<div class="sub-header">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
     '<div class="line"></div>',
     '<div class="center bold">DAILY SALES REPORT</div>',
