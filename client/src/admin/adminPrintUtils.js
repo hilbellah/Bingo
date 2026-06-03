@@ -124,7 +124,7 @@ body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${b
 .row { display: flex; justify-content: space-between; }
 .row span:last-child { text-align: right; }
 .thermal-logo { text-align: center; margin: 0 0 2px; }
-.thermal-logo img { display: inline-block; max-width: ${logoWidth}; max-height: ${logoHeight}; object-fit: contain; filter: brightness(0); -webkit-filter: brightness(0); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.thermal-logo img { display: inline-block; max-width: ${logoWidth}; max-height: ${logoHeight}; object-fit: contain; filter: grayscale(1) invert(1); -webkit-filter: grayscale(1) invert(1); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
 .sub-header { font-size: 10px; text-align: center; color: #333; margin-bottom: 8px; }
 .item-row { display: grid; grid-template-columns: ${qtyWidth} minmax(0, 1fr) ${amountWidth}; column-gap: 1.5mm; align-items: start; padding: 1px 0; width: 100%; }
@@ -135,7 +135,7 @@ body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${b
 .total-row { display: grid; grid-template-columns: minmax(0, 1fr) ${amountWidth}; column-gap: 1.5mm; font-weight: bold; font-size: 12px; padding: 2px 0; }
 .total-label { min-width: 0; overflow-wrap: anywhere; }
 .total-amt { text-align: right; white-space: nowrap; }
-@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } img { filter: grayscale(1) brightness(0) !important; -webkit-filter: grayscale(1) brightness(0) !important; } }`;
+@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } img { filter: grayscale(1) invert(1) !important; -webkit-filter: grayscale(1) invert(1) !important; } }`;
 }
 
 function printThermalReceipt(title, lines, paperWidth) {
@@ -251,7 +251,7 @@ function getAutoBookingReceiptStyle(paperWidth) {
   return `@page { size: ${paperWidth} auto; margin: 0; }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 700; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.15; }
 .receipt-logo { text-align: center; margin: 0 0 2px; }
-.receipt-logo img { display: inline-block; max-width: 48mm; max-height: 14mm; object-fit: contain; filter: brightness(0); -webkit-filter: brightness(0); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.receipt-logo img { display: inline-block; max-width: 48mm; max-height: 14mm; object-fit: contain; filter: grayscale(1) invert(1); -webkit-filter: grayscale(1) invert(1); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .receipt-venue { text-align: center; font-size: 11px; font-weight: 900; margin-bottom: 3px; }
 .receipt-title, .receipt-session, .receipt-footer { text-align: center; font-size: 10px; font-weight: 800; margin-bottom: 3px; }
 .legacy-receipt { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 3px 0 6px; page-break-inside: avoid; }
@@ -272,8 +272,8 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 
 .legacy-total-row strong { font-size: 11px; font-weight: 900; white-space: nowrap; }
 .legacy-total-main { text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; margin-top: 3px; }
 .legacy-total-main strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
-.bulk-receipt-break { break-after: page; page-break-after: always; height: 0; }
-@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } img { filter: grayscale(1) brightness(0) !important; -webkit-filter: grayscale(1) brightness(0) !important; } }`;
+.bulk-receipt-break { border-top: 1px dashed #000; margin: 2mm 0; height: 0; }
+@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } img { filter: grayscale(1) invert(1) !important; -webkit-filter: grayscale(1) invert(1) !important; } }`;
 }
 
 export function printAutoBookingReceipt(booking, cfg) {
