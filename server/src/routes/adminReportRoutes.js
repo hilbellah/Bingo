@@ -346,11 +346,24 @@ export function registerAdminReportRoutes(app) {
           FROM payment_events
           GROUP BY booking_id
         ),
+        booking_item_subtotals AS (
+          SELECT
+            bi.booking_id,
+            COALESCE(SUM(bi.price + COALESCE(addons.addon_total, 0)), 0) as item_subtotal
+          FROM booking_items bi
+          LEFT JOIN (
+            SELECT booking_item_id, SUM(price) as addon_total
+            FROM booking_addons
+            GROUP BY booking_item_id
+          ) addons ON addons.booking_item_id = bi.id
+          GROUP BY bi.booking_id
+        ),
         transaction_rows AS (
           SELECT
             b.id,
             b.reference_number,
             b.total_amount,
+            COALESCE(bis.item_subtotal, 0) as item_subtotal,
             b.payment_status,
             b.created_at,
             b.email,
@@ -377,6 +390,7 @@ export function registerAdminReportRoutes(app) {
           FROM bookings b
           JOIN sessions s ON s.id = b.session_id
           LEFT JOIN payment_event_rollup per ON per.booking_id = b.id
+          LEFT JOIN booking_item_subtotals bis ON bis.booking_id = b.id
         )
         SELECT *
         FROM transaction_rows
@@ -406,8 +420,13 @@ export function registerAdminReportRoutes(app) {
       }, 0);
       const paidStatuses = new Set(['paid', 'partially_refunded', 'refunded', 'voided']);
       const refundStatuses = new Set(['refunded', 'voided']);
+      const serviceChargeForRow = (row) => Math.max(0, (Number(row.total_amount) || 0) - (Number(row.item_subtotal) || 0));
       const grossSales = rows.reduce((sum, row) => paidStatuses.has(row.payment_status) ? sum + row.total_amount : sum, 0);
       const refunds = rows.reduce((sum, row) => refundStatuses.has(row.payment_status) ? sum + row.total_amount : sum, 0) + partialRefundEvents;
+      const grossServiceCharges = rows.reduce((sum, row) => paidStatuses.has(row.payment_status) ? sum + serviceChargeForRow(row) : sum, 0);
+      const refundedServiceCharges = rows.reduce((sum, row) => refundStatuses.has(row.payment_status) ? sum + serviceChargeForRow(row) : sum, 0);
+      const netServiceCharges = grossServiceCharges - refundedServiceCharges;
+      const subtotalWithoutServiceCharges = grossSales - grossServiceCharges;
       const pendingAmount = rows.reduce((sum, row) => row.payment_status === 'pending' ? sum + row.total_amount : sum, 0);
       const failedAmount = rows.reduce((sum, row) => ['failed', 'cancelled'].includes(row.payment_status) ? sum + row.total_amount : sum, 0);
       const statusCounts = rows.reduce((counts, row) => {
@@ -420,6 +439,8 @@ export function registerAdminReportRoutes(app) {
         const isPaid = row.payment_status === 'paid' || row.payment_status === 'partially_refunded';
         const partialRefundAmount = partialRefundByBooking[row.id] || 0;
         const amountEffect = isRefund ? -row.total_amount : row.payment_status === 'partially_refunded' ? -partialRefundAmount : isPaid ? row.total_amount : 0;
+        const serviceChargeAmount = serviceChargeForRow(row);
+        const serviceChargeEffect = isRefund ? -serviceChargeAmount : row.payment_status === 'partially_refunded' ? 0 : isPaid ? serviceChargeAmount : 0;
         const customerName = [row.customer_first_name, row.customer_last_name].filter(Boolean).join(' ');
         const description = row.session_type === 'event' && row.event_title
           ? row.event_title
@@ -434,6 +455,12 @@ export function registerAdminReportRoutes(app) {
           transactionType: isRefund ? (row.payment_status === 'voided' ? 'Void' : 'Refund') : row.payment_status === 'partially_refunded' ? 'Partial Refund' : isPaid ? 'Payment' : row.payment_status,
           totalAmount: row.total_amount,
           totalFormatted: '$' + formatPrice(row.total_amount),
+          subtotalWithoutServiceCharges: row.item_subtotal,
+          subtotalWithoutServiceChargesFormatted: '$' + formatPrice(row.item_subtotal),
+          serviceChargeAmount,
+          serviceChargeFormatted: '$' + formatPrice(serviceChargeAmount),
+          serviceChargeEffect,
+          serviceChargeEffectFormatted: `${serviceChargeEffect < 0 ? '-' : ''}$${formatPrice(Math.abs(serviceChargeEffect))}`,
           partialRefundAmount,
           partialRefundFormatted: '$' + formatPrice(partialRefundAmount),
           amountEffect,
@@ -466,6 +493,14 @@ export function registerAdminReportRoutes(app) {
           failedCount: (statusCounts.failed || 0) + (statusCounts.cancelled || 0),
           grossSales,
           grossSalesFormatted: '$' + formatPrice(grossSales),
+          grossServiceCharges,
+          grossServiceChargesFormatted: '$' + formatPrice(grossServiceCharges),
+          refundedServiceCharges,
+          refundedServiceChargesFormatted: '$' + formatPrice(refundedServiceCharges),
+          netServiceCharges,
+          netServiceChargesFormatted: '$' + formatPrice(netServiceCharges),
+          subtotalWithoutServiceCharges,
+          subtotalWithoutServiceChargesFormatted: '$' + formatPrice(subtotalWithoutServiceCharges),
           refunds,
           refundsFormatted: '$' + formatPrice(refunds),
           netTotal: grossSales - refunds,

@@ -285,10 +285,19 @@ export default function BookingsTab() {
                   </button>
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-4">
                 <div className="border rounded-lg p-3">
                   <p className="text-xs text-gray-500">Gross Sales</p>
                   <p className="font-bold text-gray-900">{transactionSummary.grossSalesFormatted || '$0.00'}</p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Subtotal no service</p>
+                  <p className="font-bold text-gray-900">{transactionSummary.subtotalWithoutServiceChargesFormatted || '$0.00'}</p>
+                </div>
+                <div className="border rounded-lg p-3 bg-amber-50 border-amber-100">
+                  <p className="text-xs text-amber-700">Service Charges</p>
+                  <p className="font-bold text-amber-800">{transactionSummary.netServiceChargesFormatted || '$0.00'}</p>
+                  <p className="text-[11px] text-amber-700 mt-1">Gross {transactionSummary.grossServiceChargesFormatted || '$0.00'}</p>
                 </div>
                 <div className="border rounded-lg p-3">
                   <p className="text-xs text-gray-500">Refunds / Voids</p>
@@ -321,6 +330,7 @@ export default function BookingsTab() {
                         <th className="pb-2">Session</th>
                         <th className="pb-2">Status</th>
                         <th className="pb-2">Transaction ID</th>
+                        <th className="pb-2 text-right pr-2">Service Charge</th>
                         <th className="pb-2 text-right pr-2">Amount</th>
                         <th className="pb-2 text-right pr-2">Actions</th>
                       </tr>
@@ -344,6 +354,9 @@ export default function BookingsTab() {
                             </span>
                           </td>
                           <td className="py-2.5 font-mono text-xs text-gray-500">{item.transactionId || '-'}</td>
+                          <td className={`py-2.5 text-right pr-2 font-semibold ${item.serviceChargeEffect < 0 ? 'text-red-600' : item.serviceChargeEffect > 0 ? 'text-amber-700' : 'text-gray-500'}`}>
+                            {item.serviceChargeEffectFormatted || '$0.00'}
+                          </td>
                           <td className={`py-2.5 text-right pr-2 font-semibold ${item.amountEffect < 0 ? 'text-red-600' : item.amountEffect > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
                             {item.amountEffectFormatted}
                           </td>
