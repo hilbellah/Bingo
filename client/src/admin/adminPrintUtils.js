@@ -102,7 +102,7 @@ h2{margin:0 0 4px}p.sub{color:#666;font-size:14px;margin:0 0 20px}
 table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
 th{text-align:left;color:#999;border-bottom:1px solid #ddd;padding:4px 0}
 td{padding:4px 0;border-bottom:1px solid #f0f0f0}
-@media print{body{padding:0}.booking{break-inside:avoid}}`;
+@media print{body{padding:0;color:#000;background:#fff}*,*::before,*::after{color:#000!important;background:#fff!important;border-color:#000!important;box-shadow:none!important;text-shadow:none!important}.booking{break-inside:avoid}}`;
 
 function getThermalReceiptStyle(paperWidth = '80mm') {
   const width = paperWidth === '58mm' ? '58mm' : '80mm';
@@ -135,11 +135,44 @@ body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${b
 .total-row { display: grid; grid-template-columns: minmax(0, 1fr) ${amountWidth}; column-gap: 1.5mm; font-weight: bold; font-size: 12px; padding: 2px 0; }
 .total-label { min-width: 0; overflow-wrap: anywhere; }
 .total-amt { text-align: right; white-space: nowrap; }
-@media print { body { width: ${bodyWidth}; margin: 0 auto; } }`;
+@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } img { filter: grayscale(1) brightness(0) !important; -webkit-filter: grayscale(1) brightness(0) !important; } }`;
 }
 
 function printThermalReceipt(title, lines, paperWidth) {
   writePrintDocument(title, lines.join(''), getThermalReceiptStyle(paperWidth));
+}
+
+function moneyFromCents(cents) {
+  return '$' + (Math.max(0, Number(cents) || 0) / 100).toFixed(2);
+}
+
+function parseMoneyCents(value) {
+  const normalized = String(value || '').replace(/[^0-9.-]/g, '');
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+}
+
+function getReceiptTotals(booking) {
+  const itemSubtotal = (booking.items || []).reduce((sum, item) => {
+    const addonTotal = (item.addons || []).reduce((addonSum, addon) => addonSum + (Number(addon.price) || 0), 0);
+    return sum + (Number(item.packagePrice) || 0) + addonTotal;
+  }, 0);
+  const totalAmount = Number.isFinite(Number(booking.totalAmount))
+    ? Number(booking.totalAmount)
+    : parseMoneyCents(booking.totalFormatted);
+  const serviceChargeAmount = Math.max(
+    0,
+    Number(booking.serviceChargeAmount ?? booking.serviceFeeAmount ?? (totalAmount - itemSubtotal)) || 0
+  );
+  const totalWithService = totalAmount > 0 ? totalAmount : itemSubtotal + serviceChargeAmount;
+  return {
+    itemSubtotal,
+    serviceChargeAmount,
+    totalWithService,
+    itemSubtotalFormatted: moneyFromCents(itemSubtotal),
+    serviceChargeFormatted: moneyFromCents(serviceChargeAmount),
+    totalWithServiceFormatted: moneyFromCents(totalWithService),
+  };
 }
 
 function buildAutoBookingReceiptLines(booking, cfg = {}) {
@@ -152,7 +185,8 @@ function buildAutoBookingReceiptLines(booking, cfg = {}) {
     return '$' + (cents / qty / 100).toFixed(0);
   };
   const packageLabel = (priceText, name) => [priceText, name].filter(Boolean).join(' - ');
-  const totalText = String(booking.totalFormatted || '').replace(/^\$/, '') || String(booking.totalAmount || '');
+  const receiptTotals = getReceiptTotals(booking);
+  const totalText = receiptTotals.totalWithServiceFormatted.replace(/^\$/, '');
   const lines = [
     '<div class="receipt-logo"><img src="/wolastoq-logo.png" alt="Wolastoq Casino"></div>',
     `<div class="receipt-venue">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
@@ -197,7 +231,11 @@ function buildAutoBookingReceiptLines(booking, cfg = {}) {
     lines.push('</table>');
   }
 
-  lines.push(`<div class="legacy-total"><div>TOTAL AMOUNT : $</div><strong>${escapeHtml(totalText)}</strong></div>`);
+  lines.push('<div class="legacy-total">');
+  lines.push(`<div class="legacy-total-row"><span>SUBTOTAL</span><strong>${escapeHtml(receiptTotals.itemSubtotalFormatted)}</strong></div>`);
+  lines.push(`<div class="legacy-total-row"><span>SERVICE CHARGE</span><strong>${escapeHtml(receiptTotals.serviceChargeFormatted)}</strong></div>`);
+  lines.push('<div class="legacy-total-main"><div>TOTAL AMOUNT : $</div>');
+  lines.push(`<strong>${escapeHtml(totalText)}</strong></div></div>`);
   if (cfg.footerText) {
     lines.push(`<div class="receipt-footer">${escapeHtml(cfg.footerText)}</div>`);
   }
@@ -229,10 +267,13 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 
 .legacy-receipt .item-cell { white-space: normal; overflow-wrap: anywhere; }
 .code-blue { color: #165caa; }
 .code-red { color: #ef2b24; }
-.legacy-total { border-left: 1.5px solid #000; border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; margin: -6px 0 8px; padding: 6px 4px 8px; text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; page-break-inside: avoid; }
-.legacy-total strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
+.legacy-total { border-left: 1.5px solid #000; border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; margin: -6px 0 8px; padding: 5px 4px 8px; page-break-inside: avoid; }
+.legacy-total-row { display: flex; justify-content: space-between; gap: 6px; color: #000; font-size: 10px; font-weight: 900; text-align: left; margin: 0 0 2px; }
+.legacy-total-row strong { font-size: 11px; font-weight: 900; white-space: nowrap; }
+.legacy-total-main { text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; margin-top: 3px; }
+.legacy-total-main strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
 .bulk-receipt-break { break-after: page; page-break-after: always; height: 0; }
-@media print { body { width: ${bodyWidth}; margin: 0 auto; } }`;
+@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } img { filter: grayscale(1) brightness(0) !important; -webkit-filter: grayscale(1) brightness(0) !important; } }`;
 }
 
 export function printAutoBookingReceipt(booking, cfg) {
@@ -321,12 +362,18 @@ export function printDailySalesReceipt(dailySales, cfg = {}) {
   }
 
   lines.push('<div class="dbl-line"></div>');
+  const subtotalWithoutServiceCharges = dailySales.subtotalWithoutServiceChargesFormatted || dailySales.grandTotalFormatted;
+  const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || '$0.00';
+  const totalWithServiceCharges = dailySales.totalWithServiceChargesFormatted || dailySales.grandTotalFormatted;
   if (dailySales.addonSubtotal > 0) {
     lines.push(`<div class="total-row"><span class="total-label">Packages</span><span class="total-amt">${escapeHtml(dailySales.packageSubtotalFormatted)}</span></div>`);
     lines.push(`<div class="total-row"><span class="total-label">Add-ons</span><span class="total-amt">${escapeHtml(dailySales.addonSubtotalFormatted)}</span></div>`);
     lines.push('<div class="line"></div>');
   }
-  lines.push(`<div class="total-row"><span class="total-label">TOTAL (${escapeHtml(dailySales.totalTickets)} tickets, ${escapeHtml(dailySales.totalBookings)} bookings)</span><span class="total-amt">${escapeHtml(dailySales.grandTotalFormatted)}</span></div>`);
+  lines.push(`<div class="total-row"><span class="total-label">Subtotal (no service)</span><span class="total-amt">${escapeHtml(subtotalWithoutServiceCharges)}</span></div>`);
+  lines.push(`<div class="total-row"><span class="total-label">Service charges</span><span class="total-amt">${escapeHtml(serviceChargeSubtotal)}</span></div>`);
+  lines.push('<div class="line"></div>');
+  lines.push(`<div class="total-row"><span class="total-label">TOTAL (${escapeHtml(dailySales.totalTickets)} tickets, ${escapeHtml(dailySales.totalBookings)} bookings)</span><span class="total-amt">${escapeHtml(totalWithServiceCharges)}</span></div>`);
   lines.push('<div class="line"></div>');
   lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${escapeHtml(new Date().toLocaleString())}</div>`);
   printThermalReceipt('Daily Sales', lines, paperWidth);
@@ -334,6 +381,7 @@ export function printDailySalesReceipt(dailySales, cfg = {}) {
 
 export function printBookingReceipt(booking) {
   const receiptTitle = getReceiptTitle(booking);
+  const receiptTotals = getReceiptTotals(booking);
   const lines = [
     '<div class="header">SMEC BINGO</div>',
     '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
@@ -362,7 +410,10 @@ export function printBookingReceipt(booking) {
   }
 
   lines.push('<div class="dbl-line"></div>');
-  lines.push(`<div class="total-row"><span>TOTAL</span><span>${escapeHtml(booking.totalFormatted)}</span></div>`);
+  lines.push(`<div class="total-row"><span>SUBTOTAL</span><span>${escapeHtml(receiptTotals.itemSubtotalFormatted)}</span></div>`);
+  lines.push(`<div class="total-row"><span>SERVICE CHARGE</span><span>${escapeHtml(receiptTotals.serviceChargeFormatted)}</span></div>`);
+  lines.push('<div class="line"></div>');
+  lines.push(`<div class="total-row"><span>TOTAL</span><span>${escapeHtml(receiptTotals.totalWithServiceFormatted)}</span></div>`);
   lines.push('<div class="line"></div>');
   lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${escapeHtml(new Date(booking.createdAt).toLocaleString())}</div>`);
   printThermalReceipt('Booking Receipt', lines);

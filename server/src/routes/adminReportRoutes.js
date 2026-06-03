@@ -190,6 +190,34 @@ export function registerAdminReportRoutes(app) {
         });
       }
 
+      const bookingSubtotals = await all(`
+        SELECT b.id as booking_id, b.total_amount,
+               COUNT(bi.id) as ticket_count,
+               COALESCE(SUM(bi.price + COALESCE(addons.addon_total, 0)), 0) as item_subtotal
+        FROM bookings b
+        JOIN sessions s ON s.id = b.session_id
+        JOIN booking_items bi ON bi.booking_id = b.id
+        LEFT JOIN (
+          SELECT booking_item_id, SUM(price) as addon_total
+          FROM booking_addons
+          GROUP BY booking_item_id
+        ) addons ON addons.booking_item_id = bi.id
+        WHERE s.date = ?
+          AND b.payment_status IN ('paid', 'partially_refunded')
+          ${cutoffSql}
+        GROUP BY b.id, b.total_amount
+      `, [date, ...cutoffParams]);
+      const serviceChargeByBooking = {};
+      const ticketCountByBooking = {};
+      for (const booking of bookingSubtotals) {
+        const ticketCount = Number(booking.ticket_count) || 0;
+        ticketCountByBooking[booking.booking_id] = ticketCount;
+        serviceChargeByBooking[booking.booking_id] = Math.max(
+          0,
+          (Number(booking.total_amount) || 0) - (Number(booking.item_subtotal) || 0)
+        );
+      }
+
       const filtered = search
         ? rows.filter(row => {
             const fullName = `${row.first_name} ${row.last_name}`.toLowerCase();
@@ -224,9 +252,22 @@ export function registerAdminReportRoutes(app) {
       });
 
       const uniqueBookings = new Set(filtered.map(row => row.id));
+      const selectedTicketsByBooking = filtered.reduce((acc, row) => {
+        acc[row.id] = (acc[row.id] || 0) + 1;
+        return acc;
+      }, {});
       const packageSubtotal = items.reduce((sum, item) => sum + item.itemPrice, 0);
       const addonSubtotal = items.reduce((sum, item) => sum + (item.addons ? item.addons.reduce((addonSum, addon) => addonSum + addon.price, 0) : 0), 0);
-      const grandTotal = packageSubtotal + addonSubtotal;
+      const subtotalWithoutServiceCharges = packageSubtotal + addonSubtotal;
+      const serviceChargeSubtotal = Array.from(uniqueBookings).reduce((sum, bookingId) => {
+        const serviceCharge = serviceChargeByBooking[bookingId] || 0;
+        const ticketCount = ticketCountByBooking[bookingId] || 0;
+        const selectedTicketCount = selectedTicketsByBooking[bookingId] || 0;
+        if (serviceCharge <= 0 || ticketCount <= 0 || selectedTicketCount <= 0) return sum;
+        if (selectedTicketCount >= ticketCount) return sum + serviceCharge;
+        return sum + Math.round((serviceCharge * selectedTicketCount) / ticketCount);
+      }, 0);
+      const grandTotal = subtotalWithoutServiceCharges + serviceChargeSubtotal;
 
       res.json({
         date,
@@ -236,6 +277,12 @@ export function registerAdminReportRoutes(app) {
         totalBookings: uniqueBookings.size,
         grandTotal,
         grandTotalFormatted: '$' + formatPrice(grandTotal),
+        subtotalWithoutServiceCharges,
+        subtotalWithoutServiceChargesFormatted: '$' + formatPrice(subtotalWithoutServiceCharges),
+        serviceChargeSubtotal,
+        serviceChargeSubtotalFormatted: '$' + formatPrice(serviceChargeSubtotal),
+        totalWithServiceCharges: grandTotal,
+        totalWithServiceChargesFormatted: '$' + formatPrice(grandTotal),
         packageSubtotal,
         packageSubtotalFormatted: '$' + formatPrice(packageSubtotal),
         addonSubtotal,

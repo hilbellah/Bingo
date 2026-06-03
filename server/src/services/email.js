@@ -98,6 +98,26 @@ function formatPriceDollars(cents) {
   return '$' + ((cents || 0) / 100).toFixed(2);
 }
 
+function getBookingChargeBreakdown(booking, attendees, pkgById) {
+  const subtotal = (attendees || []).reduce((sum, attendee) => {
+    const packagePrice = Number.isFinite(Number(attendee.packagePrice))
+      ? Number(attendee.packagePrice)
+      : Number(pkgById.get(attendee.packageId)?.price || 0);
+    const addonTotal = (attendee.addons || []).reduce((addonSum, addon) => {
+      const pkg = pkgById.get(addon.packageId);
+      return addonSum + (Number(pkg?.price || 0) * Number(addon.quantity || 0));
+    }, 0);
+    return sum + packagePrice + addonTotal;
+  }, 0);
+  const totalAmount = Number(booking?.totalAmount) || 0;
+  const serviceCharge = Math.max(0, totalAmount - subtotal);
+  return {
+    subtotal,
+    serviceCharge,
+    totalAmount: totalAmount || subtotal + serviceCharge,
+  };
+}
+
 function formatDateLong(dateStr) {
   if (!dateStr) return '';
   // dateStr is "YYYY-MM-DD" — render as e.g. "Friday, May 8, 2026"
@@ -202,6 +222,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
   const pkgById = new Map(packages.map(p => [p.id, p]));
   const thankYouMessage = 'Thank you for booking with us. We look forward to seeing you there!';
   const presentation = getBookingPresentation(session);
+  const charges = getBookingChargeBreakdown(booking, attendees, pkgById);
 
   const attendeeBlocks = attendees.map((att, idx) => {
     const seat = seatById.get(att.seatId) || {};
@@ -275,8 +296,16 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
               <td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(formatTime12h(session?.time))}</td>
             </tr>
             <tr>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">Subtotal</td>
+              <td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(formatPriceDollars(charges.subtotal))}</td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">Service charge</td>
+              <td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(formatPriceDollars(charges.serviceCharge))}</td>
+            </tr>
+            <tr>
               <td style="padding:6px 0;font-size:13px;color:#6b7280;">Total Paid</td>
-              <td style="padding:6px 0;font-size:18px;font-weight:700;color:${presentation.accentColor};text-align:right;">${escapeHtml(booking.totalFormatted || formatPriceDollars(booking.totalAmount))}</td>
+              <td style="padding:6px 0;font-size:18px;font-weight:700;color:${presentation.accentColor};text-align:right;">${escapeHtml(formatPriceDollars(charges.totalAmount))}</td>
             </tr>
           </table>
         </td></tr>
@@ -334,6 +363,7 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   const seatById = new Map(seats.map(s => [s.id, s]));
   const pkgById = new Map(packages.map(p => [p.id, p]));
   const presentation = getBookingPresentation(session);
+  const charges = getBookingChargeBreakdown(booking, attendees, pkgById);
   const lines = [];
 
   lines.push(`${presentation.readyLine} ${presentation.confirmationLine}.`);
@@ -341,7 +371,9 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   lines.push(`${presentation.referenceLabel}: ${booking.referenceNumber}`);
   if (session?.event_title) lines.push(`${presentation.sessionType === 'event' ? 'Event' : 'Title'}: ${session.event_title}`);
   lines.push(`${presentation.sessionLabel}: ${formatDateLong(session?.date)} at ${formatTime12h(session?.time)}`);
-  lines.push(`Total paid: ${booking.totalFormatted || formatPriceDollars(booking.totalAmount)}`);
+  lines.push(`Subtotal: ${formatPriceDollars(charges.subtotal)}`);
+  lines.push(`Service charge: ${formatPriceDollars(charges.serviceCharge)}`);
+  lines.push(`Total paid: ${formatPriceDollars(charges.totalAmount)}`);
   lines.push('');
   lines.push('Thank you for booking with us. We look forward to seeing you there!');
   lines.push('');

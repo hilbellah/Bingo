@@ -1203,6 +1203,8 @@ async function sendBookingConfirmationEmail(bookingId) {
     firstName: it.first_name,
     lastName: it.last_name,
     seatId: it.seat_id,
+    packageId: it.package_id,
+    packagePrice: it.price,
     addons: addons.filter(a => a.booking_item_id === it.id).map(a => ({
       packageId: a.package_id,
       quantity: a.quantity,

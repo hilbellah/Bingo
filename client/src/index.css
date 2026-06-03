@@ -376,7 +376,21 @@ html {
 
 /* Print styles */
 @media print {
-  body { background: white; }
+  body {
+    background: white !important;
+    color: #000 !important;
+  }
+  *, *::before, *::after {
+    color: #000 !important;
+    background: white !important;
+    border-color: #000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  img {
+    filter: grayscale(1) brightness(0) !important;
+    -webkit-filter: grayscale(1) brightness(0) !important;
+  }
   .no-print { display: none; }
 }
 

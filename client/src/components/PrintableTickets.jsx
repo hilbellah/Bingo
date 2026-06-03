@@ -104,6 +104,13 @@ function EventTicketCard({ ticket, sessionDate, sessionTime, referenceNumber, ev
 }
 
 function RegularReceipt({ data }) {
+  const itemSubtotal = (data.tickets || []).reduce((sum, ticket) => {
+    const addonTotal = (ticket.addons || []).reduce((addonSum, addon) => addonSum + (Number(addon.price) || 0), 0);
+    return sum + (Number(ticket.packagePrice) || 0) + addonTotal;
+  }, 0);
+  const serviceChargeAmount = Math.max(0, (Number(data.totalAmount) || 0) - itemSubtotal);
+  const totalWithService = Number(data.totalAmount) || itemSubtotal + serviceChargeAmount;
+
   return (
     <>
       <div className="no-print bg-brand-blue text-white px-4 py-3 flex items-center justify-between">
@@ -157,9 +164,18 @@ function RegularReceipt({ data }) {
           </div>
         ))}
         <div className="receipt-double-line" />
+        <div className="receipt-summary">
+          <span>SUBTOTAL</span>
+          <span>{formatPrice(itemSubtotal)}</span>
+        </div>
+        <div className="receipt-summary">
+          <span>SERVICE CHARGE</span>
+          <span>{formatPrice(serviceChargeAmount)}</span>
+        </div>
+        <div className="receipt-line" />
         <div className="receipt-total">
           <span>TOTAL</span>
-          <span>{data.totalFormatted}</span>
+          <span>{formatPrice(totalWithService)}</span>
         </div>
         <div className="receipt-line" />
         <div className="receipt-center receipt-note">Regular bingo orders are printed on receipt paper.</div>
@@ -168,7 +184,18 @@ function RegularReceipt({ data }) {
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          body { margin: 0; padding: 0; background: #fff; }
+          body { margin: 0; padding: 0; background: #fff; color: #000; }
+          *, *::before, *::after {
+            color: #000 !important;
+            background: #fff !important;
+            border-color: #000 !important;
+            box-shadow: none !important;
+            text-shadow: none !important;
+          }
+          img {
+            filter: grayscale(1) brightness(0) !important;
+            -webkit-filter: grayscale(1) brightness(0) !important;
+          }
           @page { size: 80mm auto; margin: 0; }
           .regular-receipt { box-shadow: none; margin: 0 auto; }
         }
@@ -197,19 +224,21 @@ function RegularReceipt({ data }) {
         .receipt-bold { font-weight: 700; }
         .receipt-line { border-top: 1px dashed #000; margin: 4px 0; }
         .receipt-double-line { border-top: 2px solid #000; margin: 6px 0; }
-        .receipt-row, .receipt-item, .receipt-total {
+        .receipt-row, .receipt-item, .receipt-summary, .receipt-total {
           display: flex;
           justify-content: space-between;
           gap: 8px;
         }
         .receipt-row span:last-child,
         .receipt-item span:last-child,
+        .receipt-summary span:last-child,
         .receipt-total span:last-child {
           text-align: right;
         }
         .receipt-player { padding: 3px 0; }
         .receipt-item { font-size: 10px; color: #555; padding-left: 8px; }
         .receipt-note { font-size: 10px; color: #555; }
+        .receipt-summary { font-size: 11px; font-weight: 700; padding: 1px 0; }
         .receipt-total { font-weight: 700; font-size: 13px; padding: 2px 0; }
       `}</style>
     </>
@@ -422,7 +451,23 @@ export default function PrintableTickets() {
         /* Print-specific styles */
         @media print {
           .no-print { display: none !important; }
-          body { margin: 0; padding: 0; }
+          body { margin: 0; padding: 0; color: #000; background: #fff; }
+          *, *::before, *::after {
+            color: #000 !important;
+            background: #fff !important;
+            border-color: #000 !important;
+            box-shadow: none !important;
+            text-shadow: none !important;
+          }
+          img {
+            filter: grayscale(1) brightness(0) !important;
+            -webkit-filter: grayscale(1) brightness(0) !important;
+          }
+          .event-ticket-admit,
+          .event-ticket-card::before {
+            background: #000 !important;
+            color: #fff !important;
+          }
           @page {
             size: letter;
             margin: 0.25in;

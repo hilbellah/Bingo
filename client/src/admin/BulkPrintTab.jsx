@@ -91,16 +91,27 @@ export default function BulkPrintTab() {
         const feePerTicket = booking.tickets?.length
           ? Math.max(0, Math.round(((Number(booking.totalAmount) || 0) - allItemsSubtotal) / booking.tickets.length))
           : 0;
-        const totalAmount = selectedItems.reduce((sum, ticket) => {
+        const ticketTotalAmount = (ticket) => {
           const addonTotal = (ticket.addons || []).reduce((addonSum, addon) => addonSum + (Number(addon.price) || 0), 0);
-          return sum + (Number(ticket.packagePrice) || 0) + addonTotal + feePerTicket;
-        }, 0);
+          return (Number(ticket.packagePrice) || 0) + addonTotal + feePerTicket;
+        };
         const sessionType = session.sessionType || (session.isSpecialEvent ? 'special_bingo' : 'regular_bingo');
         const sessionTitle = session.eventTitle
           || (sessionType === 'event' ? 'Live Event / Venue' : sessionType === 'special_bingo' ? 'Special Bingo' : 'Regular Bingo');
-
-        receiptBookings.push({
-          id: booking.id,
+        const toReceiptItem = (ticket) => ({
+          id: ticket.id,
+          firstName: ticket.firstName,
+          lastName: ticket.lastName,
+          tableNumber: ticket.tableNumber,
+          chairNumber: ticket.chairNumber,
+          referenceNumber: ticket.referenceNumber,
+          packageName: ticket.packageName,
+          packagePrice: ticket.packagePrice,
+          packagePriceFormatted: ticket.packagePriceFormatted,
+          addons: ticket.addons || [],
+        });
+        const buildReceiptBooking = (items, totalAmount, idSuffix = '') => ({
+          id: `${booking.id}${idSuffix}`,
           referenceNumber: booking.referenceNumber,
           totalAmount,
           totalFormatted: formatMoney(totalAmount),
@@ -110,19 +121,21 @@ export default function BulkPrintTab() {
           sessionTime: session.sessionTime,
           sessionTitle,
           sessionType,
-          items: selectedItems.map(ticket => ({
-            id: ticket.id,
-            firstName: ticket.firstName,
-            lastName: ticket.lastName,
-            tableNumber: ticket.tableNumber,
-            chairNumber: ticket.chairNumber,
-            referenceNumber: ticket.referenceNumber,
-            packageName: ticket.packageName,
-            packagePrice: ticket.packagePrice,
-            packagePriceFormatted: ticket.packagePriceFormatted,
-            addons: ticket.addons || [],
-          })),
+          items,
         });
+
+        if (sessionType === 'regular_bingo') {
+          for (const ticket of selectedItems) {
+            receiptBookings.push(buildReceiptBooking(
+              [toReceiptItem(ticket)],
+              ticketTotalAmount(ticket),
+              `:${ticket.id}`
+            ));
+          }
+        } else {
+          const totalAmount = selectedItems.reduce((sum, ticket) => sum + ticketTotalAmount(ticket), 0);
+          receiptBookings.push(buildReceiptBooking(selectedItems.map(toReceiptItem), totalAmount));
+        }
       }
     }
 
@@ -345,7 +358,7 @@ export default function BulkPrintTab() {
                     <div>
                       <p className="text-sm font-semibold text-brand-blue mb-1">Thermal Copy Print</p>
                       <p className="text-xs text-gray-500">
-                        Thermal copy uses the selected tickets and groups them by booking.
+                        Thermal copy uses the selected tickets. Regular bingo prints one cut-ready receipt per person.
                       </p>
                     </div>
                     <button
@@ -583,7 +596,18 @@ export default function BulkPrintTab() {
             <style>{`
               @media print {
                 .no-print, header, .bg-white.border-b { display: none !important; }
-                body { margin: 0; padding: 0; }
+                body { margin: 0; padding: 0; color: #000; background: #fff; }
+                *, *::before, *::after {
+                  color: #000 !important;
+                  background: #fff !important;
+                  border-color: #000 !important;
+                  box-shadow: none !important;
+                  text-shadow: none !important;
+                }
+                img {
+                  filter: grayscale(1) brightness(0) !important;
+                  -webkit-filter: grayscale(1) brightness(0) !important;
+                }
                 @page { size: letter; margin: 0.25in; }
                 .max-w-6xl { max-width: none !important; padding: 0 !important; }
                 .min-h-screen { min-height: auto !important; }

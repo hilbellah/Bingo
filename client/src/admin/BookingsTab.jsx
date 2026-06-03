@@ -40,6 +40,9 @@ export default function BookingsTab() {
   const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
   const transactionRows = transactions?.items || [];
   const transactionSummary = transactions?.summary || {};
+  const dailySubtotalWithoutServiceCharges = dailySales?.subtotalWithoutServiceChargesFormatted || dailySales?.grandTotalFormatted || '$0.00';
+  const dailyServiceChargeSubtotal = dailySales?.serviceChargeSubtotalFormatted || '$0.00';
+  const dailyTotalWithServiceCharges = dailySales?.totalWithServiceChargesFormatted || dailySales?.grandTotalFormatted || '$0.00';
   const salesBoards = [
     {
       id: 'dailySales',
@@ -391,6 +394,9 @@ export default function BookingsTab() {
                     <button
                       onClick={() => {
                         const rows = [['#', 'Reference', 'Name', 'Table', 'Chair', 'Package', 'Add-ons', 'Session', 'Price', 'Time']];
+                        const subtotalWithoutServiceCharges = dailySales.subtotalWithoutServiceChargesFormatted || dailySales.grandTotalFormatted;
+                        const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || '$0.00';
+                        const totalWithServiceCharges = dailySales.totalWithServiceChargesFormatted || dailySales.grandTotalFormatted;
                         for (const item of dailySales.items) {
                           const addonText = item.addons && item.addons.length > 0 ? item.addons.map(a => `${a.packageName} x${a.quantity} (${a.priceFormatted})`).join('; ') : '';
                           const addonTotal = item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0;
@@ -398,10 +404,12 @@ export default function BookingsTab() {
                           rows.push([item.rowNum, item.referenceNumber, `${item.firstName} ${item.lastName}`, item.tableNumber, item.chairNumber, item.packageName || '', addonText, item.description, totalPrice, new Date(item.createdAt).toLocaleTimeString()]);
                         }
                         if (dailySales.addonSubtotal > 0) {
-                          rows.push(['', '', '', '', '', '', 'Package Subtotal', dailySales.packageSubtotalFormatted, '']);
-                          rows.push(['', '', '', '', '', '', 'Add-ons Subtotal', dailySales.addonSubtotalFormatted, '']);
+                          rows.push(['', '', '', '', '', '', '', 'Package Subtotal', dailySales.packageSubtotalFormatted, '']);
+                          rows.push(['', '', '', '', '', '', '', 'Add-ons Subtotal', dailySales.addonSubtotalFormatted, '']);
                         }
-                        rows.push(['', '', '', '', '', '', 'GRAND TOTAL', dailySales.grandTotalFormatted, `${dailySales.totalTickets} tickets / ${dailySales.totalBookings} bookings`]);
+                        rows.push(['', '', '', '', '', '', '', 'Subtotal without service charges', subtotalWithoutServiceCharges, '']);
+                        rows.push(['', '', '', '', '', '', '', 'Service charges', serviceChargeSubtotal, '']);
+                        rows.push(['', '', '', '', '', '', '', 'Total with service charges', totalWithServiceCharges, `${dailySales.totalTickets} tickets / ${dailySales.totalBookings} bookings`]);
                         const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
                         const blob = new Blob([csv], { type: 'text/csv' });
                         const url = URL.createObjectURL(blob);
@@ -420,6 +428,9 @@ export default function BookingsTab() {
                     <button
                       onClick={() => {
                         const w = window.open('', '_blank', 'width=900,height=600');
+                        const subtotalWithoutServiceCharges = dailySales.subtotalWithoutServiceChargesFormatted || dailySales.grandTotalFormatted;
+                        const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || '$0.00';
+                        const totalWithServiceCharges = dailySales.totalWithServiceChargesFormatted || dailySales.grandTotalFormatted;
                         w.document.write(`<html><head><title>Daily Sales - ${dailySales.date}</title>
                           <style>body{font-family:Arial,sans-serif;padding:20px;color:#333}
                           h2{margin:0 0 4px}p.sub{color:#666;font-size:14px;margin:0 0 16px}
@@ -428,8 +439,8 @@ export default function BookingsTab() {
                           td{padding:6px 4px;border-bottom:1px solid #f0f0f0}
                           .right{text-align:right}.center{text-align:center}
                           tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:10px}
-                          @media print{body{padding:0}}</style></head><body>`);
-                        w.document.write(`<h2>Daily Sales Report</h2><p class="sub">${dailySales.date} — ${dailySales.totalTickets} ticket(s) / ${dailySales.totalBookings} booking(s) — ${dailySales.grandTotalFormatted}</p>`);
+                          @media print{body{padding:0;color:#000;background:#fff}*,*::before,*::after{color:#000!important;background:#fff!important;border-color:#000!important;box-shadow:none!important;text-shadow:none!important}}</style></head><body>`);
+                        w.document.write(`<h2>Daily Sales Report</h2><p class="sub">${dailySales.date} — ${dailySales.totalTickets} ticket(s) / ${dailySales.totalBookings} booking(s) — ${totalWithServiceCharges}</p>`);
                         w.document.write('<table><thead><tr><th>#</th><th>Reference</th><th>Name</th><th>Table</th><th>Chair</th><th>Package</th><th>Add-ons</th><th>Session</th><th class="right">Price</th><th>Time</th></tr></thead><tbody>');
                         for (const item of dailySales.items) {
                           const addonText = item.addons && item.addons.length > 0 ? item.addons.map(a => `${a.packageName} x${a.quantity} (${a.priceFormatted})`).join(', ') : '';
@@ -442,7 +453,9 @@ export default function BookingsTab() {
                           footerHtml += `<tr><td colspan="8" style="border-top:1px solid #ddd;font-weight:normal;color:#555">Package Subtotal</td><td class="right" style="border-top:1px solid #ddd;color:#555">${dailySales.packageSubtotalFormatted}</td><td style="border-top:1px solid #ddd"></td></tr>`;
                           footerHtml += `<tr><td colspan="8" style="border-top:none;font-weight:normal;color:#555">Add-ons Subtotal</td><td class="right" style="border-top:none;color:#555">${dailySales.addonSubtotalFormatted}</td><td></td></tr>`;
                         }
-                        footerHtml += `<tr><td colspan="8">GRAND TOTAL</td><td class="right">${dailySales.grandTotalFormatted}</td><td>${dailySales.totalTickets} tickets</td></tr></tfoot></table>`;
+                        footerHtml += `<tr><td colspan="8" style="border-top:1px solid #ddd;font-weight:normal;color:#555">Subtotal without service charges</td><td class="right" style="border-top:1px solid #ddd;color:#555">${subtotalWithoutServiceCharges}</td><td style="border-top:1px solid #ddd"></td></tr>`;
+                        footerHtml += `<tr><td colspan="8" style="border-top:none;font-weight:normal;color:#555">Service charges</td><td class="right" style="border-top:none;color:#555">${serviceChargeSubtotal}</td><td></td></tr>`;
+                        footerHtml += `<tr><td colspan="8">TOTAL WITH SERVICE CHARGES</td><td class="right">${totalWithServiceCharges}</td><td>${dailySales.totalTickets} tickets</td></tr></tfoot></table>`;
                         w.document.write(footerHtml);
                         w.document.write('</body></html>');
                         w.document.close();
@@ -463,6 +476,31 @@ export default function BookingsTab() {
                     </button>
                   )}
               </div>
+
+              {dailySales && dailySales.items.length > 0 && (
+                <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 border border-gray-200 rounded-lg overflow-hidden bg-white">
+                  <div className="px-4 py-3 border-b sm:border-r sm:border-b-0 border-gray-200">
+                    <p className="text-xs font-medium uppercase text-gray-400">Packages</p>
+                    <p className="mt-1 text-lg font-semibold text-gray-800">{dailySales.packageSubtotalFormatted}</p>
+                  </div>
+                  <div className="px-4 py-3 border-b lg:border-r lg:border-b-0 border-gray-200">
+                    <p className="text-xs font-medium uppercase text-gray-400">Add-ons</p>
+                    <p className="mt-1 text-lg font-semibold text-gray-800">{dailySales.addonSubtotalFormatted}</p>
+                  </div>
+                  <div className="px-4 py-3 border-b sm:border-r sm:border-b-0 border-gray-200">
+                    <p className="text-xs font-medium uppercase text-gray-400">Subtotal no service</p>
+                    <p className="mt-1 text-lg font-semibold text-gray-800">{dailySubtotalWithoutServiceCharges}</p>
+                  </div>
+                  <div className="px-4 py-3 border-b lg:border-r lg:border-b-0 border-gray-200 bg-amber-50">
+                    <p className="text-xs font-medium uppercase text-amber-700">Service charges</p>
+                    <p className="mt-1 text-lg font-semibold text-amber-800">{dailyServiceChargeSubtotal}</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs font-medium uppercase text-gray-400">Total with service</p>
+                    <p className="mt-1 text-lg font-semibold text-brand-gold">{dailyTotalWithServiceCharges}</p>
+                  </div>
+                </div>
+              )}
 
               {!dailySales ? (
                 <p className="text-gray-400 text-center py-8">Loading...</p>
@@ -528,12 +566,26 @@ export default function BookingsTab() {
                           </tr>
                         </>
                       )}
+                      <tr className="border-t border-gray-200">
+                        <td className="py-2 pl-2" colSpan={8}>
+                          <span className="text-sm text-gray-600">Subtotal without service charges</span>
+                        </td>
+                        <td className="py-2 text-right text-sm font-medium text-gray-700">{dailySales.subtotalWithoutServiceChargesFormatted || dailySales.grandTotalFormatted}</td>
+                        <td></td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 pl-2" colSpan={8}>
+                          <span className="text-sm text-gray-600">Service charges</span>
+                        </td>
+                        <td className="py-2 text-right text-sm font-medium text-gray-700">{dailySales.serviceChargeSubtotalFormatted || '$0.00'}</td>
+                        <td></td>
+                      </tr>
                       <tr className={dailySales.addonSubtotal > 0 ? "border-t border-gray-300" : "border-t-2 border-gray-200"}>
                         <td className="py-3 pl-2" colSpan={8}>
-                          <span className="font-semibold text-brand-blue">Grand Total</span>
+                          <span className="font-semibold text-brand-blue">Total with service charges</span>
                           <span className="text-xs text-gray-500 ml-2">({dailySales.totalTickets} tickets / {dailySales.totalBookings} bookings)</span>
                         </td>
-                        <td className="py-3 text-right font-bold text-brand-gold">{dailySales.grandTotalFormatted}</td>
+                        <td className="py-3 text-right font-bold text-brand-gold">{dailySales.totalWithServiceChargesFormatted || dailySales.grandTotalFormatted}</td>
                         <td></td>
                       </tr>
                     </tfoot>
