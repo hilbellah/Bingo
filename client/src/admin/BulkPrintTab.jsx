@@ -397,13 +397,24 @@ export default function BulkPrintTab() {
                         {option.label}
                       </label>
                     ))}
-                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(receiptConfig.partialCutBetweenReceipts)}
-                        onChange={e => updateReceiptConfig({ partialCutBetweenReceipts: e.target.checked })}
-                      />
-                      Partial cut after each receipt
+                    <label className="text-sm text-gray-700">
+                      <span className="block text-xs text-gray-400 mb-1">Cut After Each Receipt</span>
+                      <select
+                        value={receiptConfig.receiptCutPercent ?? (receiptConfig.partialCutBetweenReceipts ? 70 : 0)}
+                        onChange={e => {
+                          const receiptCutPercent = Number(e.target.value);
+                          updateReceiptConfig({
+                            receiptCutPercent,
+                            partialCutBetweenReceipts: receiptCutPercent > 0,
+                          });
+                        }}
+                        className="px-3 py-2 border rounded-lg text-sm"
+                      >
+                        <option value={0}>No cut</option>
+                        <option value={50}>50%</option>
+                        <option value={70}>70%</option>
+                        <option value={90}>90%</option>
+                      </select>
                     </label>
                     <button
                       onClick={handleSaveReceiptSettings}

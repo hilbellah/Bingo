@@ -78,7 +78,7 @@ const bulk = buildBulkBookingReceiptsBody(
 );
 assert.equal(bulk.paperWidth, '58mm');
 assert.equal((bulk.body.match(/bulk-receipt-break/g) || []).length, 1);
-assert.equal((bulk.body.match(/bulk-receipt-cut/g) || []).length, 0);
+assert.equal((bulk.body.match(/bulk-receipt-cut-page/g) || []).length, 0);
 assert.equal((bulk.body.match(/wolastoq-logo-thermal\.png/g) || []).length, 2);
 
 const bulkWithPartialCut = buildBulkBookingReceiptsBody(
@@ -86,11 +86,17 @@ const bulkWithPartialCut = buildBulkBookingReceiptsBody(
     booking,
     { ...booking, referenceNumber: 'BNG-TEST-002', totalAmount: 3600 },
   ],
-  { paperWidth: '80mm', partialCutBetweenReceipts: true }
+  { paperWidth: '80mm', receiptCutPercent: 50 }
 );
 assert.equal(bulkWithPartialCut.paperWidth, '80mm');
-assert.equal((bulkWithPartialCut.body.match(/bulk-receipt-cut/g) || []).length, 1);
+assert.equal(bulkWithPartialCut.cutPercent, 50);
+assert.equal((bulkWithPartialCut.body.match(/bulk-receipt-cut-page/g) || []).length, 2);
+assert.equal((bulkWithPartialCut.body.match(/data-cut-percent="50"/g) || []).length, 2);
 assert.equal((bulkWithPartialCut.body.match(/bulk-receipt-break/g) || []).length, 0);
+
+const legacyBulkWithPartialCut = buildBulkBookingReceiptsBody([booking], { partialCutBetweenReceipts: true });
+assert.equal(legacyBulkWithPartialCut.cutPercent, 70);
+assert.equal((legacyBulkWithPartialCut.body.match(/data-cut-percent="70"/g) || []).length, 1);
 
 const daily = buildDailySalesReceiptLines({
   date: '2026-06-04',

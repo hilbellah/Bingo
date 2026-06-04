@@ -101,13 +101,27 @@ export default function SettingsTab() {
                       <span className="text-sm text-gray-700">Auto-Print on New Orders</span>
                     </label>
                     <p className="text-xs text-gray-400 ml-7">When enabled, a receipt will automatically print every time a new booking is placed. Install the Epson driver, set the TM-T88V as the default printer, and use 80mm receipt paper.</p>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" checked={Boolean(receiptConfig.partialCutBetweenReceipts)}
-                        onChange={e => setReceiptConfig({ ...receiptConfig, partialCutBetweenReceipts: e.target.checked })}
-                        className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue" />
-                      <span className="text-sm text-gray-700">Partial cut after each bulk receipt</span>
-                    </label>
-                    <p className="text-xs text-gray-400 ml-7">For the Epson TM-T88V, this prints each bulk thermal receipt as its own cut-ready page. Set the printer driver cutter to partial cut.</p>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Cut After Each Receipt</label>
+                      <select
+                        value={receiptConfig.receiptCutPercent ?? (receiptConfig.partialCutBetweenReceipts ? 70 : 0)}
+                        onChange={e => {
+                          const receiptCutPercent = Number(e.target.value);
+                          setReceiptConfig({
+                            ...receiptConfig,
+                            receiptCutPercent,
+                            partialCutBetweenReceipts: receiptCutPercent > 0,
+                          });
+                        }}
+                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                      >
+                        <option value={0}>Do not cut between receipts</option>
+                        <option value={50}>50% partial cut</option>
+                        <option value={70}>70% partial cut</option>
+                        <option value={90}>90% partial cut</option>
+                      </select>
+                    </div>
+                    <p className="text-xs text-gray-400">For the Epson TM-T88V, each bulk thermal receipt prints as its own cut-ready page. Match this percentage in the printer driver cutter setting.</p>
                   </div>
                 </div>
 
@@ -119,7 +133,7 @@ export default function SettingsTab() {
                         `Business name: ${receiptConfig.businessName}`,
                         `Paper width: ${receiptConfig.paperWidth}`,
                         `Auto-print: ${receiptConfig.autoPrintEnabled ? 'On' : 'Off'}`,
-                        `Bulk receipt partial cut: ${receiptConfig.partialCutBetweenReceipts ? 'On' : 'Off'}`,
+                        `Receipt cut: ${Number(receiptConfig.receiptCutPercent ?? (receiptConfig.partialCutBetweenReceipts ? 70 : 0)) > 0 ? `${receiptConfig.receiptCutPercent ?? 70}%` : 'Off'}`,
                       ],
                       warning: 'This changes how admin receipts print.',
                     })) return;

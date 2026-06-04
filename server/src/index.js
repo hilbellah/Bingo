@@ -2406,16 +2406,20 @@ const DEFAULT_RECEIPT_CONFIG = {
   autoPrintEnabled: false,
   paperWidth: '80mm',
   partialCutBetweenReceipts: false,
+  receiptCutPercent: 0,
 };
 
 function normalizeSettingValue(key, value) {
   if (key !== 'receipt_config' || !value || typeof value !== 'object' || Array.isArray(value)) {
     return value;
   }
+  const rawCutPercent = Number(value.receiptCutPercent ?? (value.partialCutBetweenReceipts ? 70 : 0));
+  const receiptCutPercent = [0, 50, 70, 90].includes(rawCutPercent) ? rawCutPercent : 0;
   return {
     ...DEFAULT_RECEIPT_CONFIG,
     ...value,
-    partialCutBetweenReceipts: Boolean(value.partialCutBetweenReceipts),
+    partialCutBetweenReceipts: receiptCutPercent > 0,
+    receiptCutPercent,
   };
 }
 

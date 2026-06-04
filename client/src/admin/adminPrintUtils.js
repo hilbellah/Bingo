@@ -140,6 +140,12 @@ function printThermalReceipt(title, lines, paperWidth) {
   writePrintDocument(title, lines.join(''), getThermalReceiptStyle(paperWidth));
 }
 
+function getBulkReceiptCutPercent(cfg = {}) {
+  const legacyPercent = cfg.partialCutBetweenReceipts ? 70 : 0;
+  const cutPercent = Number(cfg.receiptCutPercent ?? legacyPercent);
+  return [50, 70, 90].includes(cutPercent) ? cutPercent : 0;
+}
+
 function moneyFromCents(cents) {
   return '$' + (Math.max(0, Number(cents) || 0) / 100).toFixed(2);
 }
@@ -271,7 +277,8 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 
 .legacy-total-main { text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; margin-top: 3px; }
 .legacy-total-main strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
 .bulk-receipt-break { border-top: 1px dashed #000; margin: 5mm 0; height: 0; }
-.bulk-receipt-cut { break-after: page; page-break-after: always; height: 0; margin: 0; border: 0; }
+.bulk-receipt-cut-page { break-after: page; page-break-after: always; }
+.bulk-receipt-cut-page:last-child { break-after: auto; page-break-after: auto; }
 @media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } }`;
 }
 
@@ -288,13 +295,16 @@ export function printBulkBookingReceipts(bookings, cfg) {
 
 export function buildBulkBookingReceiptsBody(bookings, cfg = {}) {
   const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
-  const separatorClass = cfg.partialCutBetweenReceipts ? 'bulk-receipt-cut' : 'bulk-receipt-break';
+  const cutPercent = getBulkReceiptCutPercent(cfg);
   const body = bookings.map((booking, index) => {
     const receipt = buildAutoBookingReceiptLines(booking, { ...cfg, paperWidth });
-    const separator = index < bookings.length - 1 ? `<div class="${separatorClass}"></div>` : '';
+    if (cutPercent > 0) {
+      return `<section class="bulk-receipt-cut-page" data-cut-percent="${cutPercent}">${receipt.lines.join('')}</section>`;
+    }
+    const separator = index < bookings.length - 1 ? '<div class="bulk-receipt-break"></div>' : '';
     return receipt.lines.join('') + separator;
   }).join('');
-  return { body, paperWidth };
+  return { body, paperWidth, cutPercent };
 }
 
 export function printPurchasers(soldModal) {
