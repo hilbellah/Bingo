@@ -14,6 +14,25 @@ export default function SettingsTab() {
     setReceiptSaved,
     setAutoPrint,
   } = useAdminDashboard();
+  const receiptCutPercent = Number(receiptConfig.receiptCutPercent ?? (receiptConfig.partialCutBetweenReceipts ? 70 : 0));
+  const receiptCutEnabled = receiptCutPercent > 0;
+  const receiptCutSliderValue = receiptCutEnabled ? receiptCutPercent : 70;
+  const updateReceiptCut = (nextPercent) => {
+    const value = Math.min(99, Math.max(1, Math.round(Number(nextPercent) || 70)));
+    setReceiptConfig({
+      ...receiptConfig,
+      receiptCutPercent: value,
+      partialCutBetweenReceipts: true,
+    });
+  };
+  const toggleReceiptCut = () => {
+    const nextEnabled = !receiptCutEnabled;
+    setReceiptConfig({
+      ...receiptConfig,
+      receiptCutPercent: nextEnabled ? receiptCutSliderValue : 0,
+      partialCutBetweenReceipts: nextEnabled,
+    });
+  };
 
   return (
     <>
@@ -101,25 +120,30 @@ export default function SettingsTab() {
                       <span className="text-sm text-gray-700">Auto-Print on New Orders</span>
                     </label>
                     <p className="text-xs text-gray-400 ml-7">When enabled, a receipt will automatically print every time a new booking is placed. Install the Epson driver, set the TM-T88V as the default printer, and use 80mm receipt paper.</p>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Cut After Each Receipt</label>
-                      <select
-                        value={receiptConfig.receiptCutPercent ?? (receiptConfig.partialCutBetweenReceipts ? 70 : 0)}
-                        onChange={e => {
-                          const receiptCutPercent = Number(e.target.value);
-                          setReceiptConfig({
-                            ...receiptConfig,
-                            receiptCutPercent,
-                            partialCutBetweenReceipts: receiptCutPercent > 0,
-                          });
-                        }}
-                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                      >
-                        <option value={0}>Do not cut between receipts</option>
-                        <option value={50}>50% partial cut</option>
-                        <option value={70}>70% partial cut</option>
-                        <option value={90}>90% partial cut</option>
-                      </select>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <label className="block text-sm text-gray-600">Cut After Each Receipt</label>
+                        <button
+                          type="button"
+                          onClick={toggleReceiptCut}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${receiptCutEnabled ? 'bg-brand-blue text-white border-brand-blue' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'}`}
+                        >
+                          {receiptCutEnabled ? 'Cut On' : 'Cut Off'}
+                        </button>
+                      </div>
+                      <div className={`flex items-center gap-3 ${receiptCutEnabled ? '' : 'opacity-45'}`}>
+                        <input
+                          type="range"
+                          min="1"
+                          max="99"
+                          step="1"
+                          value={receiptCutSliderValue}
+                          disabled={!receiptCutEnabled}
+                          onChange={e => updateReceiptCut(e.target.value)}
+                          className="w-full accent-brand-blue"
+                        />
+                        <span className="w-12 text-right text-sm font-semibold text-gray-700">{receiptCutSliderValue}%</span>
+                      </div>
                     </div>
                     <p className="text-xs text-gray-400">For the Epson TM-T88V, each bulk thermal receipt prints as its own cut-ready page. Match this percentage in the printer driver cutter setting.</p>
                   </div>
@@ -133,7 +157,7 @@ export default function SettingsTab() {
                         `Business name: ${receiptConfig.businessName}`,
                         `Paper width: ${receiptConfig.paperWidth}`,
                         `Auto-print: ${receiptConfig.autoPrintEnabled ? 'On' : 'Off'}`,
-                        `Receipt cut: ${Number(receiptConfig.receiptCutPercent ?? (receiptConfig.partialCutBetweenReceipts ? 70 : 0)) > 0 ? `${receiptConfig.receiptCutPercent ?? 70}%` : 'Off'}`,
+                        `Receipt cut: ${receiptCutEnabled ? `${receiptCutSliderValue}%` : 'Off'}`,
                       ],
                       warning: 'This changes how admin receipts print.',
                     })) return;

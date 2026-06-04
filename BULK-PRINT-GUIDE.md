@@ -53,11 +53,12 @@ Before printing, choose the receipt settings:
 - Prices
 - Add-ons
 - Timestamp
-- Cut after each receipt: no cut, 50%, 70%, or 90%
+- Cut after each receipt: use the **Cut On / Cut Off** button
+- Cut percentage: drag the slider to the percentage you want
 
 Click **Save Settings** if you want to keep those receipt settings for next time.
 
-For the Epson TM-T88V, choose a cut percentage when you want every bulk thermal receipt to finish as its own cut-ready page. Match the same cut percentage in the printer driver so it leaves the small attached edge instead of cutting the paper completely.
+For the Epson TM-T88V, turn cutting on when you want every bulk thermal receipt to finish as its own cut-ready page. Match the slider percentage in the printer driver so it leaves the small attached edge instead of cutting the paper completely.
 
 ## Mark Tickets Printed
 

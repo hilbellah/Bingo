@@ -86,12 +86,12 @@ const bulkWithPartialCut = buildBulkBookingReceiptsBody(
     booking,
     { ...booking, referenceNumber: 'BNG-TEST-002', totalAmount: 3600 },
   ],
-  { paperWidth: '80mm', receiptCutPercent: 50 }
+  { paperWidth: '80mm', receiptCutPercent: 65 }
 );
 assert.equal(bulkWithPartialCut.paperWidth, '80mm');
-assert.equal(bulkWithPartialCut.cutPercent, 50);
+assert.equal(bulkWithPartialCut.cutPercent, 65);
 assert.equal((bulkWithPartialCut.body.match(/bulk-receipt-cut-page/g) || []).length, 2);
-assert.equal((bulkWithPartialCut.body.match(/data-cut-percent="50"/g) || []).length, 2);
+assert.equal((bulkWithPartialCut.body.match(/data-cut-percent="65"/g) || []).length, 2);
 assert.equal((bulkWithPartialCut.body.match(/bulk-receipt-break/g) || []).length, 0);
 
 const legacyBulkWithPartialCut = buildBulkBookingReceiptsBody([booking], { partialCutBetweenReceipts: true });

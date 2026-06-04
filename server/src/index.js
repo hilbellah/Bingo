@@ -2414,7 +2414,9 @@ function normalizeSettingValue(key, value) {
     return value;
   }
   const rawCutPercent = Number(value.receiptCutPercent ?? (value.partialCutBetweenReceipts ? 70 : 0));
-  const receiptCutPercent = [0, 50, 70, 90].includes(rawCutPercent) ? rawCutPercent : 0;
+  const receiptCutPercent = Number.isFinite(rawCutPercent) && rawCutPercent > 0
+    ? Math.min(99, Math.max(1, Math.round(rawCutPercent)))
+    : 0;
   return {
     ...DEFAULT_RECEIPT_CONFIG,
     ...value,

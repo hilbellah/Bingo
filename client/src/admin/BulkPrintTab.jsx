@@ -192,6 +192,20 @@ export default function BulkPrintTab() {
   const updateReceiptConfig = (patch) => {
     setReceiptConfig({ ...receiptConfig, ...patch });
   };
+  const receiptCutPercent = Number(receiptConfig.receiptCutPercent ?? (receiptConfig.partialCutBetweenReceipts ? 70 : 0));
+  const receiptCutEnabled = receiptCutPercent > 0;
+  const receiptCutSliderValue = receiptCutEnabled ? receiptCutPercent : 70;
+  const updateReceiptCut = (nextPercent) => {
+    const value = Math.min(99, Math.max(1, Math.round(Number(nextPercent) || 70)));
+    updateReceiptConfig({ receiptCutPercent: value, partialCutBetweenReceipts: true });
+  };
+  const toggleReceiptCut = () => {
+    const nextEnabled = !receiptCutEnabled;
+    updateReceiptConfig({
+      receiptCutPercent: nextEnabled ? receiptCutSliderValue : 0,
+      partialCutBetweenReceipts: nextEnabled,
+    });
+  };
 
   const handleSaveReceiptSettings = async () => {
     setReceiptSettingsSaving(true);
@@ -397,25 +411,31 @@ export default function BulkPrintTab() {
                         {option.label}
                       </label>
                     ))}
-                    <label className="text-sm text-gray-700">
-                      <span className="block text-xs text-gray-400 mb-1">Cut After Each Receipt</span>
-                      <select
-                        value={receiptConfig.receiptCutPercent ?? (receiptConfig.partialCutBetweenReceipts ? 70 : 0)}
-                        onChange={e => {
-                          const receiptCutPercent = Number(e.target.value);
-                          updateReceiptConfig({
-                            receiptCutPercent,
-                            partialCutBetweenReceipts: receiptCutPercent > 0,
-                          });
-                        }}
-                        className="px-3 py-2 border rounded-lg text-sm"
-                      >
-                        <option value={0}>No cut</option>
-                        <option value={50}>50%</option>
-                        <option value={70}>70%</option>
-                        <option value={90}>90%</option>
-                      </select>
-                    </label>
+                    <div className="flex min-w-[260px] flex-col gap-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs text-gray-400">Cut After Each Receipt</span>
+                        <button
+                          type="button"
+                          onClick={toggleReceiptCut}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${receiptCutEnabled ? 'bg-brand-blue text-white border-brand-blue' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'}`}
+                        >
+                          {receiptCutEnabled ? 'Cut On' : 'Cut Off'}
+                        </button>
+                      </div>
+                      <div className={`flex items-center gap-3 ${receiptCutEnabled ? '' : 'opacity-45'}`}>
+                        <input
+                          type="range"
+                          min="1"
+                          max="99"
+                          step="1"
+                          value={receiptCutSliderValue}
+                          disabled={!receiptCutEnabled}
+                          onChange={e => updateReceiptCut(e.target.value)}
+                          className="w-full accent-brand-blue"
+                        />
+                        <span className="w-12 text-right text-sm font-semibold text-gray-700">{receiptCutSliderValue}%</span>
+                      </div>
+                    </div>
                     <button
                       onClick={handleSaveReceiptSettings}
                       disabled={receiptSettingsSaving}

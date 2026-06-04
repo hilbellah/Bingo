@@ -143,7 +143,8 @@ function printThermalReceipt(title, lines, paperWidth) {
 function getBulkReceiptCutPercent(cfg = {}) {
   const legacyPercent = cfg.partialCutBetweenReceipts ? 70 : 0;
   const cutPercent = Number(cfg.receiptCutPercent ?? legacyPercent);
-  return [50, 70, 90].includes(cutPercent) ? cutPercent : 0;
+  if (!Number.isFinite(cutPercent) || cutPercent <= 0) return 0;
+  return Math.min(99, Math.max(1, Math.round(cutPercent)));
 }
 
 function moneyFromCents(cents) {
