@@ -127,7 +127,8 @@ export default function AdminDashboard() {
     showAddons: true,
     showTimestamp: true,
     autoPrintEnabled: false,
-    paperWidth: '80mm'
+    paperWidth: '80mm',
+    partialCutBetweenReceipts: false
   });
   const [receiptSaved, setReceiptSaved] = useState(false);
   const [announcementImageFile, setAnnouncementImageFile] = useState(null);

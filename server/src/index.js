@@ -2393,12 +2393,38 @@ app.delete('/api/admin/users/:id', adminAuth, requireSuperUser, async (req, res)
 
 // ============ SETTINGS ============
 
+const DEFAULT_RECEIPT_CONFIG = {
+  businessName: 'SMEC BINGO',
+  businessSubtitle: "Saint Mary's Entertainment Centre",
+  receiptTitle: 'BOOKING RECEIPT',
+  footerText: 'Thank you for your purchase!',
+  showRefNumber: true,
+  showTableChair: true,
+  showPackagePrice: true,
+  showAddons: true,
+  showTimestamp: true,
+  autoPrintEnabled: false,
+  paperWidth: '80mm',
+  partialCutBetweenReceipts: false,
+};
+
+function normalizeSettingValue(key, value) {
+  if (key !== 'receipt_config' || !value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return {
+    ...DEFAULT_RECEIPT_CONFIG,
+    ...value,
+    partialCutBetweenReceipts: Boolean(value.partialCutBetweenReceipts),
+  };
+}
+
 app.get('/api/admin/settings/:key', adminAuth, async (req, res) => {
   try {
     const row = await get('SELECT value FROM settings WHERE key = ?', [req.params.key]);
     if (!row) return res.json({ value: null });
     try {
-      res.json({ value: JSON.parse(row.value) });
+      res.json({ value: normalizeSettingValue(req.params.key, JSON.parse(row.value)) });
     } catch {
       res.json({ value: row.value });
     }
@@ -2411,7 +2437,8 @@ app.get('/api/admin/settings/:key', adminAuth, async (req, res) => {
 app.put('/api/admin/settings/:key', adminAuth, async (req, res) => {
   try {
     const { value } = req.body;
-    const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+    const normalizedValue = normalizeSettingValue(req.params.key, value);
+    const serialized = typeof normalizedValue === 'string' ? normalizedValue : JSON.stringify(normalizedValue);
     const existing = await get('SELECT key FROM settings WHERE key = ?', [req.params.key]);
     if (existing) {
       await run("UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = ?", [serialized, req.params.key]);

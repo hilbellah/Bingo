@@ -53,8 +53,11 @@ Before printing, choose the receipt settings:
 - Prices
 - Add-ons
 - Timestamp
+- Partial cut after each receipt
 
 Click **Save Settings** if you want to keep those receipt settings for next time.
+
+For the Epson TM-T88V, turn on **Partial cut after each receipt** when you want each bulk thermal receipt to finish as its own cut-ready page. In the printer driver, keep the cutter set to partial cut so it leaves the small attached edge instead of cutting the paper completely.
 
 ## Mark Tickets Printed
 

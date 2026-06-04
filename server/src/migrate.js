@@ -470,7 +470,8 @@ async function migrate() {
     showAddons: true,
     showTimestamp: true,
     autoPrintEnabled: false,
-    paperWidth: '80mm'
+    paperWidth: '80mm',
+    partialCutBetweenReceipts: false
   });
   try { await run("INSERT INTO settings (key, value) VALUES ('receipt_config', ?)", [defaultReceipt]); } catch(e) {}
 

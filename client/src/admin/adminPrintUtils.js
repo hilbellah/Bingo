@@ -271,6 +271,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 
 .legacy-total-main { text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; margin-top: 3px; }
 .legacy-total-main strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
 .bulk-receipt-break { border-top: 1px dashed #000; margin: 5mm 0; height: 0; }
+.bulk-receipt-cut { break-after: page; page-break-after: always; height: 0; margin: 0; border: 0; }
 @media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } }`;
 }
 
@@ -287,9 +288,10 @@ export function printBulkBookingReceipts(bookings, cfg) {
 
 export function buildBulkBookingReceiptsBody(bookings, cfg = {}) {
   const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
+  const separatorClass = cfg.partialCutBetweenReceipts ? 'bulk-receipt-cut' : 'bulk-receipt-break';
   const body = bookings.map((booking, index) => {
     const receipt = buildAutoBookingReceiptLines(booking, { ...cfg, paperWidth });
-    const separator = index < bookings.length - 1 ? '<div class="bulk-receipt-break"></div>' : '';
+    const separator = index < bookings.length - 1 ? `<div class="${separatorClass}"></div>` : '';
     return receipt.lines.join('') + separator;
   }).join('');
   return { body, paperWidth };

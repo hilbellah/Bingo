@@ -397,6 +397,14 @@ export default function BulkPrintTab() {
                         {option.label}
                       </label>
                     ))}
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(receiptConfig.partialCutBetweenReceipts)}
+                        onChange={e => updateReceiptConfig({ partialCutBetweenReceipts: e.target.checked })}
+                      />
+                      Partial cut after each receipt
+                    </label>
                     <button
                       onClick={handleSaveReceiptSettings}
                       disabled={receiptSettingsSaving}
