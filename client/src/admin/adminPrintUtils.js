@@ -150,7 +150,7 @@ function parseMoneyCents(value) {
   return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
 }
 
-function getReceiptTotals(booking) {
+export function getReceiptTotals(booking) {
   const itemSubtotal = (booking.items || []).reduce((sum, item) => {
     const addonTotal = (item.addons || []).reduce((addonSum, addon) => addonSum + (Number(addon.price) || 0), 0);
     return sum + (Number(item.packagePrice) || 0) + addonTotal;
@@ -173,7 +173,7 @@ function getReceiptTotals(booking) {
   };
 }
 
-function buildAutoBookingReceiptLines(booking, cfg = {}) {
+export function buildAutoBookingReceiptLines(booking, cfg = {}) {
   const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
   const receiptTitle = getReceiptTitle(booking, cfg.receiptTitle);
   const formatUnitPrice = (price, quantity = 1, fallback = '') => {
@@ -281,13 +281,18 @@ export function printAutoBookingReceipt(booking, cfg) {
 
 export function printBulkBookingReceipts(bookings, cfg) {
   if (!Array.isArray(bookings) || bookings.length === 0) return;
+  const { body, paperWidth } = buildBulkBookingReceiptsBody(bookings, cfg);
+  writePrintDocument('Bulk Receipts', body, getAutoBookingReceiptStyle(paperWidth));
+}
+
+export function buildBulkBookingReceiptsBody(bookings, cfg = {}) {
   const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
   const body = bookings.map((booking, index) => {
     const receipt = buildAutoBookingReceiptLines(booking, { ...cfg, paperWidth });
     const separator = index < bookings.length - 1 ? '<div class="bulk-receipt-break"></div>' : '';
     return receipt.lines.join('') + separator;
   }).join('');
-  writePrintDocument('Bulk Receipts', body, getAutoBookingReceiptStyle(paperWidth));
+  return { body, paperWidth };
 }
 
 export function printPurchasers(soldModal) {
@@ -333,8 +338,14 @@ export function saveSalesDrilldownCsv(salesDrilldown) {
 }
 
 export function printDailySalesReceipt(dailySales, cfg = {}) {
-  if (!dailySales || dailySales.items.length === 0) return;
+  const { lines, paperWidth } = buildDailySalesReceiptLines(dailySales, cfg);
+  if (lines.length === 0) return;
+  printThermalReceipt('Daily Sales', lines, paperWidth);
+}
+
+export function buildDailySalesReceiptLines(dailySales, cfg = {}) {
   const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
+  if (!dailySales || dailySales.items.length === 0) return { lines: [], paperWidth };
   const lines = [
     '<div class="thermal-logo"><img src="/wolastoq-logo-thermal.png" alt="Wolastoq Casino"></div>',
     `<div class="sub-header">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
@@ -373,7 +384,7 @@ export function printDailySalesReceipt(dailySales, cfg = {}) {
   lines.push(`<div class="total-row"><span class="total-label">TOTAL (${escapeHtml(dailySales.totalTickets)} tickets, ${escapeHtml(dailySales.totalBookings)} bookings)</span><span class="total-amt">${escapeHtml(totalWithServiceCharges)}</span></div>`);
   lines.push('<div class="line"></div>');
   lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${escapeHtml(new Date().toLocaleString())}</div>`);
-  printThermalReceipt('Daily Sales', lines, paperWidth);
+  return { lines, paperWidth };
 }
 
 export function printBookingReceipt(booking) {
