@@ -121,7 +121,15 @@ body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${b
 .dbl-line { border-top: 2px solid #000; margin: 6px 0; }
 .row { display: flex; justify-content: space-between; }
 .row span:last-child { text-align: right; }
-.thermal-logo-text { text-align: center; font-size: 18px; font-weight: 900; line-height: 1; margin: 0 0 3px; }
+.thermal-logo {
+  width: 48mm;
+  height: 14mm;
+  margin: 0 auto 3px;
+  background: #000;
+  -webkit-mask: url('/wolastoq-logo.png') center / contain no-repeat;
+  mask: url('/wolastoq-logo.png') center / contain no-repeat;
+}
+.thermal-logo-fallback { display: none; text-align: center; font-size: 18px; font-weight: 900; line-height: 1; margin: 0 0 3px; }
 .header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
 .sub-header { font-size: 10px; text-align: center; color: #333; margin-bottom: 8px; }
 .item-row { display: grid; grid-template-columns: ${qtyWidth} minmax(0, 1fr) ${amountWidth}; column-gap: 1.5mm; align-items: start; padding: 1px 0; width: 100%; }
@@ -132,7 +140,7 @@ body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${b
 .total-row { display: grid; grid-template-columns: minmax(0, 1fr) ${amountWidth}; column-gap: 1.5mm; font-weight: bold; font-size: 12px; padding: 2px 0; }
 .total-label { min-width: 0; overflow-wrap: anywhere; }
 .total-amt { text-align: right; white-space: nowrap; }
-@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } }`;
+@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } .thermal-logo { background: #000 !important; } }`;
 }
 
 function printThermalReceipt(title, lines, paperWidth) {
@@ -185,7 +193,7 @@ function buildAutoBookingReceiptLines(booking, cfg = {}) {
   const receiptTotals = getReceiptTotals(booking);
   const totalText = receiptTotals.totalWithServiceFormatted.replace(/^\$/, '');
   const lines = [
-    '<div class="receipt-logo-text">WOLASTOQ CASINO</div>',
+    '<div class="receipt-logo" aria-label="Wolastoq Casino"></div><div class="receipt-logo-fallback">WOLASTOQ CASINO</div>',
     `<div class="receipt-venue">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
     `<div class="receipt-title">${escapeHtml(receiptTitle)}</div>`,
     booking.sessionTitle ? `<div class="receipt-session">${escapeHtml(booking.sessionTitle)}</div>` : '',
@@ -247,7 +255,15 @@ function getAutoBookingReceiptStyle(paperWidth) {
   const bodyWidth = paperWidth === '58mm' ? '50mm' : '72mm';
   return `@page { size: ${paperWidth} auto; margin: 0; }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 700; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.15; }
-.receipt-logo-text { text-align: center; font-size: 18px; font-weight: 900; line-height: 1; margin: 0 0 3px; }
+.receipt-logo {
+  width: 48mm;
+  height: 14mm;
+  margin: 0 auto 3px;
+  background: #000;
+  -webkit-mask: url('/wolastoq-logo.png') center / contain no-repeat;
+  mask: url('/wolastoq-logo.png') center / contain no-repeat;
+}
+.receipt-logo-fallback { display: none; text-align: center; font-size: 18px; font-weight: 900; line-height: 1; margin: 0 0 3px; }
 .receipt-venue { text-align: center; font-size: 11px; font-weight: 900; margin-bottom: 3px; }
 .receipt-title, .receipt-session, .receipt-footer { text-align: center; font-size: 10px; font-weight: 800; margin-bottom: 3px; }
 .legacy-receipt { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 3px 0 6px; page-break-inside: avoid; }
@@ -269,7 +285,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 
 .legacy-total-main { text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; margin-top: 3px; }
 .legacy-total-main strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
 .bulk-receipt-break { border-top: 1px dashed #000; margin: 5mm 0; height: 0; }
-@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } }`;
+@media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } .receipt-logo { background: #000 !important; } }`;
 }
 
 export function printAutoBookingReceipt(booking, cfg) {
@@ -334,7 +350,7 @@ export function printDailySalesReceipt(dailySales, cfg = {}) {
   if (!dailySales || dailySales.items.length === 0) return;
   const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
   const lines = [
-    '<div class="thermal-logo-text">WOLASTOQ CASINO</div>',
+    '<div class="thermal-logo" aria-label="Wolastoq Casino"></div><div class="thermal-logo-fallback">WOLASTOQ CASINO</div>',
     `<div class="sub-header">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
     '<div class="line"></div>',
     '<div class="center bold">DAILY SALES REPORT</div>',
