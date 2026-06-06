@@ -60,6 +60,34 @@ Click **Save Settings** if you want to keep those receipt settings for next time
 
 For the Epson TM-T88V, turn cutting on when you want every bulk thermal receipt to finish as its own cut-ready page. Match the slider percentage in the printer driver so it leaves the small attached edge instead of cutting the paper completely.
 
+## Printer Cutter Setup
+
+The web app creates separate print pages when **Cut After Each Receipt** is on. The physical cut is controlled by the receipt printer driver.
+
+On the computer connected to the receipt printer:
+
+1. Open Windows **Printers & scanners**.
+2. Select the Epson receipt printer.
+3. Open **Printing preferences** or **Printer properties**.
+4. Find the cutter or paper source settings. The exact label depends on the Epson driver, but it is usually under **Document Settings**, **Advanced**, **Utility**, or **Device Settings**.
+5. Enable auto cut at page/document end.
+6. Choose **Partial Cut** if you want the receipt to stay attached by a small edge.
+7. Save the printer preferences.
+
+To test the app setting, print at least two thermal receipts with **Cut On**. The print preview should show separate receipt pages. If preview shows separate pages but the printer does not cut, the Epson driver or printer cutter setting still needs adjustment.
+
+To test the cutter hardware directly on Windows, list printers:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\test-thermal-cut.ps1 -ListPrinters
+```
+
+Then run a partial cut test with the exact printer name:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\test-thermal-cut.ps1 -PrinterName "EPSON TM-T88V Receipt" -Cut Partial
+```
+
 ## Mark Tickets Printed
 
 After printing, click **Mark Selected Printed** if you want the system to remember those tickets were printed.
