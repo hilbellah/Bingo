@@ -32,12 +32,15 @@ export async function getCustomerRows(search = '') {
       AND (
         LOWER(TRIM(b.email)) LIKE ?
         OR LOWER(COALESCE(b.reference_number, '')) LIKE ?
+        OR LOWER(COALESCE(bi.reference_number, '')) LIKE ?
+        OR LOWER(COALESCE(bi.first_name, '')) LIKE ?
+        OR LOWER(COALESCE(bi.last_name, '')) LIKE ?
         OR LOWER(COALESCE(b.customer_first_name, '')) LIKE ?
         OR LOWER(COALESCE(b.customer_last_name, '')) LIKE ?
       )
     `;
     const like = `%${normalizedSearch}%`;
-    params.push(like, like, like, like);
+    params.push(like, like, like, like, like, like, like);
   }
 
   const rows = await all(`
@@ -45,8 +48,8 @@ export async function getCustomerRows(search = '') {
       b.id as booking_id,
       b.reference_number as booking_reference_number,
       LOWER(TRIM(b.email)) as email,
-      COALESCE(NULLIF(TRIM(b.customer_first_name), ''), NULLIF(TRIM(bi.first_name), ''), '') as first_name,
-      COALESCE(NULLIF(TRIM(b.customer_last_name), ''), NULLIF(TRIM(bi.last_name), ''), '') as last_name,
+      COALESCE(NULLIF(TRIM(bi.first_name), ''), NULLIF(TRIM(b.customer_first_name), ''), '') as first_name,
+      COALESCE(NULLIF(TRIM(bi.last_name), ''), NULLIF(TRIM(b.customer_last_name), ''), '') as last_name,
       b.customer_first_name,
       b.customer_last_name,
       b.created_at,
@@ -87,7 +90,8 @@ export async function getCustomerRows(search = '') {
     const email = cleanText(row.email).toLowerCase();
     const firstName = cleanText(row.first_name);
     const lastName = cleanText(row.last_name);
-    const key = `${email}|${firstName.toLowerCase()}|${lastName.toLowerCase()}`;
+    const nameKey = `${firstName.toLowerCase()}|${lastName.toLowerCase()}`;
+    const key = firstName || lastName ? nameKey : `email|${email}`;
     const itemBaseTotal = toNumber(row.item_price) + toNumber(row.addon_total);
     const bookingSubtotal = toNumber(row.booking_item_subtotal);
     const bookingItemCount = toNumber(row.booking_item_count);

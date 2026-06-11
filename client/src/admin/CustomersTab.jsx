@@ -18,6 +18,12 @@ function formatSeat(tableNumber, chairNumber) {
   return `Table ${tableNumber || '-'}, Chair ${chairNumber || '-'}`;
 }
 
+function formatPurchaser(customer) {
+  return [customer.latestPurchaserFirstName, customer.latestPurchaserLastName]
+    .filter(Boolean)
+    .join(' ');
+}
+
 export default function CustomersTab() {
   const {
     tab,
@@ -40,13 +46,13 @@ export default function CustomersTab() {
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Customers</p>
+          <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Ticket Holders</p>
           <p className="text-2xl font-bold text-brand-blue mt-1">{totalCustomers}</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Transactions</p>
           <p className="text-2xl font-bold text-brand-blue mt-1">{totalPaidBookings}</p>
-          <p className="text-xs text-gray-400 mt-1">{totalTickets} tickets</p>
+          <p className="text-xs text-gray-400 mt-1">{totalTickets} ticket holders</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Sessions</p>
@@ -62,7 +68,7 @@ export default function CustomersTab() {
         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
           <div>
             <h3 className="font-semibold text-brand-blue">Customers</h3>
-            <p className="text-xs text-gray-500 mt-1">Rows come from paid booking purchasers.</p>
+            <p className="text-xs text-gray-500 mt-1">Rows come from paid ticket-holder names. Purchaser details are shown for contact context.</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <input
@@ -93,7 +99,7 @@ export default function CustomersTab() {
               <thead>
                 <tr className="text-left text-gray-400 border-b">
                   <th className="pb-2 pl-2">Name</th>
-                  <th className="pb-2">Email</th>
+                  <th className="pb-2">Purchaser</th>
                   <th className="pb-2">Latest Ticket</th>
                   <th className="pb-2">Latest Session</th>
                   <th className="pb-2 text-center">Transactions</th>
@@ -103,7 +109,9 @@ export default function CustomersTab() {
                 </tr>
               </thead>
               <tbody>
-                {customers.map(customer => (
+                {customers.map(customer => {
+                  const purchaserName = formatPurchaser(customer);
+                  return (
                     <tr key={customer.id} className="border-b border-gray-50 hover:bg-gray-50/60">
                       <td className="py-3 pl-2 min-w-44">
                         <div className="font-medium text-gray-800">{customer.fullName}</div>
@@ -113,6 +121,9 @@ export default function CustomersTab() {
                         <a href={`mailto:${customer.email}`} className="text-brand-blue hover:underline">
                           {customer.email}
                         </a>
+                        {purchaserName ? (
+                          <div className="text-xs text-gray-400">Booked by {purchaserName}</div>
+                        ) : null}
                       </td>
                       <td className="py-3 min-w-44">
                         <div className="font-medium text-gray-700">{customer.latestTicketReferenceNumber || '-'}</div>
@@ -127,7 +138,8 @@ export default function CustomersTab() {
                       <td className="py-3 text-right font-semibold text-gray-800">{customer.totalSpentFormatted}</td>
                       <td className="py-3 pr-2 text-gray-600 min-w-40">{formatDateTime(customer.lastBookingAt)}</td>
                     </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
