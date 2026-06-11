@@ -120,7 +120,18 @@ try {
   assert.equal(bob.email, 'buyer@example.com');
   assert.equal(bob.ticketCount, 1);
   assert.equal(bob.paidBookingCount, 1);
+  assert.equal(bob.sessionCount, 1);
   assert.equal(bob.totalSpent, 3750);
+  assert.equal(bob.latestTicketReferenceNumber, 'BNG-CUSTOMER-T2');
+  assert.equal(bob.latestBookingReferenceNumber, 'BNG-CUSTOMER-1');
+  assert.equal(bob.latestSessionDate, '2026-06-10');
+  assert.equal(bob.latestSessionTime, '18:30');
+  assert.equal(bob.latestTableNumber, 1);
+  assert.equal(bob.latestChairNumber, 2);
+  assert.equal(bob.latestPackageName, 'Customer Required');
+  assert.equal(bob.latestPurchaserFirstName, 'Buyer');
+  assert.equal(bob.latestPurchaserLastName, 'Person');
+  assert.equal(Object.hasOwn(bob, 'emailVerifiedAt'), false);
 
   const searchResponse = await fetch(`${baseUrl}/api/admin/customers?search=bob`, {
     headers: { Authorization: `Basic ${auth}` },

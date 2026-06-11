@@ -114,6 +114,8 @@ function getThermalReceiptStyle(paperWidth = '80mm') {
   return `@page { size: ${width} auto; margin: 0; }
 body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${bodyWidth}; margin: 3mm auto; padding: 0; color: #000; line-height: 1.25; box-sizing: border-box; }
 * { box-sizing: border-box; }
+.thermal-receipt-cut-page { break-after: page; page-break-after: always; }
+.thermal-receipt-cut-page:last-child { break-after: auto; page-break-after: auto; }
 .center { text-align: center; }
 .right { text-align: right; }
 .bold { font-weight: bold; }
@@ -136,15 +138,30 @@ body { font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${b
 @media print { body { width: ${bodyWidth}; margin: 0 auto; color: #000; background: #fff; } *, *::before, *::after { color: #000 !important; background: #fff !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; } }`;
 }
 
-function printThermalReceipt(title, lines, paperWidth) {
-  writePrintDocument(title, lines.join(''), getThermalReceiptStyle(paperWidth));
+function printThermalReceipt(title, lines, paperWidth, cfg = {}) {
+  const { body } = buildReceiptPrintBody(lines, cfg, 'thermal-receipt-cut-page');
+  writePrintDocument(title, body, getThermalReceiptStyle(paperWidth));
 }
 
-function getBulkReceiptCutPercent(cfg = {}) {
+function getReceiptCutPercent(cfg = {}) {
   const legacyPercent = cfg.partialCutBetweenReceipts ? 70 : 0;
   const cutPercent = Number(cfg.receiptCutPercent ?? legacyPercent);
   if (!Number.isFinite(cutPercent) || cutPercent <= 0) return 0;
   return Math.min(99, Math.max(1, Math.round(cutPercent)));
+}
+
+function getBulkReceiptCutPercent(cfg = {}) {
+  return getReceiptCutPercent(cfg);
+}
+
+function buildReceiptPrintBody(lines, cfg = {}, cutClass = 'receipt-cut-page') {
+  const body = Array.isArray(lines) ? lines.join('') : String(lines ?? '');
+  const cutPercent = getReceiptCutPercent(cfg);
+  if (cutPercent <= 0) return { body, cutPercent };
+  return {
+    body: `<section class="${cutClass}" data-cut-percent="${cutPercent}">${body}</section>`,
+    cutPercent,
+  };
 }
 
 function moneyFromCents(cents) {
@@ -277,6 +294,8 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 
 .legacy-total-row strong { font-size: 11px; font-weight: 900; white-space: nowrap; }
 .legacy-total-main { text-align: center; color: #ef2b24; font-size: 20px; font-weight: 900; margin-top: 3px; }
 .legacy-total-main strong { display: block; font-size: 24px; font-weight: 900; margin-top: 4px; }
+.receipt-cut-page { break-after: page; page-break-after: always; }
+.receipt-cut-page:last-child { break-after: auto; page-break-after: auto; }
 .bulk-receipt-break { border-top: 1px dashed #000; margin: 5mm 0; height: 0; }
 .bulk-receipt-cut-page { break-after: page; page-break-after: always; }
 .bulk-receipt-cut-page:last-child { break-after: auto; page-break-after: auto; }
@@ -284,8 +303,14 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; font-weight: 
 }
 
 export function printAutoBookingReceipt(booking, cfg) {
+  const { body, paperWidth } = buildAutoBookingReceiptBody(booking, cfg);
+  writePrintDocument('Receipt', body, getAutoBookingReceiptStyle(paperWidth));
+}
+
+export function buildAutoBookingReceiptBody(booking, cfg = {}) {
   const { lines, paperWidth } = buildAutoBookingReceiptLines(booking, cfg);
-  writePrintDocument('Receipt', lines.join(''), getAutoBookingReceiptStyle(paperWidth));
+  const { body, cutPercent } = buildReceiptPrintBody(lines, cfg, 'receipt-cut-page');
+  return { body, paperWidth, cutPercent };
 }
 
 export function printBulkBookingReceipts(bookings, cfg) {
@@ -351,9 +376,15 @@ export function saveSalesDrilldownCsv(salesDrilldown) {
 }
 
 export function printDailySalesReceipt(dailySales, cfg = {}) {
-  const { lines, paperWidth } = buildDailySalesReceiptLines(dailySales, cfg);
+  const { body, lines, paperWidth } = buildDailySalesReceiptBody(dailySales, cfg);
   if (lines.length === 0) return;
-  printThermalReceipt('Daily Sales', lines, paperWidth);
+  writePrintDocument('Daily Sales', body, getThermalReceiptStyle(paperWidth));
+}
+
+export function buildDailySalesReceiptBody(dailySales, cfg = {}) {
+  const { lines, paperWidth } = buildDailySalesReceiptLines(dailySales, cfg);
+  const { body, cutPercent } = buildReceiptPrintBody(lines, cfg, 'thermal-receipt-cut-page');
+  return { body, lines, paperWidth, cutPercent };
 }
 
 export function buildDailySalesReceiptLines(dailySales, cfg = {}) {
@@ -400,7 +431,7 @@ export function buildDailySalesReceiptLines(dailySales, cfg = {}) {
   return { lines, paperWidth };
 }
 
-export function printBookingReceipt(booking) {
+export function printBookingReceipt(booking, cfg = {}) {
   const receiptTitle = getReceiptTitle(booking);
   const receiptTotals = getReceiptTotals(booking);
   const lines = [
@@ -437,5 +468,5 @@ export function printBookingReceipt(booking) {
   lines.push(`<div class="total-row"><span>TOTAL</span><span>${escapeHtml(receiptTotals.totalWithServiceFormatted)}</span></div>`);
   lines.push('<div class="line"></div>');
   lines.push(`<div class="center" style="font-size:10px;margin-top:8px">${escapeHtml(new Date(booking.createdAt).toLocaleString())}</div>`);
-  printThermalReceipt('Booking Receipt', lines);
+  printThermalReceipt('Booking Receipt', lines, cfg.paperWidth, cfg);
 }

@@ -6,8 +6,10 @@ const repoRoot = process.cwd();
 const printUtilsUrl = pathToFileURL(path.join(repoRoot, 'client/src/admin/adminPrintUtils.js'));
 
 const {
+  buildAutoBookingReceiptBody,
   buildAutoBookingReceiptLines,
   buildBulkBookingReceiptsBody,
+  buildDailySalesReceiptBody,
   buildDailySalesReceiptLines,
   getReceiptTotals,
 } = await import(printUtilsUrl);
@@ -68,6 +70,15 @@ assert.match(receiptHtml, /\$2\.00/);
 assert.match(receiptHtml, /TOTAL AMOUNT : \$/);
 assert.match(receiptHtml, />34\.00</);
 assert.match(receiptHtml, /Toonie Ball/);
+
+const receiptWithCut = buildAutoBookingReceiptBody(booking, {
+  paperWidth: '80mm',
+  receiptCutPercent: 65,
+});
+assert.equal(receiptWithCut.paperWidth, '80mm');
+assert.equal(receiptWithCut.cutPercent, 65);
+assert.match(receiptWithCut.body, /class="receipt-cut-page"/);
+assert.match(receiptWithCut.body, /data-cut-percent="65"/);
 
 const bulk = buildBulkBookingReceiptsBody(
   [
@@ -131,6 +142,33 @@ assert.match(dailyHtml, /Subtotal \(no service\)/);
 assert.match(dailyHtml, /Service charges/);
 assert.match(dailyHtml, /TOTAL \(1 tickets, 1 bookings\)/);
 assert.match(dailyHtml, /\$34\.00/);
+
+const dailyWithCut = buildDailySalesReceiptBody({
+  date: '2026-06-04',
+  items: [
+    {
+      rowNum: 1,
+      firstName: 'Test',
+      lastName: 'Customer',
+      referenceNumber: 'BNG-TICKET-001',
+      tableNumber: 12,
+      chairNumber: 3,
+      packageName: '9 up',
+      itemPrice: 3000,
+      addons: [],
+    },
+  ],
+  addonSubtotal: 0,
+  subtotalWithoutServiceChargesFormatted: '$30.00',
+  serviceChargeSubtotalFormatted: '$2.00',
+  totalWithServiceChargesFormatted: '$32.00',
+  totalTickets: 1,
+  totalBookings: 1,
+}, { paperWidth: '58mm', partialCutBetweenReceipts: true });
+assert.equal(dailyWithCut.paperWidth, '58mm');
+assert.equal(dailyWithCut.cutPercent, 70);
+assert.match(dailyWithCut.body, /class="thermal-receipt-cut-page"/);
+assert.match(dailyWithCut.body, /data-cut-percent="70"/);
 
 const emptyDaily = buildDailySalesReceiptLines(null, { paperWidth: '58mm' });
 assert.deepEqual(emptyDaily, { lines: [], paperWidth: '58mm' });
