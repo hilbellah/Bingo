@@ -1,5 +1,6 @@
 import { all } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
+import { getSalesReportCutoff } from '../services/salesReporting.js';
 import { formatPrice } from '../utils/format.js';
 
 function toNumber(value) {
@@ -26,11 +27,15 @@ function csvCell(value) {
 export async function getCustomerRows(search = '') {
   const normalizedSearch = String(search || '').trim().toLowerCase();
   const params = [];
+  const cutoff = await getSalesReportCutoff();
+  const cutoffClause = cutoff ? "AND datetime(COALESCE(b.payment_completed_at, b.created_at)) >= datetime(?)" : '';
+  if (cutoff) params.push(cutoff);
+
   let whereClause = '';
   if (normalizedSearch) {
     whereClause = `
       AND (
-        LOWER(TRIM(b.email)) LIKE ?
+        LOWER(TRIM(COALESCE(b.email, ''))) LIKE ?
         OR LOWER(COALESCE(b.reference_number, '')) LIKE ?
         OR LOWER(COALESCE(bi.reference_number, '')) LIKE ?
         OR LOWER(COALESCE(bi.first_name, '')) LIKE ?
@@ -77,9 +82,15 @@ export async function getCustomerRows(search = '') {
       GROUP BY booking_item_id
     ) addons ON addons.booking_item_id = bi.id
     WHERE b.payment_status IN ('paid', 'partially_refunded')
-      AND b.email IS NOT NULL
-      AND TRIM(b.email) <> ''
       AND COALESCE(bi.refund_status, 'active') != 'refunded'
+      AND (
+        TRIM(COALESCE(bi.first_name, '')) <> ''
+        OR TRIM(COALESCE(bi.last_name, '')) <> ''
+        OR TRIM(COALESCE(b.customer_first_name, '')) <> ''
+        OR TRIM(COALESCE(b.customer_last_name, '')) <> ''
+        OR TRIM(COALESCE(b.email, '')) <> ''
+      )
+      ${cutoffClause}
       ${whereClause}
     ORDER BY booking_at DESC, b.created_at DESC, last_name ASC, first_name ASC
   `, params);

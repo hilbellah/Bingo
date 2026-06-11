@@ -118,9 +118,13 @@ export default function CustomersTab() {
                         <div className="text-xs text-gray-400">First booking: {formatDateTime(customer.firstBookingAt)}</div>
                       </td>
                       <td className="py-3 min-w-56">
-                        <a href={`mailto:${customer.email}`} className="text-brand-blue hover:underline">
-                          {customer.email}
-                        </a>
+                        {customer.email ? (
+                          <a href={`mailto:${customer.email}`} className="text-brand-blue hover:underline">
+                            {customer.email}
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">No email provided</span>
+                        )}
                         {purchaserName ? (
                           <div className="text-xs text-gray-400">Booked by {purchaserName}</div>
                         ) : null}

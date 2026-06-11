@@ -26,7 +26,15 @@ const { getDb, run, saveDb } = await import(databaseUrl);
 await migrate();
 await getDb();
 
+const cutoffAt = '2026-06-07T00:00:00.000Z';
 const paidAt = '2026-06-07T12:00:00.000Z';
+const oldPaidAt = '2026-06-01T12:00:00.000Z';
+
+await run(
+  `INSERT INTO settings (key, value)
+   VALUES ('sales_report_cutoff_at', ?)`,
+  [cutoffAt]
+);
 
 await run(
   `INSERT INTO packages
@@ -46,7 +54,12 @@ await run(
    VALUES ('customer-report-session', '2026-06-10', '18:30', '12:00', 1, 'regular_bingo', 0)`
 );
 
-for (const [seatId, chairNumber] of [['customer-seat-1', 1], ['customer-seat-2', 2], ['customer-seat-3', 3]]) {
+for (const [seatId, chairNumber] of [
+  ['customer-seat-1', 1],
+  ['customer-seat-2', 2],
+  ['customer-seat-3', 3],
+  ['customer-seat-old', 4],
+]) {
   await run(
     `INSERT INTO seats
       (id, session_id, table_number, chair_number, status)
@@ -85,15 +98,30 @@ await run(
   `INSERT INTO bookings
     (id, session_id, reference_number, total_amount, payment_status, email,
      customer_first_name, customer_last_name, email_verified_at, payment_completed_at, created_at)
-   VALUES (?, 'customer-report-session', ?, ?, 'paid', 'buyer@example.com',
-     'Buyer', 'Person', ?, ?, ?)`,
-  ['customer-booking-2', 'BNG-CUSTOMER-2', 3000, paidAt, paidAt, paidAt]
+   VALUES (?, 'customer-report-session', ?, ?, 'paid', NULL,
+     'Buyer', 'Person', NULL, ?, ?)`,
+  ['customer-booking-2', 'BNG-CUSTOMER-2', 3000, paidAt, paidAt]
 );
 await run(
   `INSERT INTO booking_items
     (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
    VALUES (?, 'customer-booking-2', ?, ?, ?, 'customer-required-package', 3000, ?)`,
   ['customer-item-charlie', 'Charlie', 'Guest', 'customer-seat-3', 'BNG-CUSTOMER-T3']
+);
+
+await run(
+  `INSERT INTO bookings
+    (id, session_id, reference_number, total_amount, payment_status, email,
+     customer_first_name, customer_last_name, email_verified_at, payment_completed_at, created_at)
+   VALUES (?, 'customer-report-session', ?, ?, 'paid', 'hilbert@example.com',
+     'Hilbert', 'Tester', ?, ?, ?)`,
+  ['customer-booking-old', 'BNG-CUSTOMER-OLD', 3000, oldPaidAt, oldPaidAt, oldPaidAt]
+);
+await run(
+  `INSERT INTO booking_items
+    (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
+   VALUES (?, 'customer-booking-old', ?, ?, ?, 'customer-required-package', 3000, ?)`,
+  ['customer-item-old', 'Hilbert', 'Account', 'customer-seat-old', 'BNG-CUSTOMER-OLD-T1']
 );
 
 await saveDb();
@@ -115,6 +143,7 @@ try {
   assert.equal(customers.length, 3);
   assert.deepEqual(customers.map(customer => customer.fullName).sort(), ['Alice Player', 'Bob Player', 'Charlie Guest']);
   assert.equal(customers.reduce((sum, customer) => sum + customer.totalSpent, 0), 10000);
+  assert.equal(customers.some(customer => customer.fullName === 'Hilbert Account'), false);
 
   const bob = customers.find(customer => customer.fullName === 'Bob Player');
   assert.equal(bob.email, 'buyer@example.com');
@@ -133,12 +162,26 @@ try {
   assert.equal(bob.latestPurchaserLastName, 'Person');
   assert.equal(Object.hasOwn(bob, 'emailVerifiedAt'), false);
 
+  const charlie = customers.find(customer => customer.fullName === 'Charlie Guest');
+  assert.equal(charlie.email, '');
+  assert.equal(charlie.ticketCount, 1);
+  assert.equal(charlie.paidBookingCount, 1);
+  assert.equal(charlie.totalSpent, 3000);
+  assert.equal(charlie.latestTicketReferenceNumber, 'BNG-CUSTOMER-T3');
+
   const searchResponse = await fetch(`${baseUrl}/api/admin/customers?search=bob`, {
     headers: { Authorization: `Basic ${auth}` },
   });
   const searchCustomers = await searchResponse.json();
   assert.equal(searchResponse.status, 200);
   assert.deepEqual(searchCustomers.map(customer => customer.fullName), ['Bob Player']);
+
+  const noEmailSearchResponse = await fetch(`${baseUrl}/api/admin/customers?search=charlie`, {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  const noEmailSearchCustomers = await noEmailSearchResponse.json();
+  assert.equal(noEmailSearchResponse.status, 200);
+  assert.deepEqual(noEmailSearchCustomers.map(customer => customer.fullName), ['Charlie Guest']);
 
   console.log('Customer report API check passed.');
 } finally {
