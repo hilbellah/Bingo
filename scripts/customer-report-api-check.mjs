@@ -27,6 +27,7 @@ await migrate();
 await getDb();
 
 const paidAt = '2026-06-07T12:00:00.000Z';
+const laterPaidAt = '2026-06-08T12:00:00.000Z';
 
 await run(
   `INSERT INTO packages
@@ -87,7 +88,7 @@ await run(
      customer_first_name, customer_last_name, email_verified_at, payment_completed_at, created_at)
    VALUES (?, 'customer-report-session', ?, ?, 'paid', 'buyer@example.com',
      'Buyer', 'Person', ?, ?, ?)`,
-  ['customer-booking-2', 'BNG-CUSTOMER-2', 3000, paidAt, paidAt, paidAt]
+  ['customer-booking-2', 'BNG-CUSTOMER-2', 3000, laterPaidAt, laterPaidAt, laterPaidAt]
 );
 await run(
   `INSERT INTO booking_items
@@ -112,33 +113,33 @@ try {
   const customers = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(customers.length, 3);
-  assert.deepEqual(customers.map(customer => customer.fullName).sort(), ['Alice Player', 'Bob Player', 'Charlie Guest']);
+  assert.equal(customers.length, 1);
+  assert.deepEqual(customers.map(customer => customer.fullName), ['Buyer Person']);
   assert.equal(customers.reduce((sum, customer) => sum + customer.totalSpent, 0), 10000);
 
-  const bob = customers.find(customer => customer.fullName === 'Bob Player');
-  assert.equal(bob.email, 'buyer@example.com');
-  assert.equal(bob.ticketCount, 1);
-  assert.equal(bob.paidBookingCount, 1);
-  assert.equal(bob.sessionCount, 1);
-  assert.equal(bob.totalSpent, 3750);
-  assert.equal(bob.latestTicketReferenceNumber, 'BNG-CUSTOMER-T2');
-  assert.equal(bob.latestBookingReferenceNumber, 'BNG-CUSTOMER-1');
-  assert.equal(bob.latestSessionDate, '2026-06-10');
-  assert.equal(bob.latestSessionTime, '18:30');
-  assert.equal(bob.latestTableNumber, 1);
-  assert.equal(bob.latestChairNumber, 2);
-  assert.equal(bob.latestPackageName, 'Customer Required');
-  assert.equal(bob.latestPurchaserFirstName, 'Buyer');
-  assert.equal(bob.latestPurchaserLastName, 'Person');
-  assert.equal(Object.hasOwn(bob, 'emailVerifiedAt'), false);
+  const buyer = customers[0];
+  assert.equal(buyer.email, 'buyer@example.com');
+  assert.equal(buyer.ticketCount, 3);
+  assert.equal(buyer.paidBookingCount, 2);
+  assert.equal(buyer.sessionCount, 1);
+  assert.equal(buyer.totalSpent, 10000);
+  assert.equal(buyer.latestTicketReferenceNumber, 'BNG-CUSTOMER-T3');
+  assert.equal(buyer.latestBookingReferenceNumber, 'BNG-CUSTOMER-2');
+  assert.equal(buyer.latestSessionDate, '2026-06-10');
+  assert.equal(buyer.latestSessionTime, '18:30');
+  assert.equal(buyer.latestTableNumber, 1);
+  assert.equal(buyer.latestChairNumber, 3);
+  assert.equal(buyer.latestPackageName, 'Customer Required');
+  assert.equal(buyer.latestPurchaserFirstName, 'Buyer');
+  assert.equal(buyer.latestPurchaserLastName, 'Person');
+  assert.equal(Object.hasOwn(buyer, 'emailVerifiedAt'), false);
 
-  const searchResponse = await fetch(`${baseUrl}/api/admin/customers?search=bob`, {
+  const searchResponse = await fetch(`${baseUrl}/api/admin/customers?search=buyer`, {
     headers: { Authorization: `Basic ${auth}` },
   });
   const searchCustomers = await searchResponse.json();
   assert.equal(searchResponse.status, 200);
-  assert.deepEqual(searchCustomers.map(customer => customer.fullName), ['Bob Player']);
+  assert.deepEqual(searchCustomers.map(customer => customer.fullName), ['Buyer Person']);
 
   console.log('Customer report API check passed.');
 } finally {
