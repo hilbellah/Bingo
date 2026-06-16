@@ -57,6 +57,10 @@ Local active test sessions were soft-deleted through the admin API:
 
 No matching active local test sessions remained after cleanup.
 
+### Startup Cleanup Hotfix
+
+Production startup failed once because archived-session cleanup tried to permanently delete old seats that still had booking item history. The cleanup now only permanently removes old soft-deleted sessions when they have no bookings and no booking items referencing their seats. Sessions with booking history stay archived instead of being hard-deleted.
+
 ## Live Event Feature Issues
 
 ### Test live event disappeared after being enabled

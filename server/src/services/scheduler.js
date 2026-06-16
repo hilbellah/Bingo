@@ -313,6 +313,15 @@ export async function cleanupOldData() {
     WHERE date < ?
       AND is_special_event = 0
       AND deleted_at IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM bookings b
+        WHERE b.session_id = sessions.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM seats st
+        JOIN booking_items bi ON bi.seat_id = st.id
+        WHERE st.session_id = sessions.id
+      )
   `, [thirtyDaysAgo]);
 
   if (oldSessions.length > 0) {
