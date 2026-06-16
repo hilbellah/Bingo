@@ -47,7 +47,7 @@ export default function EventSalesTab() {
         <p className="text-sm text-gray-500 mb-4">
           Concerts and shows use one set admission price, no add-ons, advance sales, and 6-up template printing.
         </p>
-        <div className="grid md:grid-cols-4 gap-3">
+        <div className="grid md:grid-cols-5 gap-3">
           <div>
             <label className="block text-xs text-gray-400 mb-1">Live Event / Venue Name</label>
             <input
@@ -76,7 +76,16 @@ export default function EventSalesTab() {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Sales Cutoff</label>
+            <label className="block text-xs text-gray-400 mb-1">Sales Cutoff Date</label>
+            <input
+              type="date"
+              value={newEvent.sales_cutoff_date || newEvent.date}
+              onChange={e => setNewEvent({ ...newEvent, sales_cutoff_date: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Sales Cutoff Time</label>
             <input
               type="time"
               value={newEvent.cutoff_time}
@@ -96,7 +105,7 @@ export default function EventSalesTab() {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Price ($)</label>
+            <label className="block text-xs text-gray-400 mb-1">Price (CAD)</label>
             <input
               type="text"
               inputMode="decimal"
@@ -222,7 +231,7 @@ export default function EventSalesTab() {
                   className="w-full px-3 py-2 border rounded-lg text-sm"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Date</label>
                   <input type="date" value={editForm.date} onChange={e => setEditForm({ ...editForm, date: e.target.value })}
@@ -234,7 +243,12 @@ export default function EventSalesTab() {
                     className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Cutoff</label>
+                  <label className="block text-xs text-gray-500 mb-1">Cutoff Date</label>
+                  <input type="date" value={editForm.sales_cutoff_date || editForm.date} onChange={e => setEditForm({ ...editForm, sales_cutoff_date: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Cutoff Time</label>
                   <input type="time" value={editForm.cutoff_time} onChange={e => setEditForm({ ...editForm, cutoff_time: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
@@ -284,7 +298,7 @@ export default function EventSalesTab() {
                   }} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Price ($)</label>
+                  <label className="block text-xs text-gray-500 mb-1">Price (CAD)</label>
                   <input type="text" inputMode="decimal" value={pkg.price ? pkg.price / 100 : ''} onChange={e => {
                     const val = e.target.value.replace(/[^0-9.]/g, '');
                     const list = [...sessionPkgList];

@@ -55,6 +55,7 @@ export default function BookingPanel({
   const requiredPackageList = requiredPkgs?.length ? requiredPkgs : (requiredPkg ? [requiredPkg] : []);
   const sessionType = session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
   const isRegularBingo = sessionType === 'regular_bingo';
+  const isEvent = sessionType === 'event';
   const requiredPhdIncluded = requiredPackageList.some(pkg => pkg?.is_phd);
   const isPhdCreditPackage = (pkg) => pkg?.id === PHD_CREDIT_PACKAGE_ID;
   const getIncludedPhdTotal = () => requiredPhdIncluded ? attendees.length : 0;
@@ -164,7 +165,7 @@ export default function BookingPanel({
         {/* Panel Header */}
         <div className="bg-brand-blue px-5 py-4 flex items-center justify-between flex-shrink-0">
           <div>
-            <h2 className="text-white font-bold text-lg">Book Your Seats</h2>
+            <h2 className="text-white font-bold text-lg">{isEvent ? 'Book Your Tickets' : 'Book Your Seats'}</h2>
             {session && (
               <p className="text-blue-200 text-sm">{formatDateShort(session.date)} at {formatTime(session.time)}</p>
             )}
@@ -207,10 +208,10 @@ export default function BookingPanel({
               {/* Party Size Selector */}
               <div className="bg-brand-blue/5 border-2 border-brand-blue/20 rounded-xl px-4 py-3 mb-5">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-brand-blue uppercase tracking-wide">How many players?</span>
+                  <span className="text-sm font-bold text-brand-blue uppercase tracking-wide">{isEvent ? 'How many tickets?' : 'How many players?'}</span>
                   {partySize > 0 && (
                     <span className="text-xs bg-brand-blue text-white px-2.5 py-1 rounded-full font-semibold">
-                      {partySize} {partySize === 1 ? 'Player' : 'Players'}
+                      {partySize} {partySize === 1 ? (isEvent ? 'Ticket' : 'Player') : (isEvent ? 'Tickets' : 'Players')}
                     </span>
                   )}
                 </div>
@@ -243,12 +244,14 @@ export default function BookingPanel({
               {partySize > 0 && (
                 <div>
                   <h3 className="font-bold text-brand-blue text-lg mb-3">
-                    {partySize === 1 ? 'Player Name' : 'Player Names'}
+                    {isEvent ? (partySize === 1 ? 'Ticket Holder Name' : 'Ticket Holder Names') : (partySize === 1 ? 'Player Name' : 'Player Names')}
                   </h3>
                   <p className="text-sm text-gray-500 mb-4">
-                    {partySize === 1
-                      ? 'Enter Name below and pick your chair on the floor plan.'
-                      : "Enter everyone's name, then you'll pick chairs on the floor plan."}
+                    {isEvent
+                      ? 'Enter the name for each live event ticket.'
+                      : partySize === 1
+                        ? 'Enter Name below and pick your chair on the floor plan.'
+                        : "Enter everyone's name, then you'll pick chairs on the floor plan."}
                   </p>
 
                   <div className="space-y-3">
@@ -259,7 +262,11 @@ export default function BookingPanel({
                           <div className="flex items-center gap-2 mb-3">
                             <span className="w-7 h-7 rounded-full bg-brand-blue text-white flex items-center justify-center text-sm font-bold">{i + 1}</span>
                             <span className="font-semibold text-brand-blue">Player {i + 1}</span>
-                            {seatInfo ? (
+                            {isEvent ? (
+                              <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                                Ticket ready
+                              </span>
+                            ) : seatInfo ? (
                               <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
                                 T{seatInfo.table} C{seatInfo.chair}
                               </span>
@@ -290,7 +297,7 @@ export default function BookingPanel({
               {/* Next step CTA */}
               {partySize > 0 && (
                 <div className="mt-5 space-y-3">
-                  {allNamesValid && chairsNeeded > 0 ? (
+                  {!isEvent && allNamesValid && chairsNeeded > 0 ? (
                     /* Names filled but need more chairs - guide them to floor plan */
                     <button onClick={onPickChairs}
                       className="w-full bg-brand-gold text-white py-3.5 rounded-xl font-semibold text-lg transition hover:bg-brand-gold-light glow-gold-sm flex items-center justify-center gap-2">
@@ -303,7 +310,7 @@ export default function BookingPanel({
                     /* All good - go to packages */
                     <button onClick={() => setStep(1)}
                       className="w-full bg-brand-gold text-white py-3.5 rounded-xl font-semibold text-lg transition hover:bg-brand-gold-light glow-gold-sm">
-                      Next: Choose Packages
+                      {isEvent ? 'Next: Review Ticket' : 'Next: Choose Packages'}
                     </button>
                   ) : (
                     /* Names not filled yet */
@@ -334,9 +341,9 @@ export default function BookingPanel({
               {selectedSeats.length > 0 && (
                 <div className="bg-brand-blue/5 border-2 border-brand-blue/20 rounded-xl px-4 py-3 mb-5">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-bold text-brand-blue uppercase tracking-wide">Your Seats</span>
+                    <span className="text-sm font-bold text-brand-blue uppercase tracking-wide">{isEvent ? 'Your Tickets' : 'Your Seats'}</span>
                     <span className="text-xs bg-brand-blue text-white px-2.5 py-1 rounded-full font-semibold">
-                      {partySize} {partySize === 1 ? 'Player' : 'Players'}
+                      {partySize} {partySize === 1 ? (isEvent ? 'Ticket' : 'Player') : (isEvent ? 'Tickets' : 'Players')}
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -347,7 +354,7 @@ export default function BookingPanel({
                           <span className="w-5 h-5 rounded-md bg-brand-blue text-white flex items-center justify-center shrink-0 text-[10px] font-bold">
                             {i + 1}
                           </span>
-                          {attendees[i]?.firstName || 'Player'} - T{info?.table} C{info?.chair}
+                          {isEvent ? `${attendees[i]?.firstName || 'Guest'} - General admission` : `${attendees[i]?.firstName || 'Player'} - T${info?.table} C${info?.chair}`}
                         </span>
                       );
                     })}
@@ -359,9 +366,18 @@ export default function BookingPanel({
               <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-5">
                 <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-1">Instructions</p>
                 <ul className="text-sm text-blue-700 space-y-1">
-                  <li>&#8226; Daily booking cut-off at <strong>12:00 PM</strong></li>
-                  <li>&#8226; Paper card limits apply separately to each item</li>
-                  <li>&#8226; PHD packages are limited separately to {phdInventory?.perPlayerLimit || 2} per player</li>
+                  {isEvent ? (
+                    <>
+                      <li>&#8226; Live event tickets are general admission</li>
+                      <li>&#8226; No floor-plan or table selection is required</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>&#8226; Daily booking cut-off at <strong>12:00 PM</strong></li>
+                      <li>&#8226; Paper card limits apply separately to each item</li>
+                      <li>&#8226; PHD packages are limited separately to {phdInventory?.perPlayerLimit || 2} per player</li>
+                    </>
+                  )}
                 </ul>
               </div>
 
@@ -396,7 +412,11 @@ export default function BookingPanel({
                       <div className="flex items-center gap-2 mb-3">
                         <span className="w-7 h-7 rounded-full bg-brand-blue text-white flex items-center justify-center text-sm font-bold">{i + 1}</span>
                         <span className="font-semibold text-brand-blue">{att.firstName} {att.lastName}</span>
-                        {seatInfo && (
+                        {isEvent ? (
+                          <span className="ml-auto text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+                            General admission
+                          </span>
+                        ) : seatInfo && (
                           <span className="ml-auto text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">
                             T{seatInfo.table} C{seatInfo.chair}
                           </span>
@@ -549,7 +569,11 @@ export default function BookingPanel({
                         <div className="flex items-center gap-2 mb-2">
                           <span className="w-6 h-6 rounded-full bg-brand-blue text-white flex items-center justify-center text-xs font-bold">{i + 1}</span>
                           <span className="font-semibold text-brand-blue text-sm">{att.firstName} {att.lastName}</span>
-                          {info && (
+                          {isEvent ? (
+                            <span className="ml-auto text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+                              General admission
+                            </span>
+                          ) : info && (
                             <span className="ml-auto text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
                               Table {info.table}, Chair {info.chair}
                             </span>

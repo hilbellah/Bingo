@@ -40,9 +40,9 @@ export default function BookingsTab() {
   const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
   const transactionRows = transactions?.items || [];
   const transactionSummary = transactions?.summary || {};
-  const dailySubtotalWithoutServiceCharges = dailySales?.subtotalWithoutServiceChargesFormatted || dailySales?.grandTotalFormatted || '$0.00';
-  const dailyServiceChargeSubtotal = dailySales?.serviceChargeSubtotalFormatted || '$0.00';
-  const dailyTotalWithServiceCharges = dailySales?.totalWithServiceChargesFormatted || dailySales?.grandTotalFormatted || '$0.00';
+  const dailySubtotalWithoutServiceCharges = dailySales?.subtotalWithoutServiceChargesFormatted || dailySales?.grandTotalFormatted || 'CA$0.00';
+  const dailyServiceChargeSubtotal = dailySales?.serviceChargeSubtotalFormatted || 'CA$0.00';
+  const dailyTotalWithServiceCharges = dailySales?.totalWithServiceChargesFormatted || dailySales?.grandTotalFormatted || 'CA$0.00';
   const salesBoards = [
     {
       id: 'dailySales',
@@ -288,24 +288,24 @@ export default function BookingsTab() {
               <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-4">
                 <div className="border rounded-lg p-3">
                   <p className="text-xs text-gray-500">Gross Sales</p>
-                  <p className="font-bold text-gray-900">{transactionSummary.grossSalesFormatted || '$0.00'}</p>
+                  <p className="font-bold text-gray-900">{transactionSummary.grossSalesFormatted || 'CA$0.00'}</p>
                 </div>
                 <div className="border rounded-lg p-3">
                   <p className="text-xs text-gray-500">Subtotal no service</p>
-                  <p className="font-bold text-gray-900">{transactionSummary.subtotalWithoutServiceChargesFormatted || '$0.00'}</p>
+                  <p className="font-bold text-gray-900">{transactionSummary.subtotalWithoutServiceChargesFormatted || 'CA$0.00'}</p>
                 </div>
                 <div className="border rounded-lg p-3 bg-amber-50 border-amber-100">
                   <p className="text-xs text-amber-700">Service Charges</p>
-                  <p className="font-bold text-amber-800">{transactionSummary.netServiceChargesFormatted || '$0.00'}</p>
-                  <p className="text-[11px] text-amber-700 mt-1">Gross {transactionSummary.grossServiceChargesFormatted || '$0.00'}</p>
+                  <p className="font-bold text-amber-800">{transactionSummary.netServiceChargesFormatted || 'CA$0.00'}</p>
+                  <p className="text-[11px] text-amber-700 mt-1">Gross {transactionSummary.grossServiceChargesFormatted || 'CA$0.00'}</p>
                 </div>
                 <div className="border rounded-lg p-3">
                   <p className="text-xs text-gray-500">Refunds / Voids</p>
-                  <p className="font-bold text-red-600">{transactionSummary.refundsFormatted || '$0.00'}</p>
+                  <p className="font-bold text-red-600">{transactionSummary.refundsFormatted || 'CA$0.00'}</p>
                 </div>
                 <div className="border rounded-lg p-3">
                   <p className="text-xs text-gray-500">Net Total</p>
-                  <p className="font-bold text-brand-gold">{transactionSummary.netTotalFormatted || '$0.00'}</p>
+                  <p className="font-bold text-brand-gold">{transactionSummary.netTotalFormatted || 'CA$0.00'}</p>
                 </div>
                 <div className="border rounded-lg p-3">
                   <p className="text-xs text-gray-500">Transactions</p>
@@ -355,7 +355,7 @@ export default function BookingsTab() {
                           </td>
                           <td className="py-2.5 font-mono text-xs text-gray-500">{item.transactionId || '-'}</td>
                           <td className={`py-2.5 text-right pr-2 font-semibold ${item.serviceChargeEffect < 0 ? 'text-red-600' : item.serviceChargeEffect > 0 ? 'text-amber-700' : 'text-gray-500'}`}>
-                            {item.serviceChargeEffectFormatted || '$0.00'}
+                            {item.serviceChargeEffectFormatted || 'CA$0.00'}
                           </td>
                           <td className={`py-2.5 text-right pr-2 font-semibold ${item.amountEffect < 0 ? 'text-red-600' : item.amountEffect > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
                             {item.amountEffectFormatted}
@@ -408,12 +408,12 @@ export default function BookingsTab() {
                       onClick={() => {
                         const rows = [['#', 'Reference', 'Name', 'Table', 'Chair', 'Package', 'Add-ons', 'Session', 'Price', 'Time']];
                         const subtotalWithoutServiceCharges = dailySales.subtotalWithoutServiceChargesFormatted || dailySales.grandTotalFormatted;
-                        const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || '$0.00';
+                        const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || 'CA$0.00';
                         const totalWithServiceCharges = dailySales.totalWithServiceChargesFormatted || dailySales.grandTotalFormatted;
                         for (const item of dailySales.items) {
                           const addonText = item.addons && item.addons.length > 0 ? item.addons.map(a => `${a.packageName} x${a.quantity} (${a.priceFormatted})`).join('; ') : '';
                           const addonTotal = item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0;
-                          const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
+                          const totalPrice = 'CA$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
                           rows.push([item.rowNum, item.referenceNumber, `${item.firstName} ${item.lastName}`, item.tableNumber, item.chairNumber, item.packageName || '', addonText, item.description, totalPrice, new Date(item.createdAt).toLocaleTimeString()]);
                         }
                         if (dailySales.addonSubtotal > 0) {
@@ -442,7 +442,7 @@ export default function BookingsTab() {
                       onClick={() => {
                         const w = window.open('', '_blank', 'width=900,height=600');
                         const subtotalWithoutServiceCharges = dailySales.subtotalWithoutServiceChargesFormatted || dailySales.grandTotalFormatted;
-                        const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || '$0.00';
+                        const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || 'CA$0.00';
                         const totalWithServiceCharges = dailySales.totalWithServiceChargesFormatted || dailySales.grandTotalFormatted;
                         w.document.write(`<html><head><title>Daily Sales - ${dailySales.date}</title>
                           <style>body{font-family:Arial,sans-serif;padding:20px;color:#333}
@@ -458,7 +458,7 @@ export default function BookingsTab() {
                         for (const item of dailySales.items) {
                           const addonText = item.addons && item.addons.length > 0 ? item.addons.map(a => `${a.packageName} x${a.quantity} (${a.priceFormatted})`).join(', ') : '';
                           const addonTotal = item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0;
-                          const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
+                          const totalPrice = 'CA$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
                           w.document.write(`<tr><td>${item.rowNum}</td><td style="font-family:monospace">${item.referenceNumber}</td><td>${item.firstName} ${item.lastName}</td><td class="center">${item.tableNumber}</td><td class="center">${item.chairNumber}</td><td>${item.packageName || ''}</td><td style="font-size:11px">${addonText}</td><td>${item.description}</td><td class="right">${totalPrice}</td><td>${new Date(item.createdAt).toLocaleTimeString()}</td></tr>`);
                         }
                         let footerHtml = '</tbody><tfoot>';
@@ -539,7 +539,7 @@ export default function BookingsTab() {
                     <tbody>
                       {dailySales.items.map(item => {
                         const addonTotal = item.addons ? item.addons.reduce((s, a) => s + a.price, 0) : 0;
-                        const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
+                        const totalPrice = 'CA$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
                         return (
                         <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                           <td className="py-2.5 pl-2 text-gray-400 text-xs">{item.rowNum}</td>

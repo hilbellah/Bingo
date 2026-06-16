@@ -165,7 +165,7 @@ function buildReceiptPrintBody(lines, cfg = {}, cutClass = 'receipt-cut-page') {
 }
 
 function moneyFromCents(cents) {
-  return '$' + (Math.max(0, Number(cents) || 0) / 100).toFixed(2);
+  return 'CA$' + (Math.max(0, Number(cents) || 0) / 100).toFixed(2);
 }
 
 function parseMoneyCents(value) {
@@ -204,11 +204,11 @@ export function buildAutoBookingReceiptLines(booking, cfg = {}) {
     const cents = Number(price || 0);
     const qty = Number(quantity || 1);
     if (!Number.isFinite(cents) || cents <= 0 || !Number.isFinite(qty) || qty <= 0) return fallback;
-    return '$' + (cents / qty / 100).toFixed(0);
+    return 'CA$' + (cents / qty / 100).toFixed(0);
   };
   const packageLabel = (priceText, name) => [priceText, name].filter(Boolean).join(' - ');
   const receiptTotals = getReceiptTotals(booking);
-  const totalText = receiptTotals.totalWithServiceFormatted.replace(/^\$/, '');
+  const totalText = receiptTotals.totalWithServiceFormatted.replace(/^(CA\$|\$)/, '');
   const lines = [
     '<div class="receipt-logo"><img src="/wolastoq-logo-thermal.png" alt="Wolastoq Casino"></div>',
     `<div class="receipt-venue">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
@@ -256,7 +256,7 @@ export function buildAutoBookingReceiptLines(booking, cfg = {}) {
   lines.push('<div class="legacy-total">');
   lines.push(`<div class="legacy-total-row"><span>SUBTOTAL</span><strong>${escapeHtml(receiptTotals.itemSubtotalFormatted)}</strong></div>`);
   lines.push(`<div class="legacy-total-row"><span>SERVICE CHARGE</span><strong>${escapeHtml(receiptTotals.serviceChargeFormatted)}</strong></div>`);
-  lines.push('<div class="legacy-total-main"><div>TOTAL AMOUNT : $</div>');
+  lines.push('<div class="legacy-total-main"><div>TOTAL AMOUNT : CA$</div>');
   lines.push(`<strong>${escapeHtml(totalText)}</strong></div></div>`);
   if (cfg.footerText) {
     lines.push(`<div class="receipt-footer">${escapeHtml(cfg.footerText)}</div>`);
@@ -403,7 +403,7 @@ export function buildDailySalesReceiptLines(dailySales, cfg = {}) {
 
   for (const item of dailySales.items) {
     const addonTotal = item.addons ? item.addons.reduce((sum, addon) => sum + addon.price, 0) : 0;
-    const totalPrice = '$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
+    const totalPrice = 'CA$' + ((item.itemPrice + addonTotal) / 100).toFixed(2);
     lines.push(`<div class="item-row"><span class="item-qty">${escapeHtml(item.rowNum)}</span><span class="item-desc">${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</span><span class="item-amt">${escapeHtml(totalPrice)}</span></div>`);
     lines.push(`<div class="detail-line">${escapeHtml(item.referenceNumber)} - T${escapeHtml(item.tableNumber)}/C${escapeHtml(item.chairNumber)} - ${escapeHtml(item.packageName || '')}</div>`);
     if (item.addons && item.addons.length > 0) {
@@ -415,7 +415,7 @@ export function buildDailySalesReceiptLines(dailySales, cfg = {}) {
 
   lines.push('<div class="dbl-line"></div>');
   const subtotalWithoutServiceCharges = dailySales.subtotalWithoutServiceChargesFormatted || dailySales.grandTotalFormatted;
-  const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || '$0.00';
+  const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || 'CA$0.00';
   const totalWithServiceCharges = dailySales.totalWithServiceChargesFormatted || dailySales.grandTotalFormatted;
   if (dailySales.addonSubtotal > 0) {
     lines.push(`<div class="total-row"><span class="total-label">Packages</span><span class="total-amt">${escapeHtml(dailySales.packageSubtotalFormatted)}</span></div>`);

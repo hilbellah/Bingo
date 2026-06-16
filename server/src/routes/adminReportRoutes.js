@@ -4,7 +4,7 @@ import { getNextPhdSessionId, getPhdInventoryForSession } from '../services/phdI
 import { getSalesReportCutoff, setSalesReportCutoff } from '../services/salesReporting.js';
 import { sessionTypeSql } from '../services/sessionPackages.js';
 import { clearExpiredHolds } from '../services/holds.js';
-import { formatLocalDate, formatPrice } from '../utils/format.js';
+import { formatCurrency, formatLocalDate } from '../utils/format.js';
 
 async function addSalesCutoff(where, params, expression) {
   const cutoff = await getSalesReportCutoff();
@@ -115,7 +115,7 @@ export function registerAdminReportRoutes(app) {
         dateTo,
         todayBookings: todayBookings?.count || 0,
         todayRevenue: todayRevenue?.total || 0,
-        todayRevenueFormatted: '$' + formatPrice(todayRevenue?.total || 0),
+        todayRevenueFormatted: formatCurrency(todayRevenue?.total || 0),
         salesReportCutoffAt: cutoff,
         upcomingSessions,
         totalTables: seatMetrics?.totalTables || 0,
@@ -186,7 +186,7 @@ export function registerAdminReportRoutes(app) {
           packageName: addon.package_name,
           quantity: addon.quantity,
           price: addon.price,
-          priceFormatted: '$' + formatPrice(addon.price)
+          priceFormatted: formatCurrency(addon.price)
         });
       }
 
@@ -243,9 +243,9 @@ export function registerAdminReportRoutes(app) {
           sessionDate: row.session_date,
           sessionTime: row.session_time,
           itemPrice: row.item_price,
-          itemPriceFormatted: '$' + formatPrice(row.item_price),
+          itemPriceFormatted: formatCurrency(row.item_price),
           totalAmount: itemTotal,
-          totalFormatted: '$' + formatPrice(itemTotal),
+          totalFormatted: formatCurrency(itemTotal),
           addons,
           createdAt: row.created_at
         };
@@ -276,17 +276,17 @@ export function registerAdminReportRoutes(app) {
         totalTickets: items.length,
         totalBookings: uniqueBookings.size,
         grandTotal,
-        grandTotalFormatted: '$' + formatPrice(grandTotal),
+        grandTotalFormatted: formatCurrency(grandTotal),
         subtotalWithoutServiceCharges,
-        subtotalWithoutServiceChargesFormatted: '$' + formatPrice(subtotalWithoutServiceCharges),
+        subtotalWithoutServiceChargesFormatted: formatCurrency(subtotalWithoutServiceCharges),
         serviceChargeSubtotal,
-        serviceChargeSubtotalFormatted: '$' + formatPrice(serviceChargeSubtotal),
+        serviceChargeSubtotalFormatted: formatCurrency(serviceChargeSubtotal),
         totalWithServiceCharges: grandTotal,
-        totalWithServiceChargesFormatted: '$' + formatPrice(grandTotal),
+        totalWithServiceChargesFormatted: formatCurrency(grandTotal),
         packageSubtotal,
-        packageSubtotalFormatted: '$' + formatPrice(packageSubtotal),
+        packageSubtotalFormatted: formatCurrency(packageSubtotal),
         addonSubtotal,
-        addonSubtotalFormatted: '$' + formatPrice(addonSubtotal)
+        addonSubtotalFormatted: formatCurrency(addonSubtotal)
       });
     } catch (err) {
       console.error('GET /api/admin/daily-sales failed:', err);
@@ -454,17 +454,17 @@ export function registerAdminReportRoutes(app) {
           status: row.payment_status,
           transactionType: isRefund ? (row.payment_status === 'voided' ? 'Void' : 'Refund') : row.payment_status === 'partially_refunded' ? 'Partial Refund' : isPaid ? 'Payment' : row.payment_status,
           totalAmount: row.total_amount,
-          totalFormatted: '$' + formatPrice(row.total_amount),
+          totalFormatted: formatCurrency(row.total_amount),
           subtotalWithoutServiceCharges: row.item_subtotal,
-          subtotalWithoutServiceChargesFormatted: '$' + formatPrice(row.item_subtotal),
+          subtotalWithoutServiceChargesFormatted: formatCurrency(row.item_subtotal),
           serviceChargeAmount,
-          serviceChargeFormatted: '$' + formatPrice(serviceChargeAmount),
+          serviceChargeFormatted: formatCurrency(serviceChargeAmount),
           serviceChargeEffect,
-          serviceChargeEffectFormatted: `${serviceChargeEffect < 0 ? '-' : ''}$${formatPrice(Math.abs(serviceChargeEffect))}`,
+          serviceChargeEffectFormatted: `${serviceChargeEffect < 0 ? '-' : ''}${formatCurrency(Math.abs(serviceChargeEffect))}`,
           partialRefundAmount,
-          partialRefundFormatted: '$' + formatPrice(partialRefundAmount),
+          partialRefundFormatted: formatCurrency(partialRefundAmount),
           amountEffect,
-          amountEffectFormatted: `${amountEffect < 0 ? '-' : ''}$${formatPrice(Math.abs(amountEffect))}`,
+          amountEffectFormatted: `${amountEffect < 0 ? '-' : ''}${formatCurrency(Math.abs(amountEffect))}`,
           transactionAt: row.transaction_at,
           createdAt: row.created_at,
           paymentCompletedAt: row.payment_completed_at,
@@ -492,23 +492,23 @@ export function registerAdminReportRoutes(app) {
           pendingCount: statusCounts.pending || 0,
           failedCount: (statusCounts.failed || 0) + (statusCounts.cancelled || 0),
           grossSales,
-          grossSalesFormatted: '$' + formatPrice(grossSales),
+          grossSalesFormatted: formatCurrency(grossSales),
           grossServiceCharges,
-          grossServiceChargesFormatted: '$' + formatPrice(grossServiceCharges),
+          grossServiceChargesFormatted: formatCurrency(grossServiceCharges),
           refundedServiceCharges,
-          refundedServiceChargesFormatted: '$' + formatPrice(refundedServiceCharges),
+          refundedServiceChargesFormatted: formatCurrency(refundedServiceCharges),
           netServiceCharges,
-          netServiceChargesFormatted: '$' + formatPrice(netServiceCharges),
+          netServiceChargesFormatted: formatCurrency(netServiceCharges),
           subtotalWithoutServiceCharges,
-          subtotalWithoutServiceChargesFormatted: '$' + formatPrice(subtotalWithoutServiceCharges),
+          subtotalWithoutServiceChargesFormatted: formatCurrency(subtotalWithoutServiceCharges),
           refunds,
-          refundsFormatted: '$' + formatPrice(refunds),
+          refundsFormatted: formatCurrency(refunds),
           netTotal: grossSales - refunds,
-          netTotalFormatted: '$' + formatPrice(grossSales - refunds),
+          netTotalFormatted: formatCurrency(grossSales - refunds),
           pendingAmount,
-          pendingAmountFormatted: '$' + formatPrice(pendingAmount),
+          pendingAmountFormatted: formatCurrency(pendingAmount),
           failedAmount,
-          failedAmountFormatted: '$' + formatPrice(failedAmount),
+          failedAmountFormatted: formatCurrency(failedAmount),
         },
         items,
       });
@@ -550,7 +550,7 @@ export function registerAdminReportRoutes(app) {
         quantity: row.quantity,
         bookingCount: row.booking_count,
         totalAmount: row.total_amount,
-        totalFormatted: '$' + formatPrice(row.total_amount)
+        totalFormatted: formatCurrency(row.total_amount)
       })));
     } catch (err) {
       console.error('GET /api/admin/booking-sales failed:', err);

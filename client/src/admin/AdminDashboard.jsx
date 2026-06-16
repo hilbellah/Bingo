@@ -31,7 +31,7 @@ import { confirmAdminAction } from './adminConfirm';
 import { formatDateShort, formatTime } from '../utils/formatters';
 
 function formatPrice(cents) {
-  return '$' + (cents / 100).toFixed(2);
+  return 'CA$' + (cents / 100).toFixed(2);
 }
 
 function packageSummary(packages = []) {
@@ -39,6 +39,23 @@ function packageSummary(packages = []) {
     .filter(pkg => pkg?.name)
     .map(pkg => `${pkg.name} (${formatPrice(pkg.price || 0)})`)
     .join(', ');
+}
+
+function splitSalesCutoffAt(value, fallbackDate = '', fallbackTime = '12:00') {
+  const text = String(value || '').trim();
+  if (text.length >= 16) {
+    return { date: text.slice(0, 10), time: text.slice(11, 16) };
+  }
+  return { date: fallbackDate || '', time: fallbackTime || '12:00' };
+}
+
+function buildSalesCutoffAt(date, time) {
+  return date && time ? `${date}T${time}` : null;
+}
+
+function formatSalesCutoff(value, fallbackTime = '') {
+  const split = splitSalesCutoffAt(value, '', fallbackTime || '12:00');
+  return split.date ? `${formatDateShort(split.date)} at ${formatTime(split.time)}` : formatTime(split.time);
 }
 
 const DEFAULT_SPECIAL_BINGO_CONFIG = {
@@ -83,7 +100,7 @@ export default function AdminDashboard() {
   const [bookingConfig, setBookingConfig] = useState(DEFAULT_BOOKING_CONFIG);
   const [bookingConfigSaved, setBookingConfigSaved] = useState(false);
   const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages() });
-  const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
+  const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
   const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false, description: '' });
@@ -472,11 +489,13 @@ export default function AdminDashboard() {
   };
 
   const handleStartEdit = (session) => {
+    const salesCutoff = splitSalesCutoffAt(session.sales_cutoff_at, session.date || '', session.cutoff_time || '12:00');
     setEditingSession(session);
     setEditForm({
       date: session.date || '',
       time: session.time || '',
-      cutoff_time: session.cutoff_time || '12:00',
+      cutoff_time: salesCutoff.time,
+      sales_cutoff_date: salesCutoff.date,
       notify_reschedule: true,
       is_special_event: !!session.is_special_event,
       session_type: session.session_type || (session.is_special_event ? 'special_bingo' : 'regular_bingo'),
@@ -490,17 +509,20 @@ export default function AdminDashboard() {
     const payload = { ...editForm };
     if (payload.session_type === 'event') {
       payload.is_special_event = true;
+      payload.sales_cutoff_at = buildSalesCutoffAt(payload.sales_cutoff_date || payload.date, payload.cutoff_time);
     }
+    delete payload.sales_cutoff_date;
     if (!payload.is_special_event && payload.session_type !== 'event') {
       payload.event_title = '';
       payload.event_description = '';
+      payload.sales_cutoff_at = null;
     }
     if (!confirmAdminAction({
       action: 'Save changes to this session',
       details: [
         `Date: ${formatDateShort(payload.date)}`,
         `Time: ${formatTime(payload.time)}`,
-        `Sales cutoff: ${formatTime(payload.cutoff_time)}`,
+        `Sales cutoff: ${payload.session_type === 'event' ? formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time) : formatTime(payload.cutoff_time)}`,
         payload.event_title ? `Title: ${payload.event_title}` : '',
       ],
       warning: payload.notify_reschedule === false
@@ -682,14 +704,16 @@ export default function AdminDashboard() {
       ...newEvent,
       session_type: 'event',
       is_special_event: true,
+      sales_cutoff_at: buildSalesCutoffAt(newEvent.sales_cutoff_date || newEvent.date, newEvent.cutoff_time),
     };
+    delete payload.sales_cutoff_date;
     const proceed = confirmAdminAction({
       action: 'Create this live event / venue',
       details: [
         `Live Event / Venue: ${payload.event_title}`,
         `Date: ${formatDateShort(payload.date)}`,
         `Time: ${formatTime(payload.time)}`,
-        `Sales cutoff: ${formatTime(payload.cutoff_time)}`,
+        `Sales cutoff: ${formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time)}`,
         `Ticket: ${packageSummary(payload.packages) || 'No ticket price configured'}`,
       ],
       warning: 'This will make the live event / venue available for booking.',
@@ -698,7 +722,7 @@ export default function AdminDashboard() {
 
     try {
       await createAdminSession(token, payload);
-      setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
+      setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
       loadSessions();
       loadBookingSales();
     } catch (err) {

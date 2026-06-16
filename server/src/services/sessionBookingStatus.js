@@ -45,11 +45,25 @@ export function sessionDateTimeToUtc(dateValue, timeValue, timeZone = VENUE_TIME
   return new Date(localAsUtc - secondOffset);
 }
 
+function salesCutoffToUtc(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  const localMatch = text.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+  if (localMatch && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(text)) {
+    return sessionDateTimeToUtc(localMatch[1], localMatch[2]);
+  }
+
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? new Date(parsed) : null;
+}
+
 export function getSessionBookingStatus(session, { soldOut = false, now = new Date() } = {}) {
   const sessionType = normalizeSessionType(session?.session_type, session?.is_special_event);
   const startsAt = sessionDateTimeToUtc(session?.date, session?.time);
   const cutoffTime = sessionType === 'regular_bingo' ? '12:00' : (session?.cutoff_time || session?.time);
-  const cutoffAt = sessionDateTimeToUtc(session?.date, cutoffTime);
+  const explicitEventCutoffAt = sessionType === 'event' ? salesCutoffToUtc(session?.sales_cutoff_at) : null;
+  const cutoffAt = explicitEventCutoffAt || sessionDateTimeToUtc(session?.date, cutoffTime);
   const base = {
     booking_closed: 0,
     booking_closed_reason: 'open',

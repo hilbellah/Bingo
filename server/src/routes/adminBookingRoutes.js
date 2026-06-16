@@ -1,7 +1,7 @@
 import { all, get, run, saveDb } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { refundTransaction, verifyTransaction, voidTransaction } from '../services/payments.js';
-import { formatPrice } from '../utils/format.js';
+import { formatCurrency } from '../utils/format.js';
 
 function csvCell(value) {
   let text = String(value ?? '');
@@ -36,7 +36,7 @@ async function loadAdminBookings(whereClause = '', params = []) {
         id: row.id,
         referenceNumber: row.reference_number,
         totalAmount: row.total_amount,
-        totalFormatted: '$' + formatPrice(row.total_amount),
+        totalFormatted: formatCurrency(row.total_amount),
         paymentStatus: row.payment_status,
         createdAt: row.created_at,
         email: row.email,
@@ -57,7 +57,7 @@ async function loadAdminBookings(whereClause = '', params = []) {
       packageName: addon.package_name,
       quantity: addon.quantity,
       price: addon.price,
-      priceFormatted: '$' + formatPrice(addon.price)
+      priceFormatted: formatCurrency(addon.price)
     }));
 
     bookings[row.id].items.push({
@@ -69,12 +69,12 @@ async function loadAdminBookings(whereClause = '', params = []) {
       referenceNumber: row.item_reference_number,
       packageName: row.package_name,
       packagePrice: row.package_price,
-      packagePriceFormatted: '$' + formatPrice(row.package_price),
+      packagePriceFormatted: formatCurrency(row.package_price),
       refundStatus: row.refund_status || 'active',
       refundedAt: row.refunded_at,
       refundTransactionId: row.refund_transaction_id,
       refundAmount: row.refund_amount || 0,
-      refundAmountFormatted: '$' + formatPrice(row.refund_amount || 0),
+      refundAmountFormatted: formatCurrency(row.refund_amount || 0),
       refundAction: row.refund_action,
       addons
     });
@@ -154,8 +154,8 @@ export function registerAdminBookingRoutes(app, {
         row.table_number,
         row.chair_number,
         row.package_name,
-        '$' + formatPrice(row.package_price),
-        '$' + formatPrice(row.total_amount),
+        formatCurrency(row.package_price),
+        formatCurrency(row.total_amount),
         row.payment_status,
         row.created_at,
       ].map(csvCell).join(','));
@@ -425,7 +425,7 @@ export function registerAdminBookingRoutes(app, {
       action,
       refundTransId: result.refundTransId || result.voidTransId,
       amountCents,
-      amountFormatted: '$' + formatPrice(amountCents),
+      amountFormatted: formatCurrency(amountCents),
       seatsReleased: markResult.releasedSeats || 0,
       bookingStatus: markResult.bookingStatus,
     });

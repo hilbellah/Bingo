@@ -1,7 +1,7 @@
 import { all } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { getSalesReportCutoff } from '../services/salesReporting.js';
-import { formatPrice } from '../utils/format.js';
+import { formatCurrency } from '../utils/format.js';
 
 function toNumber(value) {
   const parsed = Number(value || 0);
@@ -199,7 +199,7 @@ export function registerAdminCustomerRoutes(app) {
       ticketCount: row.ticket_count || 0,
       sessionCount: row.session_count || 0,
       totalSpent: Math.round(Number(row.total_spent || 0)),
-      totalSpentFormatted: '$' + formatPrice(Math.round(Number(row.total_spent || 0))),
+      totalSpentFormatted: formatCurrency(Math.round(Number(row.total_spent || 0))),
       latestTicketReferenceNumber: row.latest_ticket_reference_number,
       latestBookingReferenceNumber: row.latest_booking_reference_number,
       latestSessionDate: row.latest_session_date,
@@ -250,7 +250,7 @@ export function registerAdminCustomerRoutes(app) {
         row.paid_booking_count || 0,
         row.ticket_count || 0,
         row.session_count || 0,
-        '$' + formatPrice(Math.round(Number(row.total_spent || 0))),
+        formatCurrency(Math.round(Number(row.total_spent || 0))),
         row.first_booking_at || '',
         row.last_booking_at || '',
         row.latest_ticket_reference_number || '',

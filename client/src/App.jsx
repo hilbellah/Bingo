@@ -20,6 +20,7 @@ import EmbeddedAuthorizeNetPayment from './components/EmbeddedAuthorizeNetPaymen
 import FloorPlan from './components/FloorPlan';
 import SessionWeekPicker from './components/SessionWeekPicker';
 import VenueClock from './components/VenueClock';
+import { formatDateShort, formatPrice, formatTime } from './utils/formatters';
 import { useSocket } from './useSocket';
 
 const CHECKOUT_SERVICE_FEE_CENTS = 200;
@@ -127,6 +128,9 @@ export default function App() {
   const [namesFilledBeforeChairs, setNamesFilledBeforeChairs] = useState(false);
   const [bookingStep, setBookingStep] = useState(0);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const selectedSessionType = getSessionType(selectedSession);
+  const isSelectedSpecialBingo = selectedSessionType === 'special_bingo';
+  const isSelectedEvent = selectedSessionType === 'event';
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowTick(Date.now()), 30000);
@@ -162,7 +166,7 @@ export default function App() {
     fetchSessions().then(data => {
       setSessions(data);
       if (data.length > 0) {
-        setSelectedSession(data[0]);
+        setSelectedSession(data.find(session => getSessionType(session) !== 'event') || data[0]);
       }
     });
   }, []);
@@ -268,7 +272,69 @@ export default function App() {
     }
   };
 
-  const handlePartySize = (size) => {
+  const reserveEventTickets = async (size) => {
+    if (!selectedSession) return false;
+
+    const latestSeats = await fetchSeats(selectedSession.id, holderId);
+    const latestById = new Map(latestSeats.map(seat => [seat.id, seat]));
+    const keptSeats = selectedSeats
+      .filter(seatId => {
+        const seat = latestById.get(seatId);
+        return seat && seat.status === 'held' && seat.isMyHold;
+      })
+      .slice(0, size);
+    const keptSet = new Set(keptSeats);
+    const seatsToRelease = selectedSeats.filter(seatId => !keptSet.has(seatId));
+
+    for (const seatId of seatsToRelease) {
+      await unlockSeat(seatId, holderId);
+    }
+
+    const newlyLocked = [];
+    let nextHoldExpiry = holdExpiry;
+    for (const seat of latestSeats) {
+      if (keptSeats.length + newlyLocked.length >= size) break;
+      if (keptSet.has(seat.id)) continue;
+      if (seat.is_disabled || seat.status === 'sold') continue;
+      if (seat.status === 'held' && !seat.isMyHold) continue;
+
+      if (seat.status === 'held' && seat.isMyHold) {
+        newlyLocked.push(seat.id);
+        continue;
+      }
+
+      const result = await lockSeat(seat.id, holderId);
+      if (result.success) {
+        newlyLocked.push(seat.id);
+        if (!nextHoldExpiry || new Date(result.holdUntil) > new Date(nextHoldExpiry)) {
+          nextHoldExpiry = result.holdUntil;
+        }
+      }
+    }
+
+    const nextSelectedSeats = [...keptSeats, ...newlyLocked].slice(0, size);
+    if (nextSelectedSeats.length < size) {
+      for (const seatId of newlyLocked) {
+        if (!keptSet.has(seatId)) await unlockSeat(seatId, holderId);
+      }
+      setError('Not enough live event tickets are available for that party size.');
+      setTimeout(() => setError(''), 4000);
+      setSeats(await fetchSeats(selectedSession.id, holderId));
+      return null;
+    }
+
+    setSelectedSeats(nextSelectedSeats);
+    setHoldExpiry(nextHoldExpiry);
+    setSeats(await fetchSeats(selectedSession.id, holderId));
+    return nextSelectedSeats;
+  };
+
+  const handlePartySize = async (size) => {
+    if (isSelectedEvent) {
+      const reserved = await reserveEventTickets(size);
+      if (!reserved) return;
+    }
+
     setPartySize(size);
     setAttendees(Array.from({ length: size }, (_, index) => ({
       firstName: attendees[index]?.firstName || '',
@@ -290,7 +356,7 @@ export default function App() {
     setOpenTable(null);
     setBookingStep(0);
 
-    if (session.is_special_event) {
+    if (getSessionType(session) === 'special_bingo') {
       setPartySize(1);
       setAttendees([emptyAttendee()]);
     } else {
@@ -308,16 +374,26 @@ export default function App() {
     setLoading(true);
     setError('');
 
+    let submitSelectedSeats = selectedSeats;
+    if (isSelectedEvent && selectedSeats.length !== partySize) {
+      const reserved = await reserveEventTickets(partySize);
+      if (!reserved) {
+        setLoading(false);
+        return;
+      }
+      submitSelectedSeats = reserved;
+    }
+
     const bookingAttendees = attendees.map((attendee, index) => ({
       firstName: attendee.firstName,
       lastName: attendee.lastName,
-      seatId: selectedSeats[index],
+      seatId: submitSelectedSeats[index],
       addons: (attendee.addons || []).filter(addon => addon.quantity > 0)
     }));
     const checkoutSummary = {
       customerName: [attendees[0]?.firstName, attendees[0]?.lastName].filter(Boolean).join(' ').trim(),
       items: attendees.map((attendee, index) => {
-        const seat = seats.find(item => item.id === selectedSeats[index]);
+        const seat = seats.find(item => item.id === submitSelectedSeats[index]);
         const addonItems = (attendee.addons || [])
           .filter(addon => addon.quantity > 0)
           .map(addon => {
@@ -328,21 +404,21 @@ export default function App() {
               name: pkg.name,
               quantity: addon.quantity,
               price: pkg.price * addon.quantity,
-              priceFormatted: '$' + (pkg.price * addon.quantity / 100).toFixed(2),
+              priceFormatted: formatPrice(pkg.price * addon.quantity),
             };
           })
           .filter(Boolean);
 
         return {
           name: [attendee.firstName, attendee.lastName].filter(Boolean).join(' ').trim(),
-          seat: seat ? `Table ${seat.table_number}, Chair ${seat.chair_number}` : '',
+          seat: isSelectedEvent ? 'General admission' : seat ? `Table ${seat.table_number}, Chair ${seat.chair_number}` : '',
           packages: [
             ...requiredPkgs.map(pkg => ({
               id: pkg.id,
               name: pkg.name,
               quantity: 1,
               price: pkg.price,
-              priceFormatted: '$' + (pkg.price / 100).toFixed(2),
+              priceFormatted: formatPrice(pkg.price),
             })),
             ...addonItems,
           ],
@@ -364,7 +440,7 @@ export default function App() {
     // Authorize.Net still owns the card iframe, so we never see PAN/CVV.
     const serviceFeeAmount = result.serviceFeeAmount || 0;
     const serviceFeeQuantity = result.serviceFeeQuantity || attendees.length || 1;
-    const serviceFeeUnitFormatted = result.serviceFeeUnitFormatted || '$' + ((result.serviceFeeUnitAmount || CHECKOUT_SERVICE_FEE_CENTS) / 100).toFixed(2);
+    const serviceFeeUnitFormatted = result.serviceFeeUnitFormatted || formatPrice(result.serviceFeeUnitAmount || CHECKOUT_SERVICE_FEE_CENTS);
     setPaymentSession({
       ...result,
       checkoutSummary: {
@@ -372,7 +448,7 @@ export default function App() {
         serviceFee: serviceFeeAmount > 0 ? {
           name: `Service charge (${serviceFeeUnitFormatted} x ${serviceFeeQuantity} ${serviceFeeQuantity === 1 ? 'player' : 'players'})`,
           price: serviceFeeAmount,
-          priceFormatted: result.serviceFeeFormatted || '$' + (serviceFeeAmount / 100).toFixed(2),
+          priceFormatted: result.serviceFeeFormatted || formatPrice(serviceFeeAmount),
         } : null,
       },
     });
@@ -460,9 +536,8 @@ export default function App() {
     nowMs: nowTick,
   });
   const bookingClosed = selectedBookingStatus.isClosed;
-  const selectedSessionType = selectedSession?.session_type || (selectedSession?.is_special_event ? 'special_bingo' : 'regular_bingo');
-  const isSelectedSpecialBingo = selectedSessionType === 'special_bingo';
-  const isSelectedEvent = selectedSessionType === 'event';
+  const bingoSessions = sessions.filter(session => getSessionType(session) !== 'event');
+  const liveEventSessions = sessions.filter(session => getSessionType(session) === 'event');
   const availableLegendColor = isSelectedEvent
     ? 'bg-blue-600/80 ring-1 ring-blue-300/80'
     : isSelectedSpecialBingo
@@ -493,7 +568,7 @@ export default function App() {
       return pkg ? addonSum + pkg.price * addon.quantity : addonSum;
     }, 0);
   }, 0);
-  const serviceFeeUnitAmount = bookingConfig.serviceFeePerPersonAmount;
+  const serviceFeeUnitAmount = isSelectedSpecialBingo ? 0 : bookingConfig.serviceFeePerPersonAmount;
   const serviceFeeAmount = partySize > 0 ? serviceFeeUnitAmount * partySize : 0;
   const total = orderSubtotal + serviceFeeAmount;
 
@@ -576,11 +651,22 @@ export default function App() {
           Colored to blend with the dark casino body background so the FloorPlan
           itself remains the focal point. */}
       <div className="bg-casino-dark-soft border-b border-white/10 px-4 py-2 flex-shrink-0">
-        <SessionWeekPicker
-          sessions={sessions}
+        <section aria-label="Weekly bingo schedule">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-white/65">Weekly Bingo Schedule</h2>
+            <span className="text-xs text-white/40">{bingoSessions.length} available</span>
+          </div>
+          <SessionWeekPicker
+            sessions={bingoSessions}
+            selectedSession={selectedSession}
+            weekOffset={weekOffset}
+            onWeekOffsetChange={setWeekOffset}
+            onSelectSession={handleSelectSession}
+          />
+        </section>
+        <LiveEventRail
+          events={liveEventSessions}
           selectedSession={selectedSession}
-          weekOffset={weekOffset}
-          onWeekOffsetChange={setWeekOffset}
           onSelectSession={handleSelectSession}
         />
       </div>
@@ -588,25 +674,27 @@ export default function App() {
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <AnnouncementBanner socket={socketRef.current} />
 
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-4 text-sm">
-            <LegendItem color={availableLegendColor} label="Available" />
-            <LegendItem color={partialLegendColor} label="Partial" />
-            <LegendItem color="bg-blue-500/80" label="Your Pick" />
-            <LegendItem color="bg-gray-500/80" label="Full" />
-          </div>
-
-          <div className="text-sm text-white/50">
-            {bookingClosed ? selectedBookingStatus.message : `${vacantCount} chairs available`} &middot; {soldCount} sold
-            {heldCount > 0 && <> &middot; {heldCount} on hold</>}
-          </div>
-
-          {selectedSeats.length > 0 && (
-            <div className="text-sm text-white/70">
-              <span className="text-blue-400 font-semibold">{selectedSeats.length} chair{selectedSeats.length !== 1 ? 's' : ''} selected</span>
+        {!isSelectedEvent && (
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-4 text-sm">
+              <LegendItem color={availableLegendColor} label="Available" />
+              <LegendItem color={partialLegendColor} label="Partial" />
+              <LegendItem color="bg-blue-500/80" label="Your Pick" />
+              <LegendItem color="bg-gray-500/80" label="Full" />
             </div>
-          )}
-        </div>
+
+            <div className="text-sm text-white/50">
+              {bookingClosed ? selectedBookingStatus.message : `${vacantCount} chairs available`} &middot; {soldCount} sold
+              {heldCount > 0 && <> &middot; {heldCount} on hold</>}
+            </div>
+
+            {selectedSeats.length > 0 && (
+              <div className="text-sm text-white/70">
+                <span className="text-blue-400 font-semibold">{selectedSeats.length} chair{selectedSeats.length !== 1 ? 's' : ''} selected</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 bg-red-500/20 border border-red-400/30 text-red-200 px-4 py-3 rounded-xl text-center text-sm font-medium">
@@ -614,37 +702,52 @@ export default function App() {
           </div>
         )}
 
-        {selectedSeats.length === 0 && !openTable && !bookingClosed && (
-          <div className="text-center mb-4">
-            <p className="text-white/40 text-sm">Tap a table to see available chairs</p>
-          </div>
-        )}
+        {isSelectedEvent ? (
+          <LiveEventBookingSurface
+            event={selectedSession}
+            packages={packages}
+            availableTickets={vacantCount}
+            soldTickets={soldCount}
+            heldTickets={heldCount}
+            bookingClosed={bookingClosed}
+            bookingStatus={selectedBookingStatus}
+            onStart={() => setPanelOpen(true)}
+          />
+        ) : (
+          <>
+            {selectedSeats.length === 0 && !openTable && !bookingClosed && (
+              <div className="text-center mb-4">
+                <p className="text-white/40 text-sm">Tap a table to see available chairs</p>
+              </div>
+            )}
 
-        <FloorPlan
-          tableMap={tableMap}
-          getTableStatus={getTableStatus}
-          selectedSeats={selectedSeats}
-          holderId={holderId}
-          openTable={openTable}
-          onOpenTable={setOpenTable}
-          onChairClick={handleChairClick}
-          selectedSession={selectedSession}
-          bookingStatus={selectedBookingStatus}
-        />
+            <FloorPlan
+              tableMap={tableMap}
+              getTableStatus={getTableStatus}
+              selectedSeats={selectedSeats}
+              holderId={holderId}
+              openTable={openTable}
+              onOpenTable={setOpenTable}
+              onChairClick={handleChairClick}
+              selectedSession={selectedSession}
+              bookingStatus={selectedBookingStatus}
+            />
 
-        {selectedSeats.length === 0 && !openTable && (
-          <div className="text-center mt-8">
-            <button type="button" disabled={bookingClosed} className={`px-6 py-3 font-semibold rounded-xl shadow-lg transition-all ${
-              bookingClosed
-                ? 'bg-white/10 text-white/40 cursor-not-allowed border border-white/10'
-                : 'bg-brand-gold hover:bg-brand-gold-light text-white glow-gold-sm'
-            }`}>
-              {bookingClosed ? 'Booking Closed' : 'Tap a Table Above to Pick Your Chairs'}
-            </button>
-            <p className="text-white/40 text-sm mt-2">
-              {bookingClosed ? selectedBookingStatus.message : 'Your party size will be set automatically based on chairs selected'}
-            </p>
-          </div>
+            {selectedSeats.length === 0 && !openTable && (
+              <div className="text-center mt-8">
+                <button type="button" disabled={bookingClosed} className={`px-6 py-3 font-semibold rounded-xl shadow-lg transition-all ${
+                  bookingClosed
+                    ? 'bg-white/10 text-white/40 cursor-not-allowed border border-white/10'
+                    : 'bg-brand-gold hover:bg-brand-gold-light text-white glow-gold-sm'
+                }`}>
+                  {bookingClosed ? 'Booking Closed' : 'Tap a Table Above to Pick Your Chairs'}
+                </button>
+                <p className="text-white/40 text-sm mt-2">
+                  {bookingClosed ? selectedBookingStatus.message : 'Your party size will be set automatically based on chairs selected'}
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -779,5 +882,108 @@ function LegendItem({ color, label }) {
       <span className={`w-4 h-4 rounded ${color}`} />
       <span className="text-white/70">{label}</span>
     </div>
+  );
+}
+
+function LiveEventBookingSurface({
+  event,
+  packages,
+  availableTickets,
+  soldTickets,
+  heldTickets,
+  bookingClosed,
+  bookingStatus,
+  onStart
+}) {
+  const ticketPackage = packages.find(pkg => pkg.type === 'required');
+  const ticketPrice = ticketPackage ? formatPrice(ticketPackage.price) : '';
+
+  return (
+    <section className="mx-auto max-w-3xl rounded-2xl border border-sky-500/25 bg-sky-950/20 p-5 text-center shadow-xl">
+      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${
+        bookingClosed ? 'bg-red-500/20 text-red-100' : 'bg-sky-500 text-white'
+      }`}>
+        {bookingClosed ? 'Sales Closed' : 'General Admission'}
+      </span>
+      <h1 className="mt-4 text-2xl font-bold text-white md:text-3xl">
+        {event?.event_title || 'Live Event / Venue'}
+      </h1>
+      <p className="mt-2 text-sky-100/75">
+        {formatDateShort(event?.date)} at {formatTime(event?.time)}
+      </p>
+      {ticketPackage && (
+        <div className="mt-4 inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-left">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-sky-100/60">Ticket</p>
+            <p className="font-semibold text-white">{ticketPackage.name}</p>
+          </div>
+          <p className="text-xl font-bold text-brand-gold">{ticketPrice}</p>
+        </div>
+      )}
+      <div className="mt-5 flex flex-wrap justify-center gap-3 text-sm text-white/70">
+        <span>{availableTickets} available</span>
+        <span>{soldTickets} sold</span>
+        {heldTickets > 0 && <span>{heldTickets} on hold</span>}
+      </div>
+      {bookingClosed && bookingStatus.message ? (
+        <p className="mt-4 text-sm text-red-100">{bookingStatus.message}</p>
+      ) : null}
+      <button
+        type="button"
+        disabled={bookingClosed}
+        onClick={onStart}
+        className={`mt-6 rounded-xl px-6 py-3 font-semibold transition ${
+          bookingClosed
+            ? 'cursor-not-allowed border border-white/10 bg-white/10 text-white/40'
+            : 'bg-brand-gold text-white glow-gold-sm hover:bg-brand-gold-light'
+        }`}
+      >
+        {bookingClosed ? 'Booking Closed' : 'Buy Tickets'}
+      </button>
+    </section>
+  );
+}
+
+function LiveEventRail({ events, selectedSession, onSelectSession }) {
+  if (events.length === 0) return null;
+
+  return (
+    <section className="mt-3 pt-1" aria-label="Upcoming live events">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-sky-200">Upcoming Live Events</h2>
+        <span className="text-xs text-white/40">{events.length} active</span>
+      </div>
+
+      <div className="rail-scroll flex gap-3 overflow-x-auto">
+        {events.map(event => {
+          const isSelected = selectedSession?.id === event.id;
+          const isClosed = !!event.booking_closed;
+          return (
+            <button
+              key={event.id}
+              type="button"
+              onClick={() => onSelectSession(event)}
+              className={`min-w-[220px] rounded-xl border px-4 py-3 text-left transition-all ${
+                isSelected
+                  ? 'border-sky-300 bg-sky-950 text-white shadow-md'
+                  : 'border-sky-500/35 bg-sky-950/25 text-sky-50 hover:border-sky-300/70 hover:bg-sky-950/40'
+              }`}
+            >
+              <span className={`mb-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                isClosed ? 'bg-red-500/20 text-red-100' : 'bg-sky-500 text-white'
+              }`}>
+                {isClosed ? 'Closed' : 'Buy Tickets'}
+              </span>
+              <span className="block truncate text-sm font-bold">
+                {event.event_title || 'Live Event / Venue'}
+              </span>
+              <span className="mt-1 block text-xs text-sky-100/70">
+                {formatDateShort(event.date)} at {formatTime(event.time)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }

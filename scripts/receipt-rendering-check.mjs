@@ -17,7 +17,7 @@ const {
 const booking = {
   referenceNumber: 'BNG-TEST-001',
   totalAmount: 3400,
-  totalFormatted: '$34.00',
+  totalFormatted: 'CA$34.00',
   sessionDate: '2026-06-04',
   sessionTime: '18:30',
   sessionTitle: 'Regular Bingo',
@@ -31,9 +31,9 @@ const booking = {
       referenceNumber: 'BNG-TICKET-001',
       packageName: '9 up',
       packagePrice: 3000,
-      packagePriceFormatted: '$30.00',
+      packagePriceFormatted: 'CA$30.00',
       addons: [
-        { packageName: 'Toonie Ball', quantity: 1, price: 200, priceFormatted: '$2.00' },
+        { packageName: 'Toonie Ball', quantity: 1, price: 200, priceFormatted: 'CA$2.00' },
       ],
     },
   ],
@@ -43,17 +43,17 @@ const totals = getReceiptTotals(booking);
 assert.equal(totals.itemSubtotal, 3200);
 assert.equal(totals.serviceChargeAmount, 200);
 assert.equal(totals.totalWithService, 3400);
-assert.equal(totals.itemSubtotalFormatted, '$32.00');
-assert.equal(totals.serviceChargeFormatted, '$2.00');
-assert.equal(totals.totalWithServiceFormatted, '$34.00');
+assert.equal(totals.itemSubtotalFormatted, 'CA$32.00');
+assert.equal(totals.serviceChargeFormatted, 'CA$2.00');
+assert.equal(totals.totalWithServiceFormatted, 'CA$34.00');
 
 const fallbackTotals = getReceiptTotals({
   ...booking,
   totalAmount: undefined,
-  totalFormatted: '$35.50',
+  totalFormatted: 'CA$35.50',
 });
 assert.equal(fallbackTotals.serviceChargeAmount, 350);
-assert.equal(fallbackTotals.totalWithServiceFormatted, '$35.50');
+assert.equal(fallbackTotals.totalWithServiceFormatted, 'CA$35.50');
 
 const receipt = buildAutoBookingReceiptLines(booking, {
   paperWidth: '80mm',
@@ -64,10 +64,10 @@ const receiptHtml = receipt.lines.join('');
 assert.equal(receipt.paperWidth, '80mm');
 assert.match(receiptHtml, /wolastoq-logo-thermal\.png/);
 assert.match(receiptHtml, /SUBTOTAL/);
-assert.match(receiptHtml, /\$32\.00/);
+assert.match(receiptHtml, /CA\$32\.00/);
 assert.match(receiptHtml, /SERVICE CHARGE/);
-assert.match(receiptHtml, /\$2\.00/);
-assert.match(receiptHtml, /TOTAL AMOUNT : \$/);
+assert.match(receiptHtml, /CA\$2\.00/);
+assert.match(receiptHtml, /TOTAL AMOUNT : CA\$/);
 assert.match(receiptHtml, />34\.00</);
 assert.match(receiptHtml, /Toonie Ball/);
 
@@ -122,16 +122,16 @@ const daily = buildDailySalesReceiptLines({
       packageName: '9 up',
       itemPrice: 3000,
       addons: [
-        { packageName: 'Toonie Ball', quantity: 1, price: 200, priceFormatted: '$2.00' },
+        { packageName: 'Toonie Ball', quantity: 1, price: 200, priceFormatted: 'CA$2.00' },
       ],
     },
   ],
   addonSubtotal: 200,
-  packageSubtotalFormatted: '$30.00',
-  addonSubtotalFormatted: '$2.00',
-  subtotalWithoutServiceChargesFormatted: '$32.00',
-  serviceChargeSubtotalFormatted: '$2.00',
-  totalWithServiceChargesFormatted: '$34.00',
+  packageSubtotalFormatted: 'CA$30.00',
+  addonSubtotalFormatted: 'CA$2.00',
+  subtotalWithoutServiceChargesFormatted: 'CA$32.00',
+  serviceChargeSubtotalFormatted: 'CA$2.00',
+  totalWithServiceChargesFormatted: 'CA$34.00',
   totalTickets: 1,
   totalBookings: 1,
 });
@@ -141,7 +141,7 @@ assert.match(dailyHtml, /wolastoq-logo-thermal\.png/);
 assert.match(dailyHtml, /Subtotal \(no service\)/);
 assert.match(dailyHtml, /Service charges/);
 assert.match(dailyHtml, /TOTAL \(1 tickets, 1 bookings\)/);
-assert.match(dailyHtml, /\$34\.00/);
+assert.match(dailyHtml, /CA\$34\.00/);
 
 const dailyWithCut = buildDailySalesReceiptBody({
   date: '2026-06-04',

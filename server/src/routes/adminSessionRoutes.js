@@ -3,13 +3,33 @@ import { all, get, run, saveDb } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { archivePastSessions } from '../services/sessionArchive.js';
 import { releaseExpiredHolds } from '../services/holds.js';
+import { sessionDateTimeToUtc } from '../services/sessionBookingStatus.js';
 import {
+  getSessionConflictGroup,
   getDefaultSpecialBingoPackages,
   normalizeSessionType,
+  sessionConflictGroupSql,
   validateSessionPackagesForType,
 } from '../services/sessionPackages.js';
 import { sendSessionRescheduleNotification } from '../services/email.js';
-import { formatPrice } from '../utils/format.js';
+import { formatCurrency } from '../utils/format.js';
+
+const LOCAL_DATE_TIME_REGEX = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/;
+
+function normalizeSalesCutoffAt(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const match = text.match(LOCAL_DATE_TIME_REGEX);
+  if (!match) return { error: 'sales_cutoff_at must be YYYY-MM-DDTHH:MM' };
+  const cutoffAt = sessionDateTimeToUtc(match[1], match[2]);
+  if (!cutoffAt) return { error: 'sales_cutoff_at must be a valid date and time' };
+  return { value: `${match[1]}T${match[2]}` };
+}
+
+function getSessionTypeLabel(sessionType) {
+  if (sessionType === 'event') return 'live event';
+  return 'bingo session';
+}
 
 export function registerAdminSessionRoutes(app, { io, logAudit }) {
   app.get('/api/admin/sessions', adminAuth, async (req, res) => {
@@ -30,6 +50,10 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, packages: pkgs } = req.body;
       const sessionType = normalizeSessionType(req.body.session_type, is_special_event);
       const isSpecialType = sessionType === 'special_bingo' || sessionType === 'event';
+      const salesCutoff = sessionType === 'event'
+        ? normalizeSalesCutoffAt(req.body.sales_cutoff_at || `${date}T${cutoff_time || '12:00'}`)
+        : { value: null };
+      if (salesCutoff.error) return res.status(400).json({ error: salesCutoff.error });
       const packageDrafts = sessionType === 'special_bingo' && (!Array.isArray(pkgs) || pkgs.length === 0)
         ? await getDefaultSpecialBingoPackages()
         : pkgs;
@@ -37,17 +61,23 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       if (!packageValidation.ok) return res.status(400).json({ error: packageValidation.error });
 
       const requestHour = time ? time.split(':')[0] : '18';
+      const conflictGroup = getSessionConflictGroup(sessionType);
       const conflict = await get(
-        `SELECT id, date, time FROM sessions WHERE date = ? AND SUBSTR(time, 1, 2) = ? AND deleted_at IS NULL`,
-        [date, requestHour]
+        `SELECT id, date, time FROM sessions
+         WHERE date = ?
+           AND SUBSTR(time, 1, 2) = ?
+           AND ${sessionConflictGroupSql('sessions')} = ?
+           AND deleted_at IS NULL`,
+        [date, requestHour, conflictGroup]
       );
       if (conflict) {
-        return res.status(409).json({ error: `A bingo session already exists on ${date} at ${conflict.time}. Cannot create another session in the same hour.` });
+        const label = getSessionTypeLabel(conflictGroup);
+        return res.status(409).json({ error: `A ${label} already exists on ${date} at ${conflict.time}. Cannot create another ${label} in the same hour.` });
       }
 
       const id = uuid();
-      await run('INSERT INTO sessions (id, date, time, cutoff_time, is_available, is_special_event, event_title, event_description, session_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, date, time, cutoff_time || '12:00', is_available !== false ? 1 : 0, isSpecialType ? 1 : 0, event_title || null, event_description || null, sessionType]);
+      await run('INSERT INTO sessions (id, date, time, cutoff_time, sales_cutoff_at, is_available, is_special_event, event_title, event_description, session_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, date, time, cutoff_time || '12:00', salesCutoff.value, is_available !== false ? 1 : 0, isSpecialType ? 1 : 0, event_title || null, event_description || null, sessionType]);
 
       let chairCount = 0;
       for (let tableNumber = 1; tableNumber <= 75; tableNumber++) {
@@ -65,10 +95,10 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         }
       }
 
-      await logAudit('session_created', 'session', id, { date, time, cutoff_time, session_type: sessionType, is_special_event: isSpecialType, event_title });
+      await logAudit('session_created', 'session', id, { date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, session_type: sessionType, is_special_event: isSpecialType, event_title });
       await saveDb();
 
-      res.json({ id, date, time, cutoff_time, is_available, session_type: sessionType, is_special_event: isSpecialType, event_title, totalChairs: chairCount });
+      res.json({ id, date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, is_available, session_type: sessionType, is_special_event: isSpecialType, event_title, totalChairs: chairCount });
     } catch (err) {
       console.error('POST /api/admin/sessions failed:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -82,7 +112,12 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       const values = [];
       const currentSession = await get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
       if (!currentSession) return res.status(404).json({ error: 'Session not found' });
-      const nextSessionType = session_type !== undefined ? normalizeSessionType(session_type, is_special_event) : null;
+      const nextSessionType = session_type !== undefined
+        ? normalizeSessionType(session_type, is_special_event)
+        : is_special_event !== undefined
+          ? normalizeSessionType(undefined, is_special_event)
+          : null;
+      const effectiveSessionType = nextSessionType || normalizeSessionType(currentSession.session_type, currentSession.is_special_event);
       if (date !== undefined) { updates.push('date = ?'); values.push(date); }
       if (time !== undefined) { updates.push('time = ?'); values.push(time); }
       if (cutoff_time !== undefined) { updates.push('cutoff_time = ?'); values.push(cutoff_time); }
@@ -92,27 +127,41 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         values.push(nextSessionType);
         updates.push('is_special_event = ?');
         values.push(nextSessionType === 'special_bingo' || nextSessionType === 'event' ? 1 : 0);
-      } else if (is_special_event !== undefined) {
-        const legacyType = normalizeSessionType(undefined, is_special_event);
-        updates.push('session_type = ?');
-        values.push(legacyType);
-        updates.push('is_special_event = ?');
-        values.push(legacyType === 'special_bingo' ? 1 : 0);
       }
       if (event_title !== undefined) { updates.push('event_title = ?'); values.push(event_title || null); }
       if (event_description !== undefined) { updates.push('event_description = ?'); values.push(event_description || null); }
+      if (req.body.sales_cutoff_at !== undefined) {
+        const salesCutoff = effectiveSessionType === 'event'
+          ? normalizeSalesCutoffAt(req.body.sales_cutoff_at)
+          : { value: null };
+        if (salesCutoff.error) return res.status(400).json({ error: salesCutoff.error });
+        updates.push('sales_cutoff_at = ?');
+        values.push(salesCutoff.value);
+      } else if (nextSessionType && nextSessionType !== 'event') {
+        updates.push('sales_cutoff_at = ?');
+        values.push(null);
+      }
       if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
 
-      if (date !== undefined || time !== undefined) {
+      if (date !== undefined || time !== undefined || nextSessionType !== null) {
         const checkDate = date !== undefined ? date : currentSession.date;
         const checkTime = time !== undefined ? time : currentSession.time;
         const checkHour = checkTime.split(':')[0];
+        // Bingo sessions share seat/package behavior, so regular and special
+        // bingo cannot overlap. Live events use a separate booking flow.
+        const conflictGroup = getSessionConflictGroup(effectiveSessionType);
         const conflict = await get(
-          `SELECT id, date, time FROM sessions WHERE date = ? AND SUBSTR(time, 1, 2) = ? AND id != ? AND deleted_at IS NULL`,
-          [checkDate, checkHour, req.params.id]
+          `SELECT id, date, time FROM sessions
+           WHERE date = ?
+             AND SUBSTR(time, 1, 2) = ?
+             AND id != ?
+             AND ${sessionConflictGroupSql('sessions')} = ?
+             AND deleted_at IS NULL`,
+          [checkDate, checkHour, req.params.id, conflictGroup]
         );
         if (conflict) {
-          return res.status(409).json({ error: `A bingo session already exists on ${checkDate} at ${conflict.time}. Cannot have another session in the same hour.` });
+          const label = getSessionTypeLabel(conflictGroup);
+          return res.status(409).json({ error: `A ${label} already exists on ${checkDate} at ${conflict.time}. Cannot have another ${label} in the same hour.` });
         }
       }
 
@@ -490,7 +539,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
             id: row.id,
             referenceNumber: row.reference_number,
             totalAmount: row.total_amount,
-            totalFormatted: '$' + formatPrice(row.total_amount),
+            totalFormatted: formatCurrency(row.total_amount),
             paymentStatus: row.payment_status,
             createdAt: row.created_at,
             email: row.email,
@@ -509,7 +558,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
             referenceNumber: row.item_reference_number,
             packageName: row.package_name,
             itemPrice: row.item_price,
-            itemPriceFormatted: '$' + formatPrice(row.item_price)
+            itemPriceFormatted: formatCurrency(row.item_price)
           });
         }
       }

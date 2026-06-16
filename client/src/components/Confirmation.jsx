@@ -87,7 +87,7 @@ export default function Confirmation({ booking, session, attendees, seats, selec
                       <span className="font-medium text-base">{att.firstName} {att.lastName}</span>
                     </div>
                     <span className="text-sm font-semibold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                      Table {info.table}, Chair {info.chair}
+                      {isEvent ? 'General admission' : `Table ${info.table}, Chair ${info.chair}`}
                     </span>
                   </div>
                   {ticketRef && (
@@ -140,7 +140,7 @@ export default function Confirmation({ booking, session, attendees, seats, selec
         {/* Reminder */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 mb-6">
           <p className="text-sm text-blue-700 font-medium">
-            Please arrive by <strong>4:30 PM</strong> - Doors open 1 hour before the session starts.
+            {isEvent ? 'Doors open 1 hour before the event starts.' : <>Please arrive by <strong>4:30 PM</strong> - Doors open 1 hour before the session starts.</>}
             Bring this reference number with you.
           </p>
         </div>

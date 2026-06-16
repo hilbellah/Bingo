@@ -30,8 +30,8 @@
 //   ANET_SIGNATURE_KEY   Required for webhook verification. 128-char hex.
 //                        HMAC-SHA512 key for verifying webhook payloads.
 //                        Decoded from hex to bytes before use.
-//   ANET_CURRENCY        Default "USD". Set to "CAD" in production once the
-//                        merchant account is bound to a Canadian processor.
+//   ANET_CURRENCY        Default "CAD". The merchant account must be bound
+//                        to a Canadian processor.
 //   ANET_RETURN_URL      Where Authorize.Net sends the customer after they
 //                        complete payment on the hosted page. Must be a
 //                        public URL (Authorize.Net cannot redirect to
@@ -168,7 +168,7 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, f
     const tx = new APIContracts.TransactionRequestType();
     tx.setTransactionType(APIContracts.TransactionTypeEnum.AUTHCAPTURETRANSACTION);
     tx.setAmount(amount);
-    tx.setCurrencyCode(process.env.ANET_CURRENCY || 'USD');
+    tx.setCurrencyCode(process.env.ANET_CURRENCY || 'CAD');
 
     // Tie the Authorize.Net transaction back to our booking via invoiceNumber.
     const order = new APIContracts.OrderType();

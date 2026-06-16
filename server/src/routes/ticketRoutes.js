@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { all, get } from '../database.js';
 import { normalizeEmail } from '../services/customers.js';
 import { normalizeSessionType, sessionTypeSql } from '../services/sessionPackages.js';
-import { formatPrice } from '../utils/format.js';
+import { formatCurrency } from '../utils/format.js';
 
 function safeEqual(a, b) {
   const left = Buffer.from(String(a || ''), 'utf8');
@@ -65,7 +65,7 @@ export function registerTicketRoutes(app) {
           packageName: addon.package_name,
           quantity: addon.quantity,
           price: addon.price,
-          priceFormatted: '$' + formatPrice(addon.price),
+          priceFormatted: formatCurrency(addon.price),
         });
       }
 
@@ -79,17 +79,17 @@ export function registerTicketRoutes(app) {
         printMode: currentSessionType === 'regular_bingo' ? 'receipt' : 'template',
         printLayout: currentSessionType === 'event' ? 'event_6up' : currentSessionType === 'special_bingo' ? 'bingo_3up' : 'receipt',
         totalAmount: booking.total_amount,
-        totalFormatted: '$' + formatPrice(booking.total_amount),
+        totalFormatted: formatCurrency(booking.total_amount),
         paymentStatus: booking.payment_status,
         tickets: items.map(item => ({
           firstName: item.first_name,
           lastName: item.last_name,
-          tableNumber: item.table_number,
-          chairNumber: item.chair_number,
+          tableNumber: currentSessionType === 'event' ? null : item.table_number,
+          chairNumber: currentSessionType === 'event' ? null : item.chair_number,
           referenceNumber: item.reference_number,
           packageName: item.package_name,
           packagePrice: item.package_price,
-          packagePriceFormatted: '$' + formatPrice(item.package_price),
+          packagePriceFormatted: formatCurrency(item.package_price),
           addons: addonsByItem[item.item_id] || [],
         }))
       });

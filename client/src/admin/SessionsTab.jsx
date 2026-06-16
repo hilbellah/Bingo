@@ -138,7 +138,7 @@ export default function SessionsTab() {
                             setNewSession({...newSession, packages: pkgs});
                           }} className="flex-1 px-2 py-1.5 border rounded text-sm" placeholder="Package name" />
                           <div className="relative w-24">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">USD</span>
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">CAD</span>
                             <input type="text" inputMode="decimal" value={(pkg.price / 100).toFixed(2)} onChange={e => {
                               const val = e.target.value.replace(/[^0-9.]/g, '');
                               const pkgs = [...newSession.packages];

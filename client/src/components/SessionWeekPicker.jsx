@@ -49,7 +49,7 @@ export default function SessionWeekPicker({
         </svg>
       </button>
 
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 ml-2">
+      <div className="rail-scroll flex items-center gap-2 overflow-x-auto ml-2">
         {visibleSessions.map(session => {
           const isSelected = selectedSession?.id === session.id;
           const sessionType = session.session_type || (session.is_special_event ? 'special_bingo' : 'regular_bingo');

@@ -86,6 +86,7 @@ export default function BookingProcessing({ bookingId }) {
 
   // ----- Paid: full receipt -----
   if (phase === 'paid' && tickets) {
+    const isEvent = tickets.sessionType === 'event' || tickets.printLayout === 'event_6up';
     return (
       <div className="min-h-screen bg-gradient-to-b from-brand-blue-dark via-brand-blue to-brand-blue-mid flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-8 md:p-10">
@@ -96,11 +97,11 @@ export default function BookingProcessing({ bookingId }) {
               </svg>
             </div>
             <h1 className="text-3xl font-bold text-brand-blue">Payment Confirmed!</h1>
-            <p className="text-gray-500 text-lg mt-1">Your bingo seats are reserved</p>
+            <p className="text-gray-500 text-lg mt-1">{isEvent ? 'Your live event tickets are confirmed' : 'Your bingo seats are reserved'}</p>
           </div>
 
           <div className="bg-brand-gold/10 border-2 border-brand-gold/30 rounded-2xl p-5 mb-6 text-center">
-            <p className="text-sm text-gray-500 font-medium">Booking Reference</p>
+            <p className="text-sm text-gray-500 font-medium">{isEvent ? 'Event Ticket Reference' : 'Booking Reference'}</p>
             <p className="text-2xl font-mono font-bold text-brand-blue mt-1 tracking-wider">
               {tickets.referenceNumber}
             </p>
@@ -108,7 +109,7 @@ export default function BookingProcessing({ bookingId }) {
 
           <div className="bg-gray-50 rounded-2xl p-5 mb-6 space-y-3">
             <div className="flex justify-between items-center">
-              <span className="text-gray-500 font-medium">Session</span>
+              <span className="text-gray-500 font-medium">{isEvent ? 'Event Date' : 'Session'}</span>
               <span className="font-semibold text-brand-blue">{formatDateLong(tickets.sessionDate)}</span>
             </div>
             <div className="flex justify-between items-center">
@@ -132,7 +133,7 @@ export default function BookingProcessing({ bookingId }) {
                 <div key={idx} className="bg-gray-50 rounded-xl p-4">
                   <div className="font-semibold text-brand-blue">{t.firstName} {t.lastName}</div>
                   <div className="text-sm text-gray-600 mt-1">
-                    Table <strong>{t.tableNumber}</strong>, Chair <strong>{t.chairNumber}</strong>
+                    {isEvent ? 'General admission' : <>Table <strong>{t.tableNumber}</strong>, Chair <strong>{t.chairNumber}</strong></>}
                   </div>
                   {t.referenceNumber && (
                     <div className="mt-2 text-xs font-mono bg-brand-gold/10 inline-block px-2 py-1 rounded">

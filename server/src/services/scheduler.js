@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { all, batchRun, exec, get, run, scheduleSaveAfterBatch } from '../database.js';
 import { logger } from '../logger.js';
+import { getSessionConflictGroup, sessionConflictGroupSql } from './sessionPackages.js';
 import { formatLocalDate } from '../utils/format.js';
 
 // Default fallback values if the auto_generate_config row is missing or unparseable.
@@ -132,19 +133,23 @@ export async function ensureFutureSessions() {
     for (const schedule of schedulesForDay) {
       const requestHour = (schedule.time || '18:30').split(':')[0];
 
+      const sessionType = schedule.session_type || 'regular_bingo';
+      const conflictGroup = getSessionConflictGroup(sessionType);
+
       // Match the duplicate-prevention rule used by POST /api/admin/sessions:
-      // one session per (date, hour). This lets admins still create a manual
-      // session at a different hour without the generator clobbering it.
+      // one bingo session per date/hour, plus live events as a separate group.
       const existing = await get(
         `SELECT id FROM sessions
-         WHERE date = ? AND SUBSTR(time, 1, 2) = ? AND deleted_at IS NULL`,
-        [dateStr, requestHour]
+         WHERE date = ?
+           AND SUBSTR(time, 1, 2) = ?
+           AND ${sessionConflictGroupSql('sessions')} = ?
+           AND deleted_at IS NULL`,
+        [dateStr, requestHour, conflictGroup]
       );
       if (existing) continue;
 
       const isAvailable = 1;
       const id = uuid();
-      const sessionType = schedule.session_type || 'regular_bingo';
       const isSpecialEvent = sessionType === 'special_bingo' || sessionType === 'event' ? 1 : 0;
 
       await run(

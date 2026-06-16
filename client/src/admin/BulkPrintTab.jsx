@@ -76,7 +76,7 @@ export default function BulkPrintTab() {
   );
   const selectedReceiptBookings = useMemo(() => {
     if (!bulkData?.sessions || selectedTicketIds.size === 0) return [];
-    const formatMoney = (cents) => '$' + (Math.max(0, Number(cents) || 0) / 100).toFixed(2);
+    const formatMoney = (cents) => 'CA$' + (Math.max(0, Number(cents) || 0) / 100).toFixed(2);
     const receiptBookings = [];
 
     for (const session of bulkData.sessions) {
@@ -578,7 +578,7 @@ export default function BulkPrintTab() {
                                       <span className="ticket-value-md">{ticket.chairNumber}</span>
                                     </div>
                                   </div>
-                                  <p className="ticket-price">${(ticket.packagePrice / 100).toFixed(2)}</p>
+                                  <p className="ticket-price">CA${(ticket.packagePrice / 100).toFixed(2)}</p>
                                   <p className="ticket-pkg">{ticket.packageName}</p>
                                   <div className="ticket-half-row ticket-meta">
                                     <span className="ticket-meta-text">{fmtDate}</span>
@@ -609,7 +609,7 @@ export default function BulkPrintTab() {
                                   <div className="ticket-name-secondary">
                                     {ticket.firstName} {ticket.lastName}
                                   </div>
-                                  <p className="ticket-price-sm">${(ticket.packagePrice / 100).toFixed(2)} — {ticket.packageName}</p>
+                                  <p className="ticket-price-sm">CA${(ticket.packagePrice / 100).toFixed(2)} — {ticket.packageName}</p>
                                   <div className="ticket-half-row ticket-meta">
                                     <span className="ticket-meta-text">{fmtDate}</span>
                                     <span className="ticket-meta-text">{fmtTime}</span>

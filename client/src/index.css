@@ -287,6 +287,15 @@ body {
 ::-webkit-scrollbar-track { background: var(--color-casino-dark-soft); }
 ::-webkit-scrollbar-thumb { background: #c5a55a; border-radius: 4px; }
 
+.rail-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rail-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 /* Seat map zoom on mobile */
 .seat-map-container {
   overflow: auto;

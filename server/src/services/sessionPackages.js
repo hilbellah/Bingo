@@ -138,6 +138,14 @@ export function sessionTypeSql(alias = 's') {
   return `COALESCE(NULLIF(${alias}.session_type, ''), CASE WHEN ${alias}.is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END)`;
 }
 
+export function getSessionConflictGroup(sessionType) {
+  return sessionType === 'event' ? 'event' : 'bingo';
+}
+
+export function sessionConflictGroupSql(alias = 's') {
+  return `CASE WHEN ${sessionTypeSql(alias)} = 'event' THEN 'event' ELSE 'bingo' END`;
+}
+
 export function validateEventPackageDrafts(pkgs = []) {
   const normalized = normalizePackageDrafts(pkgs);
   const required = normalized.filter(pkg => pkg.type === 'required');

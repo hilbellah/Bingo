@@ -60,7 +60,7 @@ export default function CustomersTab() {
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Customer Revenue</p>
-          <p className="text-2xl font-bold text-brand-gold mt-1">${(totalSpent / 100).toFixed(2)}</p>
+          <p className="text-2xl font-bold text-brand-gold mt-1">CA${(totalSpent / 100).toFixed(2)}</p>
         </div>
       </div>
 

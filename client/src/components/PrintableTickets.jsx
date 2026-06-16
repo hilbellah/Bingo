@@ -94,8 +94,8 @@ function EventTicketCard({ ticket, sessionDate, sessionTime, referenceNumber, ev
       <div className="event-ticket-admit">Admit One</div>
       <div className="event-ticket-name">{ticket.firstName} {ticket.lastName}</div>
       <div className="event-ticket-row">
-        <span>Table {ticket.tableNumber}</span>
-        <span>Seat {ticket.chairNumber}</span>
+        <span>General Admission</span>
+        <span>{formatPrice(ticket.packagePrice)}</span>
       </div>
       <div className="event-ticket-meta">{formatDateShort(sessionDate)} - {formatTime(sessionTime)}</div>
       <div className="event-ticket-ref"><span>Ticket</span>{referenceNumber}</div>

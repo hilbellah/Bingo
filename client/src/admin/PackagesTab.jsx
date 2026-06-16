@@ -42,7 +42,7 @@ export default function PackagesTab() {
                       className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. 6-up Admission Book" />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Price ($)</label>
+                    <label className="block text-xs text-gray-400 mb-1">Price (CAD)</label>
                     <input type="text" inputMode="decimal" value={newPackage.price} onChange={e => setNewPackage({...newPackage, price: e.target.value.replace(/[^0-9.]/g, '')})}
                       className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="5.00" />
                   </div>

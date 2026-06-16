@@ -11,3 +11,7 @@ export function generateRef() {
 export function formatPrice(cents) {
   return (cents / 100).toFixed(2);
 }
+
+export function formatCurrency(cents) {
+  return 'CA$' + formatPrice(cents);
+}

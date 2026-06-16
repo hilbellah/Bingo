@@ -287,6 +287,7 @@ async function migrate() {
       time TEXT NOT NULL,
       cutoff_time TEXT NOT NULL DEFAULT '12:00',
       is_available INTEGER NOT NULL DEFAULT 1,
+      sales_cutoff_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -367,6 +368,7 @@ async function migrate() {
   try { await exec('ALTER TABLE sessions ADD COLUMN event_title TEXT'); } catch(e) {}
   try { await exec('ALTER TABLE sessions ADD COLUMN event_description TEXT'); } catch(e) {}
   try { await exec('ALTER TABLE sessions ADD COLUMN session_type TEXT DEFAULT "regular_bingo"'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN sales_cutoff_at TEXT'); } catch(e) {}
   try { await run("UPDATE sessions SET session_type = CASE WHEN is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END WHERE session_type IS NULL OR session_type = ''"); } catch(e) {}
 
   // Session-specific package overrides

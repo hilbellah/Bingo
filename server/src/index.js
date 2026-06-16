@@ -59,7 +59,7 @@ import {
   startMaintenanceTasks
 } from './startup.js';
 import { createUploadMiddleware } from './uploads.js';
-import { formatLocalDate, formatPrice, generateRef } from './utils/format.js';
+import { formatCurrency, formatLocalDate, generateRef } from './utils/format.js';
 import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode } from './services/email.js';
 import {
   createHostedPaymentPage,
@@ -122,7 +122,8 @@ function isAuthorizeNetWebhookPath(req) {
   return (req.originalUrl || req.url || '').split('?')[0] === '/api/webhooks/authorize-net';
 }
 
-function getCheckoutServiceFeeCents(attendees = []) {
+function getCheckoutServiceFeeCents(attendees = [], sessionType = 'regular_bingo') {
+  if (sessionType === 'special_bingo') return 0;
   return CHECKOUT_SERVICE_FEE_CENTS * Math.max(0, attendees.length || 0);
 }
 
@@ -423,6 +424,9 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
   const sessionPkgs = currentSessionType === 'regular_bingo'
     ? []
     : await all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [sessionId]);
+  if (currentSessionType === 'event' && sessionPkgs.length === 0) {
+    return { ok: false, statusCode: 409, error: 'Live event ticket package is not configured.' };
+  }
   const useSessionPkgs = sessionPkgs.length > 0;
   const requiredPkgs = useSessionPkgs
     ? sessionPkgs.filter(p => p.type === 'required')
@@ -478,7 +482,8 @@ async function insertBookingRecord({
   email,
   customerFirstName,
   customerLastName,
-  emailVerifiedAt
+  emailVerifiedAt,
+  sessionType = 'regular_bingo'
 }) {
   if (useSessionPkgs && sessionPkgs?.length) {
     for (const pkg of sessionPkgs) {
@@ -500,7 +505,7 @@ async function insertBookingRecord({
     }
   }
 
-  let totalAmount = getCheckoutServiceFeeCents(attendees);
+  let totalAmount = getCheckoutServiceFeeCents(attendees, sessionType);
   const bookingId = uuid();
   const refNumber = generateRef();
   const ticketAccessToken = generateTicketAccessToken();
@@ -609,8 +614,9 @@ async function calculateRequestedBookingTotal({
   requiredPkgs = [requiredPkg].filter(Boolean),
   sessionPkgs,
   useSessionPkgs,
+  sessionType = 'regular_bingo',
 }) {
-  let totalAmount = getCheckoutServiceFeeCents(attendees);
+  let totalAmount = getCheckoutServiceFeeCents(attendees, sessionType);
   const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg].filter(Boolean);
 
   for (const att of attendees || []) {
@@ -650,11 +656,11 @@ function buildInitiateResponse({
     referenceNumber: refNumber,
     itemReferences: itemRefs,
     totalAmount,
-    totalFormatted: '$' + formatPrice(totalAmount),
+    totalFormatted: formatCurrency(totalAmount),
     serviceFeeAmount,
-    serviceFeeFormatted: '$' + formatPrice(serviceFeeAmount),
+    serviceFeeFormatted: formatCurrency(serviceFeeAmount),
     serviceFeeUnitAmount: CHECKOUT_SERVICE_FEE_CENTS,
-    serviceFeeUnitFormatted: '$' + formatPrice(CHECKOUT_SERVICE_FEE_CENTS),
+    serviceFeeUnitFormatted: formatCurrency(CHECKOUT_SERVICE_FEE_CENTS),
     serviceFeeQuantity,
     email,
     customerFirstName,
@@ -815,7 +821,7 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
     receiptTitle: notificationLabel.toUpperCase(),
     paymentStatus: 'paid',
     totalAmount: booking.total_amount,
-    totalFormatted: '$' + formatPrice(booking.total_amount),
+    totalFormatted: formatCurrency(booking.total_amount),
     createdAt: new Date().toISOString(),
     items: receiptItems.map(item => ({
       firstName: item.first_name,
@@ -825,10 +831,10 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
       referenceNumber: item.reference_number,
       packageName: item.package_name,
       packagePrice: item.package_price,
-      packagePriceFormatted: '$' + formatPrice(item.package_price),
+      packagePriceFormatted: formatCurrency(item.package_price),
       addons: receiptAddons
         .filter(a => a.booking_item_id === item.id)
-        .map(a => ({ packageName: a.package_name, quantity: a.quantity, price: a.price, priceFormatted: '$' + formatPrice(a.price) }))
+        .map(a => ({ packageName: a.package_name, quantity: a.quantity, price: a.price, priceFormatted: formatCurrency(a.price) }))
     }))
   });
 
@@ -1228,7 +1234,7 @@ async function sendBookingConfirmationEmail(bookingId) {
       itemReferences: items.map(it => it.reference_number),
       ticketAccessToken: booking.ticket_access_token,
       totalAmount: booking.total_amount,
-      totalFormatted: '$' + formatPrice(booking.total_amount),
+      totalFormatted: formatCurrency(booking.total_amount),
     },
     session,
     attendees,
@@ -1274,13 +1280,10 @@ app.get('/api/sessions/:sessionId/packages', async (req, res) => {
     const sessionType = normalizeSessionType(session.session_type, session.is_special_event);
     if (sessionType !== 'regular_bingo') {
       const sessionPkgs = await all('SELECT * FROM session_packages WHERE session_id = ? ORDER BY sort_order ASC', [req.params.sessionId]);
-      if (sessionPkgs.length > 0) {
-        return res.json(sessionPkgs);
-      }
+      if (sessionType === 'event' || sessionPkgs.length > 0) return res.json(sessionPkgs);
     }
-    // Otherwise fall back to the global active package list, including PHD packages.
-    // PHD availability is enforced per session by /api/phd-inventory?sessionId=...
-    // and the booking validator, so every session gets its own stock pool.
+    // Regular bingo, and legacy special-bingo sessions without session packages,
+    // use the global active package list. Live events must never inherit bingo/PHD packages.
     const globalPkgs = await all('SELECT * FROM packages WHERE is_active = 1 ORDER BY sort_order ASC');
     res.json(globalPkgs);
   } catch (err) {
@@ -1305,7 +1308,7 @@ app.get('/api/booking-config', async (req, res) => {
     res.json({
       ...(await getBookingConfig()),
       serviceFeePerPersonAmount: CHECKOUT_SERVICE_FEE_CENTS,
-      serviceFeePerPersonFormatted: '$' + formatPrice(CHECKOUT_SERVICE_FEE_CENTS),
+      serviceFeePerPersonFormatted: formatCurrency(CHECKOUT_SERVICE_FEE_CENTS),
     });
   } catch (err) {
     console.error('GET /api/booking-config failed:', err);
@@ -1538,7 +1541,8 @@ app.post('/api/bookings', adminAuth, async (req, res) => {
       email: trimmedEmail,
       customerFirstName,
       customerLastName,
-      emailVerifiedAt
+      emailVerifiedAt,
+      sessionType
     });
 
     // No payment processor in this path — flip directly to 'paid'.
@@ -1550,7 +1554,7 @@ app.post('/api/bookings', adminAuth, async (req, res) => {
       referenceNumber: refNumber,
       itemReferences: itemRefs,
       totalAmount,
-      totalFormatted: '$' + formatPrice(totalAmount),
+      totalFormatted: formatCurrency(totalAmount),
       email: trimmedEmail,
       customerFirstName,
       customerLastName,
@@ -1633,6 +1637,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           requiredPkgs,
           sessionPkgs,
           useSessionPkgs,
+          sessionType,
         });
 
         const result = await createHostedPaymentPage({
@@ -1671,7 +1676,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
             customerFirstName,
             customerLastName,
             token: result.token,
-            serviceFeeAmount: getCheckoutServiceFeeCents(attendees),
+            serviceFeeAmount: getCheckoutServiceFeeCents(attendees, sessionType),
             serviceFeeQuantity: attendees.length,
             duplicate: true,
           }),
@@ -1690,7 +1695,8 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           email: trimmedEmail,
           customerFirstName,
           customerLastName,
-          emailVerifiedAt
+          emailVerifiedAt,
+          sessionType
         }));
         bookingIdForFailure = bookingId;
 
@@ -1742,7 +1748,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           customerFirstName,
           customerLastName,
           token: result.token,
-          serviceFeeAmount: getCheckoutServiceFeeCents(attendees),
+          serviceFeeAmount: getCheckoutServiceFeeCents(attendees, sessionType),
           serviceFeeQuantity: attendees.length,
         }),
       };
@@ -1788,7 +1794,7 @@ app.get('/api/bookings/:id/status', async (req, res) => {
       referenceNumber: booking.reference_number,
       status: booking.payment_status,
       totalAmount: booking.total_amount,
-      totalFormatted: '$' + formatPrice(booking.total_amount),
+      totalFormatted: formatCurrency(booking.total_amount),
       failureReason: booking.payment_failure_reason,
       ticketAccessToken: booking.payment_status === 'paid' ? booking.ticket_access_token : undefined,
     });

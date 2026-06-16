@@ -1,7 +1,7 @@
 import { all, run, saveDb } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { sessionTypeSql } from '../services/sessionPackages.js';
-import { formatPrice } from '../utils/format.js';
+import { formatCurrency } from '../utils/format.js';
 
 const BULK_PRINT_SESSION_TYPES = ['regular_bingo', 'special_bingo', 'event'];
 
@@ -75,7 +75,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
         packageName: addon.package_name,
         quantity: addon.quantity,
         price: addon.price,
-        priceFormatted: '$' + formatPrice(addon.price),
+        priceFormatted: formatCurrency(addon.price),
       });
       return map;
     }, {});
@@ -99,7 +99,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
           id: row.booking_id,
           referenceNumber: row.reference_number,
           totalAmount: row.total_amount,
-          totalFormatted: '$' + formatPrice(row.total_amount),
+          totalFormatted: formatCurrency(row.total_amount),
           createdAt: row.booking_created_at,
           tickets: []
         };
@@ -114,7 +114,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
         printedAt: row.item_printed_at || null,
         packageName: row.package_name,
         packagePrice: row.package_price,
-        packagePriceFormatted: '$' + formatPrice(row.package_price),
+        packagePriceFormatted: formatCurrency(row.package_price),
         addons: addonsByItemId[row.booking_item_id] || []
       });
     }

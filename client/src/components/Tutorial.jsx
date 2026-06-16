@@ -371,7 +371,7 @@ export default function Tutorial() {
         <Step number={7} title="Configure Event Packages">
           <ul style={styles.ul}>
             <li style={styles.li}>Click <strong>"+ Add Package"</strong> to add custom packages.</li>
-            <li style={styles.li}>For each package, enter: <strong>Package Name</strong>, <strong>Price (USD)</strong>, <strong>Type</strong> (Required or Add-on), <strong>Max Quantity</strong>.</li>
+            <li style={styles.li}>For each package, enter: <strong>Package Name</strong>, <strong>Price (CAD)</strong>, <strong>Type</strong> (Required or Add-on), <strong>Max Quantity</strong>.</li>
             <li style={styles.li}>Add as many packages as needed. Remove with the <strong>X</strong> button.</li>
             <li style={styles.li}>Click <strong>"Add Special Event"</strong> to create it.</li>
           </ul>
@@ -393,7 +393,7 @@ export default function Tutorial() {
         <Step number={9} title="Manage Packages (Global)">
           <ul style={styles.ul}>
             <li style={styles.li}>Click <strong>Packages</strong> in the sidebar to manage global ticket packages.</li>
-            <li style={styles.li}><strong>Add Ticket Package</strong> form: Name, Price ($), Type (Required/Optional), Max Qty, Sort Order.</li>
+            <li style={styles.li}><strong>Add Ticket Package</strong> form: Name, Price (CAD), Type (Required/Optional), Max Qty, Sort Order.</li>
             <li style={styles.li}>Check <strong>"This is a PHD (Personal Handheld Device)"</strong> for device-based packages tracked by inventory.</li>
             <li style={styles.li}>The <strong>Ticket Packages</strong> table shows all packages with Name, Price, Type, Max Qty, Status, and Disable action.</li>
           </ul>

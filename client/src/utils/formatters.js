@@ -43,5 +43,5 @@ export function formatWeekRange(weekStart) {
 }
 
 export function formatPrice(cents) {
-  return '$' + (cents / 100).toFixed(2);
+  return 'CA$' + (cents / 100).toFixed(2);
 }

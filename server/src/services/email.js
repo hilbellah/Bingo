@@ -95,7 +95,7 @@ function escapeHtml(s) {
 }
 
 function formatPriceDollars(cents) {
-  return '$' + ((cents || 0) / 100).toFixed(2);
+  return 'CA$' + ((cents || 0) / 100).toFixed(2);
 }
 
 function getBookingChargeBreakdown(booking, attendees, pkgById) {
@@ -235,16 +235,19 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
         return `<div style="font-size:13px;color:#6b7280;">${escapeHtml(pkg.name)} &times;${a.quantity}</div>`;
       })
       .join('');
+    const seatLine = presentation.sessionType === 'event'
+      ? '<div style="margin-top:4px;font-size:13px;color:#374151;">General admission</div>'
+      : `<div style="margin-top:4px;font-size:13px;color:#374151;">
+            Table <strong>${escapeHtml(seat.table_number ?? '?')}</strong>,
+            Chair <strong>${escapeHtml(seat.chair_number ?? '?')}</strong>
+          </div>`;
     return `
       <tr>
         <td style="padding:12px 0;border-bottom:1px solid #f3f4f6;">
           <div style="font-weight:600;color:#1a3a5c;font-size:15px;">
             ${escapeHtml(att.firstName)} ${escapeHtml(att.lastName)}
           </div>
-          <div style="margin-top:4px;font-size:13px;color:#374151;">
-            Table <strong>${escapeHtml(seat.table_number ?? '?')}</strong>,
-            Chair <strong>${escapeHtml(seat.chair_number ?? '?')}</strong>
-          </div>
+          ${seatLine}
           ${ticketRef ? `<div style="margin-top:4px;font-family:monospace;font-size:12px;color:#1a3a5c;background:${presentation.referenceBg};display:inline-block;padding:2px 8px;border-radius:4px;"><span style="font-family:Arial,sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-right:6px;">${escapeHtml(presentation.attendeeReferenceLabel)}</span>${escapeHtml(ticketRef)}</div>` : ''}
           ${addonLines ? `<div style="margin-top:6px;">${addonLines}</div>` : ''}
         </td>
@@ -381,7 +384,10 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   attendees.forEach((att, idx) => {
     const seat = seatById.get(att.seatId) || {};
     const ticketRef = booking.itemReferences?.[idx] || '';
-    lines.push(`  ${idx + 1}. ${att.firstName} ${att.lastName} — Table ${seat.table_number ?? '?'}, Chair ${seat.chair_number ?? '?'}${ticketRef ? ` (${ticketRef})` : ''}`);
+    const seatText = presentation.sessionType === 'event'
+      ? 'General admission'
+      : `Table ${seat.table_number ?? '?'}, Chair ${seat.chair_number ?? '?'}`;
+    lines.push(`  ${idx + 1}. ${att.firstName} ${att.lastName} — ${seatText}${ticketRef ? ` (${ticketRef})` : ''}`);
     for (const a of (att.addons || [])) {
       if (!a.quantity) continue;
       const pkg = pkgById.get(a.packageId);
