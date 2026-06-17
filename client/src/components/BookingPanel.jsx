@@ -62,7 +62,7 @@ export default function BookingPanel({
     if (pkg?.type === 'required' && pkg?.is_phd) return '';
     return description.replace(/^Additional\s+/i, '');
   };
-  const requiredPhdIncluded = requiredPackageList.some(pkg => pkg?.is_phd);
+  const requiredPhdIncluded = isRegularBingo && requiredPackageList.some(pkg => pkg?.is_phd);
   const isPhdCreditPackage = (pkg) => pkg?.id === PHD_CREDIT_PACKAGE_ID;
   const getIncludedPhdTotal = () => requiredPhdIncluded ? attendees.length : 0;
   const getAttendeeOptionalPhdQty = (attendee) => (attendee?.addons || []).reduce((sum, addon) => {
@@ -85,8 +85,8 @@ export default function BookingPanel({
     const attendee = attendeeIdx !== null ? attendees[attendeeIdx] : null;
     const currentPkgQty = attendee ? getAddonQty(attendeeIdx, pkg.id) : 0;
     const otherPhdQty = attendee ? Math.max(0, getAttendeeOptionalPhdQty(attendee) - currentPkgQty) : 0;
-    const perPlayerLimit = phdInventory?.perPlayerLimit || 2;
-    const perPlayerBase = isRegularBingo ? otherPhdQty : (requiredPhdIncluded ? 1 : 0) + otherPhdQty;
+    const perPlayerLimit = isRegularBingo ? (phdInventory?.perPlayerLimit || 2) : 1;
+    const perPlayerBase = otherPhdQty;
     const inventoryLimit = Math.max(0, perPlayerLimit - perPlayerBase);
     return Math.min(packageLimit, inventoryLimit);
   };
@@ -381,7 +381,7 @@ export default function BookingPanel({
                     <>
                       <li>&#8226; Daily booking cut-off at <strong>12:00 PM</strong></li>
                       <li>&#8226; Paper card limits apply separately to each item</li>
-                      <li>&#8226; PHD packages are limited separately to {phdInventory?.perPlayerLimit || 2} per player</li>
+                      {isRegularBingo && <li>&#8226; PHD packages are limited separately to {phdInventory?.perPlayerLimit || 2} per player</li>}
                     </>
                   )}
                 </ul>

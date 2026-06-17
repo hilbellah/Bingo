@@ -75,8 +75,14 @@ async function createSpecialBingoSession({ sessionId, seatId, holderId }) {
   await run(
     `INSERT INTO session_packages
       (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description)
-     VALUES (?, ?, 'Special Bingo Admission (includes 1 PHD)', 7500, 'required', 1, 0, 1, 'Admission with required handheld device')`,
+     VALUES (?, ?, 'Special Bingo Admission', 7500, 'required', 1, 0, 0, '')`,
     [`${sessionId}-admission`, sessionId]
+  );
+  await run(
+    `INSERT INTO session_packages
+      (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description)
+     VALUES (?, ?, 'PHD Unit', 5000, 'optional', 1, 1, 1, 'Handheld device for special bingo.')`,
+    [`${sessionId}-phd`, sessionId]
   );
 }
 
@@ -198,8 +204,10 @@ try {
 
   const specialPackages = await getJson('/api/sessions/same-day-special-bingo/packages');
   assert.equal(specialPackages.response.status, 200);
-  assert.deepEqual(specialPackages.data.map(pkg => pkg.name), ['Special Bingo Admission (includes 1 PHD)']);
-  assert.equal(Boolean(specialPackages.data[0].is_phd), true, 'special bingo should keep its required PHD package');
+  assert.deepEqual(specialPackages.data.map(pkg => pkg.name), ['Special Bingo Admission', 'PHD Unit']);
+  assert.equal(Boolean(specialPackages.data[0].is_phd), false, 'special bingo admission should not include PHD');
+  assert.equal(Boolean(specialPackages.data[1].is_phd), true, 'special bingo should expose a separate PHD add-on');
+  assert.equal(specialPackages.data[1].max_quantity, 1, 'special bingo PHD add-on should be capped at one');
 
   const auth = Buffer.from(`${process.env.ADMIN_USERNAME}:${process.env.ADMIN_PASSWORD}`).toString('base64');
   const sameHourSpecial = await postJson('/api/admin/sessions', {

@@ -319,9 +319,9 @@ async function logAudit(action, entityType, entityId, details) {
     [uuid(), action, entityType, entityId, typeof details === 'string' ? details : JSON.stringify(details), new Date().toISOString()]);
 }
 
-function validateAttendeeAddons(attendees, optionalPkgs, { requiredPkgs = [] } = {}) {
+function validateAttendeeAddons(attendees, optionalPkgs, { requiredPkgs = [], sessionType = 'regular_bingo' } = {}) {
   const optionalById = new Map(optionalPkgs.map(pkg => [pkg.id, pkg]));
-  const requiredPhdIncluded = requiredPkgs.some(pkg => pkg?.is_phd);
+  const requiredPhdIncluded = sessionType === 'regular_bingo' && requiredPkgs.some(pkg => pkg?.is_phd);
   const normalizedAttendees = [];
 
   for (const attendee of attendees) {
@@ -437,7 +437,7 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
   const optionalPkgs = useSessionPkgs
     ? sessionPkgs.filter(p => p.type === 'optional')
     : await all("SELECT * FROM packages WHERE type = 'optional' AND is_active = 1 ORDER BY sort_order ASC");
-  const addonCheck = validateAttendeeAddons(attendees, optionalPkgs, { requiredPkgs });
+  const addonCheck = validateAttendeeAddons(attendees, optionalPkgs, { requiredPkgs, sessionType: currentSessionType });
   if (!addonCheck.ok) return addonCheck;
 
   // Every seat must currently be held by THIS holder. Prevents booking seats

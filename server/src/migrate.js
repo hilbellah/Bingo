@@ -223,6 +223,91 @@ async function mirrorSessionPackagesForPackageForeignKeys() {
   } catch (e) {}
 }
 
+async function normalizeSpecialBingoAdmissionAndPhdPackages() {
+  const defaultSpecialBingoConfig = JSON.stringify({
+    admissionName: 'Special Bingo Admission',
+    admissionPrice: 7500,
+    additionalPhdName: 'PHD Unit',
+    additionalPhdPrice: 5000,
+    additionalPhdMaxQuantity: 1
+  });
+
+  try { await run("INSERT INTO settings (key, value) VALUES ('special_bingo_config', ?)", [defaultSpecialBingoConfig]); } catch(e) {}
+  try {
+    await run(`
+      UPDATE settings
+         SET value = REPLACE(
+           REPLACE(value, ' (includes 1 PHD)', ''),
+           'Additional ',
+           ''
+         ),
+         updated_at = datetime('now')
+       WHERE key = 'special_bingo_config'
+    `);
+  } catch(e) {}
+
+  await run(`
+    UPDATE session_packages
+       SET name = REPLACE(name, ' (includes 1 PHD)', ''),
+           is_phd = 0,
+           description = ''
+     WHERE type = 'required'
+       AND session_id IN (
+         SELECT id FROM sessions
+          WHERE COALESCE(NULLIF(session_type, ''), CASE WHEN is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END) = 'special_bingo'
+       )
+  `);
+
+  await run(`
+    UPDATE session_packages
+       SET name = REPLACE(name, 'Additional ', ''),
+           max_quantity = 1,
+           is_phd = 1,
+           description = 'Handheld device for special bingo.'
+     WHERE type = 'optional'
+       AND is_phd = 1
+       AND session_id IN (
+         SELECT id FROM sessions
+          WHERE COALESCE(NULLIF(session_type, ''), CASE WHEN is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END) = 'special_bingo'
+       )
+  `);
+
+  const specialSessionsMissingPhd = await all(`
+    SELECT s.id
+      FROM sessions s
+     WHERE COALESCE(NULLIF(s.session_type, ''), CASE WHEN s.is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END) = 'special_bingo'
+       AND NOT EXISTS (
+         SELECT 1 FROM session_packages sp
+          WHERE sp.session_id = s.id
+            AND sp.type = 'optional'
+            AND COALESCE(sp.is_phd, 0) = 1
+       )
+  `);
+
+  for (const session of specialSessionsMissingPhd) {
+    await run(
+      `INSERT INTO session_packages
+        (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description)
+       VALUES (?, ?, 'PHD Unit', 5000, 'optional', 1, 1, 1, 'Handheld device for special bingo.')`,
+      [uuid(), session.id]
+    );
+  }
+
+  await run(`
+    UPDATE packages
+       SET name = REPLACE(name, ' (includes 1 PHD)', ''),
+           is_phd = 0,
+           description = ''
+     WHERE id IN (
+       SELECT sp.id
+         FROM session_packages sp
+         JOIN sessions s ON s.id = sp.session_id
+        WHERE sp.type = 'required'
+          AND COALESCE(NULLIF(s.session_type, ''), CASE WHEN s.is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END) = 'special_bingo'
+     )
+  `);
+}
+
 async function migrateVenueTo75Tables(db) {
   const sessions = await all(`
     SELECT session_id, COUNT(DISTINCT table_number) as table_count, MAX(table_number) as max_table
@@ -534,9 +619,9 @@ async function migrate() {
   try { await run("INSERT INTO settings (key, value) VALUES ('auto_generate_config', ?)", [defaultAutoGenConfig]); } catch(e) {}
 
   const defaultSpecialBingoConfig = JSON.stringify({
-    admissionName: 'Special Bingo Admission (includes 1 PHD)',
+    admissionName: 'Special Bingo Admission',
     admissionPrice: 7500,
-    additionalPhdName: 'Additional PHD Unit',
+    additionalPhdName: 'PHD Unit',
     additionalPhdPrice: 5000,
     additionalPhdMaxQuantity: 1
   });
@@ -549,6 +634,7 @@ async function migrate() {
 
   await ensureBaselinePackages();
   await removeRegularSessionPackageOverrides();
+  await normalizeSpecialBingoAdmissionAndPhdPackages();
 
   // --- Per-attendee ticket reference migration ---
   console.log('Running per-attendee ticket reference migration...');

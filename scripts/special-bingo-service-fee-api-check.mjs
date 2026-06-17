@@ -33,9 +33,15 @@ const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().
 const holdUntil = new Date(Date.now() + 20 * 60 * 1000).toISOString();
 const sessionId = 'special-no-service-fee-session';
 const seatId = 'special-no-service-fee-seat';
+const onePhdSeatId = 'special-one-phd-seat';
+const twoPhdSeatId = 'special-two-phd-seat';
 const holderId = 'special-no-service-fee-holder';
+const onePhdHolderId = 'special-one-phd-holder';
+const twoPhdHolderId = 'special-two-phd-holder';
 const admissionPackageId = 'special-no-service-fee-admission';
+const phdPackageId = 'special-no-service-fee-phd';
 const admissionPrice = 7500;
+const phdPrice = 5000;
 
 await run(
   `INSERT INTO sessions
@@ -50,10 +56,28 @@ await run(
   [seatId, sessionId, holderId, holdUntil]
 );
 await run(
+  `INSERT INTO seats
+    (id, session_id, table_number, chair_number, status, held_by, held_until)
+   VALUES (?, ?, 1, 2, 'held', ?, ?)`,
+  [onePhdSeatId, sessionId, onePhdHolderId, holdUntil]
+);
+await run(
+  `INSERT INTO seats
+    (id, session_id, table_number, chair_number, status, held_by, held_until)
+   VALUES (?, ?, 1, 3, 'held', ?, ?)`,
+  [twoPhdSeatId, sessionId, twoPhdHolderId, holdUntil]
+);
+await run(
   `INSERT INTO session_packages
     (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description)
-   VALUES (?, ?, 'Special Bingo Admission (includes 1 PHD)', ?, 'required', 1, 0, 1, 'Admission with required handheld device')`,
+   VALUES (?, ?, 'Special Bingo Admission', ?, 'required', 1, 0, 0, '')`,
   [admissionPackageId, sessionId, admissionPrice]
+);
+await run(
+  `INSERT INTO session_packages
+    (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description)
+   VALUES (?, ?, 'PHD Unit', ?, 'optional', 1, 1, 1, 'Handheld device for special bingo.')`,
+  [phdPackageId, sessionId, phdPrice]
 );
 await saveDb();
 
@@ -75,6 +99,45 @@ async function postJson(pathname, body, headers = {}) {
 
 try {
   const auth = Buffer.from(`${process.env.ADMIN_USERNAME}:${process.env.ADMIN_PASSWORD}`).toString('base64');
+  const twoPhdResult = await postJson('/api/bookings', {
+    sessionId,
+    holderId: twoPhdHolderId,
+    email: '',
+    customerFirstName: 'Special',
+    customerLastName: 'Two',
+    attendees: [
+      {
+        firstName: 'Special',
+        lastName: 'Two',
+        seatId: twoPhdSeatId,
+        addons: [{ packageId: phdPackageId, quantity: 2 }],
+      },
+    ],
+  }, { Authorization: `Basic ${auth}` });
+
+  assert.equal(twoPhdResult.response.status, 400);
+  assert.match(twoPhdResult.data.error, /limited to 1 per player/i);
+
+  const onePhdResult = await postJson('/api/bookings', {
+    sessionId,
+    holderId: onePhdHolderId,
+    email: '',
+    customerFirstName: 'Special',
+    customerLastName: 'One',
+    attendees: [
+      {
+        firstName: 'Special',
+        lastName: 'One',
+        seatId: onePhdSeatId,
+        addons: [{ packageId: phdPackageId, quantity: 1 }],
+      },
+    ],
+  }, { Authorization: `Basic ${auth}` });
+
+  assert.equal(onePhdResult.response.status, 200);
+  assert.equal(onePhdResult.data.totalAmount, admissionPrice + phdPrice);
+  assert.equal(onePhdResult.data.totalFormatted, 'CA$125.00');
+
   const result = await postJson('/api/bookings', {
     sessionId,
     holderId,

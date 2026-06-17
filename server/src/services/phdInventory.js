@@ -200,18 +200,19 @@ export async function validatePhdInventory(sessionId, attendees, useSessionPkgs,
   }
 
   if (phdPkgIds.size === 0) return { ok: true, phdPkgIds, phdConfig };
-  const includedPhdPerPlayer = requiredPkgs.some(pkg => pkg?.is_phd) ? 1 : 0;
+  const includedPhdPerPlayer = sessionType === 'regular_bingo' && requiredPkgs.some(pkg => pkg?.is_phd) ? 1 : 0;
 
   for (const attendee of attendees) {
     let playerPhdPackageQty = 0;
     for (const addon of attendee.addons || []) {
       if (phdPkgIds.has(addon.packageId)) playerPhdPackageQty += addon.quantity;
     }
-    if (sessionType === 'regular_bingo' && playerPhdPackageQty > phdConfig.perPlayerLimit) {
+    const perPlayerLimit = sessionType === 'special_bingo' ? 1 : phdConfig.perPlayerLimit;
+    if (sessionType === 'regular_bingo' && playerPhdPackageQty > perPlayerLimit) {
       return { ok: false, error: `Each player can only add up to ${phdConfig.perPlayerLimit} PHD packages.` };
     }
-    if (sessionType !== 'regular_bingo' && includedPhdPerPlayer + playerPhdPackageQty > phdConfig.perPlayerLimit) {
-      return { ok: false, error: `Each player can only add up to ${phdConfig.perPlayerLimit} handheld devices.` };
+    if (sessionType !== 'regular_bingo' && includedPhdPerPlayer + playerPhdPackageQty > perPlayerLimit) {
+      return { ok: false, error: `Each player can only add up to ${perPlayerLimit} handheld device${perPlayerLimit === 1 ? '' : 's'}.` };
     }
   }
 
