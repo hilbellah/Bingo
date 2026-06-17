@@ -7,6 +7,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SITE = 'https://bingo-jk2h.onrender.com';
 const dir1 = path.join(__dirname, 'client', 'public', 'screenshots');
 const dir2 = path.join(__dirname, 'screenshots');
+const adminToken = process.env.ADMIN_SCREENSHOT_TOKEN
+  || (process.env.ADMIN_SCREENSHOT_USERNAME && process.env.ADMIN_SCREENSHOT_PASSWORD
+    ? Buffer.from(`${process.env.ADMIN_SCREENSHOT_USERNAME}:${process.env.ADMIN_SCREENSHOT_PASSWORD}`).toString('base64')
+    : '');
+const adminDisplayName = process.env.ADMIN_SCREENSHOT_DISPLAY_NAME || 'Admin';
+
+if (!adminToken) {
+  throw new Error('Set ADMIN_SCREENSHOT_TOKEN or ADMIN_SCREENSHOT_USERNAME and ADMIN_SCREENSHOT_PASSWORD to run this script.');
+}
 
 async function save(page, name) {
   await page.screenshot({ path: path.join(dir1, name), fullPage: false });
@@ -47,11 +56,10 @@ async function clickSidebarTab(page, tabLabel) {
   // Login by setting sessionStorage token directly
   console.log('Setting auth token...');
   await page.goto(`${SITE}/admin`, { waitUntil: 'networkidle2', timeout: 60000 });
-  await page.evaluate(() => {
-    const token = btoa('Kylepaul@stmec.com:b4KT!xrjpcNjXq');
+  await page.evaluate(({ token, displayName }) => {
     sessionStorage.setItem('admin_token', token);
-    sessionStorage.setItem('admin_display_name', 'Kyle Paul');
-  });
+    sessionStorage.setItem('admin_display_name', displayName);
+  }, { token: adminToken, displayName: adminDisplayName });
   await page.goto(`${SITE}/admin/dashboard`, { waitUntil: 'networkidle2', timeout: 60000 });
   await new Promise(r => setTimeout(r, 3000));
   console.log('Logged in:', page.url());
