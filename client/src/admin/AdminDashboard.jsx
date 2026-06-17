@@ -73,8 +73,8 @@ const DEFAULT_BOOKING_CONFIG = {
 function defaultSpecialEventPackages(config = DEFAULT_SPECIAL_BINGO_CONFIG) {
   const resolved = { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...(config || {}) };
   return [
-    { name: resolved.admissionName, price: resolved.admissionPrice, type: 'required', max_quantity: 1, sort_order: 0, is_phd: true, description: 'Special bingo admission with one included handheld device.' },
-    { name: resolved.additionalPhdName, price: resolved.additionalPhdPrice, type: 'optional', max_quantity: resolved.additionalPhdMaxQuantity, sort_order: 1, is_phd: true, description: 'Additional handheld device for special bingo.' },
+    { name: resolved.admissionName, price: resolved.admissionPrice, type: 'required', max_quantity: 1, sort_order: 0, is_phd: true, description: '' },
+    { name: resolved.additionalPhdName, price: resolved.additionalPhdPrice, type: 'optional', max_quantity: resolved.additionalPhdMaxQuantity, sort_order: 1, is_phd: true, description: 'Handheld device for special bingo.' },
   ];
 }
 

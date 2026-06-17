@@ -56,6 +56,12 @@ export default function BookingPanel({
   const sessionType = session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
   const isRegularBingo = sessionType === 'regular_bingo';
   const isEvent = sessionType === 'event';
+  const getCheckoutDescription = (pkg) => {
+    const description = String(pkg?.description || '').trim();
+    if (sessionType !== 'special_bingo') return description;
+    if (pkg?.type === 'required' && pkg?.is_phd) return '';
+    return description.replace(/^Additional\s+/i, '');
+  };
   const requiredPhdIncluded = requiredPackageList.some(pkg => pkg?.is_phd);
   const isPhdCreditPackage = (pkg) => pkg?.id === PHD_CREDIT_PACKAGE_ID;
   const getIncludedPhdTotal = () => requiredPhdIncluded ? attendees.length : 0;
@@ -394,9 +400,6 @@ export default function BookingPanel({
                       {phdInventory.remaining} available
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Max {phdInventory.perPlayerLimit} PHD package{phdInventory.perPlayerLimit === 1 ? '' : 's'} per player. Multiple PHD packages for one player use one device.
-                  </p>
                 </div>
               )}
 
@@ -430,7 +433,7 @@ export default function BookingPanel({
                             <span className="font-medium text-brand-blue">{pkg.name} <span className="text-xs text-gray-400">(required)</span></span>
                             <span className="font-bold">{formatPrice(pkg.price)}</span>
                           </div>
-                          {pkg.description ? <p className="mt-1 text-xs text-blue-700/70">{pkg.description}</p> : null}
+                          {getCheckoutDescription(pkg) ? <p className="mt-1 text-xs text-blue-700/70">{getCheckoutDescription(pkg)}</p> : null}
                         </div>
                       ))}
 
@@ -501,7 +504,7 @@ export default function BookingPanel({
                                     {pkg.is_phd && <span className="text-[10px] ml-1 text-purple-600 font-bold">PHD</span>}
                                     <span className="text-brand-gold font-semibold ml-1">{formatPrice(pkg.price * qty)}</span>
                                   </div>
-                                  {pkg.description ? <p className="mt-0.5 text-xs text-gray-500">{pkg.description}</p> : null}
+                                  {getCheckoutDescription(pkg) ? <p className="mt-0.5 text-xs text-gray-500">{getCheckoutDescription(pkg)}</p> : null}
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                   <button onClick={() => updateAddon(i, pkg.id, qty - 1)}
