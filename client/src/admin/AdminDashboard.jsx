@@ -70,17 +70,27 @@ const DEFAULT_BOOKING_CONFIG = {
   maxOptionalPackagesPerPlayer: 3,
 };
 
-function defaultSpecialEventPackages(config = DEFAULT_SPECIAL_BINGO_CONFIG) {
+function normalizeSpecialBingoConfig(config = {}) {
   const resolved = { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...(config || {}) };
-  const admissionName = String(resolved.admissionName || DEFAULT_SPECIAL_BINGO_CONFIG.admissionName)
-    .replace(/\s*\(includes 1 PHD\)\s*/i, '')
-    .trim();
-  const additionalPhdName = String(resolved.additionalPhdName || DEFAULT_SPECIAL_BINGO_CONFIG.additionalPhdName)
-    .replace(/^Additional\s+/i, '')
-    .trim();
+  return {
+    ...resolved,
+    admissionName: String(resolved.admissionName || DEFAULT_SPECIAL_BINGO_CONFIG.admissionName)
+      .replace(/\s*\(includes 1 PHD\)\s*/i, '')
+      .trim(),
+    admissionPrice: DEFAULT_SPECIAL_BINGO_CONFIG.admissionPrice,
+    additionalPhdName: String(resolved.additionalPhdName || DEFAULT_SPECIAL_BINGO_CONFIG.additionalPhdName)
+      .replace(/^Additional\s+/i, '')
+      .trim(),
+    additionalPhdPrice: DEFAULT_SPECIAL_BINGO_CONFIG.additionalPhdPrice,
+    additionalPhdMaxQuantity: 1,
+  };
+}
+
+function defaultSpecialEventPackages(config = DEFAULT_SPECIAL_BINGO_CONFIG) {
+  const resolved = normalizeSpecialBingoConfig(config);
   return [
-    { name: admissionName, price: resolved.admissionPrice, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false, description: '' },
-    { name: additionalPhdName, price: resolved.additionalPhdPrice, type: 'optional', max_quantity: 1, sort_order: 1, is_phd: true, description: 'Handheld device for special bingo.' },
+    { name: resolved.admissionName, price: resolved.admissionPrice, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false, description: '' },
+    { name: resolved.additionalPhdName, price: resolved.additionalPhdPrice, type: 'optional', max_quantity: 1, sort_order: 1, is_phd: true, description: 'Handheld device for special bingo.' },
   ];
 }
 
@@ -185,7 +195,7 @@ export default function AdminDashboard() {
     });
     fetchSettings(token, 'special_bingo_config').then(config => {
       if (!config) return;
-      const merged = { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...config };
+      const merged = normalizeSpecialBingoConfig(config);
       setSpecialBingoConfig(merged);
       setNewSession(prev => ({
         ...prev,

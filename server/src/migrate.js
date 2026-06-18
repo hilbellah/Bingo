@@ -1,7 +1,7 @@
 import { getDb, exec, all, run, saveDb } from './database.js';
 import { v4 as uuid } from 'uuid';
 import crypto from 'crypto';
-import { REGULAR_BINGO_PACKAGE_DEFINITIONS } from './services/sessionPackages.js';
+import { REGULAR_BINGO_PACKAGE_DEFINITIONS, normalizeSpecialBingoConfig } from './services/sessionPackages.js';
 
 const BASELINE_PACKAGES = REGULAR_BINGO_PACKAGE_DEFINITIONS.map(pkg => [
   pkg.id,
@@ -234,6 +234,17 @@ async function normalizeSpecialBingoAdmissionAndPhdPackages() {
 
   try { await run("INSERT INTO settings (key, value) VALUES ('special_bingo_config', ?)", [defaultSpecialBingoConfig]); } catch(e) {}
   try {
+    const configRows = await all("SELECT value FROM settings WHERE key = 'special_bingo_config' LIMIT 1");
+    const configRow = configRows[0];
+    if (configRow) {
+      const normalized = normalizeSpecialBingoConfig(JSON.parse(configRow.value));
+      await run(
+        "UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'special_bingo_config'",
+        [JSON.stringify(normalized)]
+      );
+    }
+  } catch(e) {}
+  try {
     await run(`
       UPDATE settings
          SET value = REPLACE(
@@ -249,6 +260,7 @@ async function normalizeSpecialBingoAdmissionAndPhdPackages() {
   await run(`
     UPDATE session_packages
        SET name = REPLACE(name, ' (includes 1 PHD)', ''),
+           price = 7500,
            is_phd = 0,
            description = ''
      WHERE type = 'required'
@@ -261,6 +273,7 @@ async function normalizeSpecialBingoAdmissionAndPhdPackages() {
   await run(`
     UPDATE session_packages
        SET name = REPLACE(name, 'Additional ', ''),
+           price = 5000,
            max_quantity = 1,
            is_phd = 1,
            description = 'Handheld device for special bingo.'
@@ -296,6 +309,7 @@ async function normalizeSpecialBingoAdmissionAndPhdPackages() {
   await run(`
     UPDATE packages
        SET name = REPLACE(name, ' (includes 1 PHD)', ''),
+           price = 7500,
            is_phd = 0,
            description = ''
      WHERE id IN (

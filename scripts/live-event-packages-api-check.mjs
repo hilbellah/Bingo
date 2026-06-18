@@ -105,6 +105,18 @@ await createEventSession({
   withPackage: true,
   salesCutoffAt: `${pastCutoffDate}T12:00`,
 });
+await run(
+  `INSERT INTO settings (key, value)
+   VALUES ('special_bingo_config', ?)
+   ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  [JSON.stringify({
+    admissionName: 'Special Bingo Admission',
+    admissionPrice: 10000,
+    additionalPhdName: 'Additional PHD Unit',
+    additionalPhdPrice: 5000,
+    additionalPhdMaxQuantity: 2,
+  })]
+);
 await createSpecialBingoSession({
   sessionId: 'same-day-special-bingo',
   seatId: 'same-day-special-bingo-seat',
@@ -231,6 +243,16 @@ try {
     sameHourSpecial.data.error || 'admin should allow special bingo in same hour as a live event'
   );
   assert.equal(sameHourSpecial.data.session_type, 'special_bingo');
+  const sameHourSpecialPackages = await getJson(`/api/sessions/${sameHourSpecial.data.id}/packages`);
+  assert.equal(sameHourSpecialPackages.response.status, 200);
+  assert.deepEqual(
+    sameHourSpecialPackages.data.map(pkg => [pkg.name, pkg.price, pkg.type, pkg.max_quantity, Boolean(pkg.is_phd)]),
+    [
+      ['Special Bingo Admission', 7500, 'required', 1, false],
+      ['PHD Unit', 5000, 'optional', 1, true],
+    ],
+    'stale special bingo settings should normalize back to CA$75 admission and one CA$50 PHD add-on'
+  );
 
   const sameHourRegular = await postJson('/api/admin/sessions', {
     date: futureDate,

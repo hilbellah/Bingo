@@ -69,6 +69,7 @@ import {
 } from './services/payments.js';
 import {
   getBookingConfig,
+  normalizeSpecialBingoConfig,
   normalizeSessionType,
   PHD_CREDIT_PACKAGE_ID,
 } from './services/sessionPackages.js';
@@ -2416,6 +2417,10 @@ const DEFAULT_RECEIPT_CONFIG = {
 };
 
 function normalizeSettingValue(key, value) {
+  if (key === 'special_bingo_config') {
+    return normalizeSpecialBingoConfig(value);
+  }
+
   if (key !== 'receipt_config' || !value || typeof value !== 'object' || Array.isArray(value)) {
     return value;
   }

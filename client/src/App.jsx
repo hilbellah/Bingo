@@ -537,7 +537,9 @@ export default function App() {
   });
   const bookingClosed = selectedBookingStatus.isClosed;
   const bingoSessions = sessions.filter(session => getSessionType(session) !== 'event');
-  const liveEventSessions = sessions.filter(session => getSessionType(session) === 'event');
+  const featuredEventSessions = sessions
+    .filter(session => ['special_bingo', 'event'].includes(getSessionType(session)))
+    .sort((left, right) => `${left.date}T${left.time}`.localeCompare(`${right.date}T${right.time}`));
   const availableLegendColor = isSelectedEvent
     ? 'bg-blue-600/80 ring-1 ring-blue-300/80'
     : isSelectedSpecialBingo
@@ -664,8 +666,8 @@ export default function App() {
             onSelectSession={handleSelectSession}
           />
         </section>
-        <LiveEventRail
-          events={liveEventSessions}
+        <FeaturedEventRail
+          events={featuredEventSessions}
           selectedSession={selectedSession}
           onSelectSession={handleSelectSession}
         />
@@ -944,20 +946,41 @@ function LiveEventBookingSurface({
   );
 }
 
-function LiveEventRail({ events, selectedSession, onSelectSession }) {
+function FeaturedEventRail({ events, selectedSession, onSelectSession }) {
   if (events.length === 0) return null;
 
   return (
-    <section className="mt-3 pt-1" aria-label="Upcoming live events">
+    <section className="mt-3 pt-1" aria-label="Upcoming special bingo and live events">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-sky-200">Upcoming Live Events</h2>
+        <h2 className="text-xs font-bold uppercase tracking-wider text-sky-200">Upcoming Events</h2>
         <span className="text-xs text-white/40">{events.length} active</span>
       </div>
 
       <div className="rail-scroll flex gap-3 overflow-x-auto">
         {events.map(event => {
+          const sessionType = getSessionType(event);
+          const isLiveEvent = sessionType === 'event';
           const isSelected = selectedSession?.id === event.id;
           const isClosed = !!event.booking_closed;
+          const label = isLiveEvent ? 'Live Event / Venue' : 'Special Bingo';
+          const actionLabel = isLiveEvent ? 'Buy Tickets' : 'Book Seats';
+          const theme = isLiveEvent
+            ? {
+                border: 'border-sky-500/35',
+                hover: 'hover:border-sky-300/70 hover:bg-sky-950/40',
+                background: 'bg-sky-950/25 text-sky-50',
+                selected: 'border-sky-300 bg-sky-950 text-white shadow-md',
+                badge: 'bg-sky-500 text-white',
+                date: 'text-sky-100/70',
+              }
+            : {
+                border: 'border-amber-500/40',
+                hover: 'hover:border-amber-300/70 hover:bg-amber-950/40',
+                background: 'bg-amber-950/25 text-amber-50',
+                selected: 'border-amber-300 bg-amber-950 text-white shadow-md',
+                badge: 'bg-amber-500 text-white',
+                date: 'text-amber-100/75',
+              };
           return (
             <button
               key={event.id}
@@ -965,19 +988,22 @@ function LiveEventRail({ events, selectedSession, onSelectSession }) {
               onClick={() => onSelectSession(event)}
               className={`min-w-[220px] rounded-xl border px-4 py-3 text-left transition-all ${
                 isSelected
-                  ? 'border-sky-300 bg-sky-950 text-white shadow-md'
-                  : 'border-sky-500/35 bg-sky-950/25 text-sky-50 hover:border-sky-300/70 hover:bg-sky-950/40'
+                  ? theme.selected
+                  : `${theme.border} ${theme.background} ${theme.hover}`
               }`}
             >
               <span className={`mb-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                isClosed ? 'bg-red-500/20 text-red-100' : 'bg-sky-500 text-white'
+                isClosed ? 'bg-red-500/20 text-red-100' : theme.badge
               }`}>
-                {isClosed ? 'Closed' : 'Buy Tickets'}
+                {isClosed ? 'Closed' : actionLabel}
+              </span>
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-white/45">
+                {label}
               </span>
               <span className="block truncate text-sm font-bold">
-                {event.event_title || 'Live Event / Venue'}
+                {event.event_title || label}
               </span>
-              <span className="mt-1 block text-xs text-sky-100/70">
+              <span className={`mt-1 block text-xs ${theme.date}`}>
                 {formatDateShort(event.date)} at {formatTime(event.time)}
               </span>
             </button>

@@ -8,6 +8,25 @@ export const DEFAULT_SPECIAL_BINGO_CONFIG = {
   additionalPhdMaxQuantity: 1,
 };
 
+export function normalizeSpecialBingoConfig(rawConfig = {}) {
+  const parsed = rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
+    ? rawConfig
+    : {};
+  return {
+    ...DEFAULT_SPECIAL_BINGO_CONFIG,
+    ...parsed,
+    admissionName: String(parsed.admissionName || DEFAULT_SPECIAL_BINGO_CONFIG.admissionName)
+      .replace(/\s*\(includes 1 PHD\)\s*/i, '')
+      .trim(),
+    admissionPrice: DEFAULT_SPECIAL_BINGO_CONFIG.admissionPrice,
+    additionalPhdName: String(parsed.additionalPhdName || DEFAULT_SPECIAL_BINGO_CONFIG.additionalPhdName)
+      .replace(/^Additional\s+/i, '')
+      .trim(),
+    additionalPhdPrice: DEFAULT_SPECIAL_BINGO_CONFIG.additionalPhdPrice,
+    additionalPhdMaxQuantity: 1,
+  };
+}
+
 export const DEFAULT_BOOKING_CONFIG = {
   maxOptionalPackagesPerPlayer: 3,
 };
@@ -85,17 +104,7 @@ export async function getSpecialBingoConfig() {
   const row = await get("SELECT value FROM settings WHERE key = 'special_bingo_config'");
   if (!row) return DEFAULT_SPECIAL_BINGO_CONFIG;
   try {
-    const parsed = { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...JSON.parse(row.value) };
-    return {
-      ...parsed,
-      admissionName: String(parsed.admissionName || DEFAULT_SPECIAL_BINGO_CONFIG.admissionName)
-        .replace(/\s*\(includes 1 PHD\)\s*/i, '')
-        .trim(),
-      additionalPhdName: String(parsed.additionalPhdName || DEFAULT_SPECIAL_BINGO_CONFIG.additionalPhdName)
-        .replace(/^Additional\s+/i, '')
-        .trim(),
-      additionalPhdMaxQuantity: 1,
-    };
+    return normalizeSpecialBingoConfig(JSON.parse(row.value));
   } catch {
     return DEFAULT_SPECIAL_BINGO_CONFIG;
   }
