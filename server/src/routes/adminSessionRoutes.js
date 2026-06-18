@@ -50,7 +50,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, packages: pkgs } = req.body;
       const sessionType = normalizeSessionType(req.body.session_type, is_special_event);
       const isSpecialType = sessionType === 'special_bingo' || sessionType === 'event';
-      const salesCutoff = sessionType === 'event'
+      const salesCutoff = sessionType === 'event' || sessionType === 'special_bingo'
         ? normalizeSalesCutoffAt(req.body.sales_cutoff_at || `${date}T${cutoff_time || '12:00'}`)
         : { value: null };
       if (salesCutoff.error) return res.status(400).json({ error: salesCutoff.error });
@@ -131,13 +131,13 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       if (event_title !== undefined) { updates.push('event_title = ?'); values.push(event_title || null); }
       if (event_description !== undefined) { updates.push('event_description = ?'); values.push(event_description || null); }
       if (req.body.sales_cutoff_at !== undefined) {
-        const salesCutoff = effectiveSessionType === 'event'
+        const salesCutoff = effectiveSessionType === 'event' || effectiveSessionType === 'special_bingo'
           ? normalizeSalesCutoffAt(req.body.sales_cutoff_at)
           : { value: null };
         if (salesCutoff.error) return res.status(400).json({ error: salesCutoff.error });
         updates.push('sales_cutoff_at = ?');
         values.push(salesCutoff.value);
-      } else if (nextSessionType && nextSessionType !== 'event') {
+      } else if (nextSessionType && nextSessionType !== 'event' && nextSessionType !== 'special_bingo') {
         updates.push('sales_cutoff_at = ?');
         values.push(null);
       }

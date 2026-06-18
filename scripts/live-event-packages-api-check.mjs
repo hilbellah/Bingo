@@ -59,12 +59,12 @@ async function createEventSession({ sessionId, seatId, holderId, withPackage, sa
   }
 }
 
-async function createSpecialBingoSession({ sessionId, seatId, holderId }) {
+async function createSpecialBingoSession({ sessionId, seatId, holderId, salesCutoffAt = null }) {
   await run(
     `INSERT INTO sessions
-      (id, date, time, cutoff_time, is_available, session_type, is_special_event, event_title)
-     VALUES (?, ?, '18:30', '12:00', 1, 'special_bingo', 1, 'Special Bingo')`,
-    [sessionId, futureDate]
+      (id, date, time, cutoff_time, sales_cutoff_at, is_available, session_type, is_special_event, event_title)
+     VALUES (?, ?, '18:30', '12:00', ?, 1, 'special_bingo', 1, 'Special Bingo')`,
+    [sessionId, futureDate, salesCutoffAt]
   );
   await run(
     `INSERT INTO seats
@@ -109,6 +109,12 @@ await createSpecialBingoSession({
   sessionId: 'same-day-special-bingo',
   seatId: 'same-day-special-bingo-seat',
   holderId: 'same-day-special-bingo-holder',
+});
+await createSpecialBingoSession({
+  sessionId: 'special-bingo-cutoff-closed',
+  seatId: 'special-bingo-cutoff-closed-seat',
+  holderId: 'special-bingo-cutoff-closed-holder',
+  salesCutoffAt: `${pastCutoffDate}T12:00`,
 });
 await run(
   `INSERT INTO bookings
@@ -242,6 +248,12 @@ try {
   assert.equal(cutoffClosedEvent.booking_closed_reason, 'cutoff');
   assert.match(cutoffClosedEvent.booking_closed_message, /sales cutoff/i);
   assert.ok(cutoffClosedEvent.starts_at, 'cutoff event should still have a future start time');
+
+  const cutoffClosedSpecial = sessions.data.find(session => session.id === 'special-bingo-cutoff-closed');
+  assert.ok(cutoffClosedSpecial, 'expected cutoff test special bingo in public sessions');
+  assert.equal(cutoffClosedSpecial.booking_closed_reason, 'cutoff');
+  assert.match(cutoffClosedSpecial.booking_closed_message, /sales cutoff/i);
+  assert.ok(cutoffClosedSpecial.starts_at, 'cutoff special bingo should still have a future start time');
 
   console.log('Live event packages API check passed.');
 } finally {

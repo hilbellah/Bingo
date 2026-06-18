@@ -62,8 +62,9 @@ export function getSessionBookingStatus(session, { soldOut = false, now = new Da
   const sessionType = normalizeSessionType(session?.session_type, session?.is_special_event);
   const startsAt = sessionDateTimeToUtc(session?.date, session?.time);
   const cutoffTime = sessionType === 'regular_bingo' ? '12:00' : (session?.cutoff_time || session?.time);
-  const explicitEventCutoffAt = sessionType === 'event' ? salesCutoffToUtc(session?.sales_cutoff_at) : null;
-  const cutoffAt = explicitEventCutoffAt || sessionDateTimeToUtc(session?.date, cutoffTime);
+  const usesExplicitSalesCutoff = sessionType === 'event' || sessionType === 'special_bingo';
+  const explicitSalesCutoffAt = usesExplicitSalesCutoff ? salesCutoffToUtc(session?.sales_cutoff_at) : null;
+  const cutoffAt = explicitSalesCutoffAt || sessionDateTimeToUtc(session?.date, cutoffTime);
   const base = {
     booking_closed: 0,
     booking_closed_reason: 'open',

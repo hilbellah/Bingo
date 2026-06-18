@@ -95,8 +95,15 @@ export default function SessionsTab() {
                   <input type="time" value={newSession.time} onChange={e => setNewSession({...newSession, time: e.target.value})}
                     className="px-3 py-2 border rounded-lg text-sm" />
                 </div>
+                {newSession.is_special_event && (
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Cutoff Date</label>
+                    <input type="date" value={newSession.sales_cutoff_date || newSession.date} onChange={e => setNewSession({...newSession, sales_cutoff_date: e.target.value})}
+                      className="px-3 py-2 border rounded-lg text-sm" />
+                  </div>
+                )}
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Cutoff</label>
+                  <label className="block text-xs text-gray-400 mb-1">Cutoff Time</label>
                   <input type="time" value={newSession.cutoff_time} onChange={e => setNewSession({...newSession, cutoff_time: e.target.value})}
                     className="px-3 py-2 border rounded-lg text-sm" />
                 </div>
@@ -207,7 +214,11 @@ export default function SessionsTab() {
                       <tr key={s.id} className={`border-b border-gray-50 ${s.is_special_event ? 'bg-amber-50/50' : ''}`}>
                         <td className="py-2 font-medium">{s.date}</td>
                         <td className="py-2">{s.time}</td>
-                        <td className="py-2">{s.cutoff_time}</td>
+                        <td className="py-2">
+                          {s.is_special_event && s.sales_cutoff_at
+                            ? `${s.sales_cutoff_at.slice(0, 10)} ${s.sales_cutoff_at.slice(11, 16)}`
+                            : s.cutoff_time}
+                        </td>
                         <td className="py-2">
                           {s.is_special_event ? (
                             <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 font-medium">
@@ -262,7 +273,7 @@ export default function SessionsTab() {
                     Change the date or time here to move this session. Existing bookings, seats, and ticket references stay attached.
                   </div>
                   <div className="space-y-3">
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-4 gap-3">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Date</label>
                         <div className="flex gap-1">
@@ -310,8 +321,15 @@ export default function SessionsTab() {
                         <input type="time" value={editForm.time} onChange={e => setEditForm({...editForm, time: e.target.value})}
                           className="w-full px-3 py-2 border rounded-lg text-sm" />
                       </div>
+                      {editForm.is_special_event && (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Cutoff Date</label>
+                          <input type="date" value={editForm.sales_cutoff_date || editForm.date} onChange={e => setEditForm({...editForm, sales_cutoff_date: e.target.value})}
+                            className="w-full px-3 py-2 border rounded-lg text-sm" />
+                        </div>
+                      )}
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Cutoff</label>
+                        <label className="block text-xs text-gray-500 mb-1">Cutoff Time</label>
                         <input type="time" value={editForm.cutoff_time} onChange={e => setEditForm({...editForm, cutoff_time: e.target.value})}
                           className="w-full px-3 py-2 border rounded-lg text-sm" />
                       </div>

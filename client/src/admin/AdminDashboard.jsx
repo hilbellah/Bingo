@@ -105,7 +105,7 @@ export default function AdminDashboard() {
   const [specialBingoConfig, setSpecialBingoConfig] = useState(DEFAULT_SPECIAL_BINGO_CONFIG);
   const [bookingConfig, setBookingConfig] = useState(DEFAULT_BOOKING_CONFIG);
   const [bookingConfigSaved, setBookingConfigSaved] = useState(false);
-  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages() });
+  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages() });
   const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
@@ -344,13 +344,17 @@ export default function AdminDashboard() {
   const handleCreateSession = async () => {
     if (!newSession.date) return;
     const payload = { ...newSession, session_type: newSession.is_special_event ? 'special_bingo' : 'regular_bingo' };
+    if (payload.session_type === 'special_bingo') {
+      payload.sales_cutoff_at = buildSalesCutoffAt(payload.sales_cutoff_date || payload.date, payload.cutoff_time);
+    }
+    delete payload.sales_cutoff_date;
     const proceed = confirmAdminAction({
       action: payload.is_special_event ? 'Create this special bingo event' : 'Create this regular bingo session',
       details: [
         payload.is_special_event ? `Title: ${payload.event_title || 'Special Bingo'}` : 'Type: Regular Bingo',
         `Date: ${formatDateShort(payload.date)}`,
         `Time: ${formatTime(payload.time)}`,
-        `Sales cutoff: ${formatTime(payload.cutoff_time)}`,
+        `Sales cutoff: ${payload.session_type === 'special_bingo' ? formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time) : formatTime(payload.cutoff_time)}`,
         payload.is_special_event ? `Packages: ${packageSummary(payload.packages) || 'No packages configured'}` : '',
       ],
       warning: 'This will make the session available for booking.',
@@ -363,7 +367,7 @@ export default function AdminDashboard() {
     }
     try {
       await createAdminSession(token, payload);
-      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages(specialBingoConfig) });
+      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages(specialBingoConfig) });
       loadSessions();
     } catch (err) {
       alert('Failed to create session: ' + (err?.message || 'Unknown error. Please try again.'));
@@ -513,7 +517,7 @@ export default function AdminDashboard() {
   const handleSaveEdit = async () => {
     if (!editingSession || !editForm.date) return;
     const payload = { ...editForm };
-    if (payload.session_type === 'event') {
+    if (payload.session_type === 'event' || payload.session_type === 'special_bingo') {
       payload.is_special_event = true;
       payload.sales_cutoff_at = buildSalesCutoffAt(payload.sales_cutoff_date || payload.date, payload.cutoff_time);
     }
@@ -528,7 +532,7 @@ export default function AdminDashboard() {
       details: [
         `Date: ${formatDateShort(payload.date)}`,
         `Time: ${formatTime(payload.time)}`,
-        `Sales cutoff: ${payload.session_type === 'event' ? formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time) : formatTime(payload.cutoff_time)}`,
+        `Sales cutoff: ${payload.session_type === 'event' || payload.session_type === 'special_bingo' ? formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time) : formatTime(payload.cutoff_time)}`,
         payload.event_title ? `Title: ${payload.event_title}` : '',
       ],
       warning: payload.notify_reschedule === false
