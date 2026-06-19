@@ -96,7 +96,7 @@ function bookingBody({ sessionId, seatId, holderId, addons }) {
   return {
     sessionId,
     holderId,
-    email: '',
+    email: 'paper.tester@example.com',
     customerFirstName: 'Paper',
     customerLastName: 'Tester',
     attendees: [

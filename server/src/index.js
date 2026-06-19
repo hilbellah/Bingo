@@ -375,7 +375,7 @@ function validateAttendeeAddons(attendees, optionalPkgs, { requiredPkgs = [], se
 // Returns { ok, data: { sessionId, holderId, attendees, trimmedEmail, session,
 //   useSessionPkgs, sessionPkgs, requiredPkg } } on success, or
 // { ok: false, statusCode, error } on failure.
-async function validateBookingRequest(body, { requireEmailVerification = true, requireCustomerDetails = true } = {}) {
+async function validateBookingRequest(body, { requireEmailVerification = true, requireCustomerDetails = true, requireEmail = false } = {}) {
   const { sessionId, holderId, attendees, email, customerFirstName, customerLastName, emailVerificationId } = body || {};
 
   if (!sessionId || !holderId || !attendees?.length) {
@@ -385,6 +385,9 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
   // Email is optional in the payment flow; Authorize.Net may still show its own
   // optional email field on the hosted card form.
   const trimmedEmail = (email || '').trim();
+  if (requireEmail && !trimmedEmail) {
+    return { ok: false, statusCode: 400, error: 'A valid email address is required for confirmation.' };
+  }
   if (trimmedEmail && !isValidEmail(trimmedEmail)) {
     return { ok: false, statusCode: 400, error: 'Enter a valid email address or leave it blank.' };
   }
@@ -1582,7 +1585,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
   };
   let bookingIdForFailure = null;
   try {
-    const validation = await validateBookingRequest(req.body, { requireEmailVerification: false });
+    const validation = await validateBookingRequest(req.body, { requireEmailVerification: false, requireEmail: true });
     if (!validation.ok) {
       await shortenRequestedSeatHolds({ ...failureHoldContext, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
       return res.status(validation.statusCode).json({ error: validation.error });

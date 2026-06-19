@@ -24,10 +24,17 @@ export default function BookingPanel({
   const primaryAttendee = attendees[0] || {};
   const trimmedCustomerFirstName = (primaryAttendee.firstName || '').trim();
   const trimmedCustomerLastName = (primaryAttendee.lastName || '').trim();
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [emailTouched, setEmailTouched] = useState(false);
+  const trimmedCustomerEmail = customerEmail.trim();
+  const customerEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedCustomerEmail);
 
   const handlePaySubmit = () => {
+    setEmailTouched(true);
+    if (!customerEmailValid) return;
+
     onSubmit({
-      email: '',
+      email: trimmedCustomerEmail,
       customerFirstName: trimmedCustomerFirstName,
       customerLastName: trimmedCustomerLastName,
     });
@@ -39,6 +46,13 @@ export default function BookingPanel({
       setStep(1);
     }
   }, [isOpen, allSeatsSelected]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setCustomerEmail('');
+      setEmailTouched(false);
+    }
+  }, [isOpen]);
 
   const getSeatInfo = (seatId) => {
     const seat = seats.find(s => s.id === seatId);
@@ -618,6 +632,27 @@ export default function BookingPanel({
                 <span className="text-brand-gold text-2xl font-bold">{formatPrice(total)}</span>
               </div>
 
+              <div className="bg-white border-2 border-gray-100 rounded-xl px-4 py-3 mb-4">
+                <label htmlFor="booking-email" className="block text-xs font-bold text-brand-blue uppercase tracking-wide mb-1.5">
+                  Email for confirmation
+                </label>
+                <input
+                  id="booking-email"
+                  type="email"
+                  value={customerEmail}
+                  onChange={event => setCustomerEmail(event.target.value)}
+                  onBlur={() => setEmailTouched(true)}
+                  placeholder="name@example.com"
+                  autoComplete="email"
+                  className={`w-full rounded-lg border px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-brand-gold/40 ${emailTouched && !customerEmailValid ? 'border-red-400' : 'border-gray-200'}`}
+                />
+                {emailTouched && !customerEmailValid ? (
+                  <p className="mt-1.5 text-xs text-red-600">Enter a valid email address so we can send your confirmation.</p>
+                ) : (
+                  <p className="mt-1.5 text-xs text-gray-500">Your booking confirmation and ticket link will be sent here.</p>
+                )}
+              </div>
+
               {/* Authorize.Net redirect notice — replaces the old in-page card form.
                   Card details are now collected on Authorize.Net's hosted page
                   (PCI-compliant — we never touch the card on our domain). */}
@@ -633,7 +668,7 @@ export default function BookingPanel({
                 </div>
               </div>
 
-              <button onClick={handlePaySubmit} disabled={loading}
+              <button onClick={handlePaySubmit} disabled={loading || !customerEmailValid}
                 className="w-full bg-gradient-to-r from-brand-gold to-brand-gold-light text-white py-4 rounded-2xl font-bold text-lg transition hover:shadow-xl glow-gold disabled:opacity-50 disabled:cursor-not-allowed">
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">

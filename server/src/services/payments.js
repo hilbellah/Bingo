@@ -226,10 +226,10 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, f
     // Keep the hosted form focused on card entry. We pass customer name through
     // billTo for the transaction, but do not ask for the full billing address.
     pushSetting('hostedPaymentBillingAddressOptions', { show: false });
-    // Show the email field but pre-filled (from the customer data we passed
-    // above) and NOT required — customer can glance at it to confirm without
-    // having to type it again.
-    pushSetting('hostedPaymentCustomerOptions', { showEmail: true, requiredEmail: false, addPaymentProfile: false });
+    // We collect the confirmation email before creating the booking. Hide the
+    // hosted email field so customers do not enter an address that our app
+    // cannot use for the Wolastoq ticket confirmation.
+    pushSetting('hostedPaymentCustomerOptions', { showEmail: false, requiredEmail: false, addPaymentProfile: false });
     const iframeCommunicatorUrl = getIframeCommunicatorUrl();
     if (iframeCommunicatorUrl) {
       pushSetting('hostedPaymentIFrameCommunicatorUrl', { url: iframeCommunicatorUrl });

@@ -182,7 +182,7 @@ try {
   const initiateMissingTicket = await postJson('/api/bookings/initiate', {
     sessionId: 'event-without-ticket',
     holderId: 'event-without-ticket-holder',
-    email: '',
+    email: 'event.tester@example.com',
     customerFirstName: 'Event',
     customerLastName: 'Tester',
     attendees: [
