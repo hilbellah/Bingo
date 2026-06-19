@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   is_special_event   INTEGER DEFAULT 0,
   event_title        TEXT,
   event_description  TEXT,
+  event_image_url    TEXT,
   session_type       TEXT DEFAULT 'regular_bingo',
   deleted_at         TEXT
 );

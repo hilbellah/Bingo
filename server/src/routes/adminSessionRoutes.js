@@ -47,7 +47,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
 
   app.post('/api/admin/sessions', adminAuth, async (req, res) => {
     try {
-      const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, packages: pkgs } = req.body;
+      const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, event_image_url, packages: pkgs } = req.body;
       const sessionType = normalizeSessionType(req.body.session_type, is_special_event);
       const isSpecialType = sessionType === 'special_bingo' || sessionType === 'event';
       const salesCutoff = sessionType === 'event' || sessionType === 'special_bingo'
@@ -76,8 +76,8 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       }
 
       const id = uuid();
-      await run('INSERT INTO sessions (id, date, time, cutoff_time, sales_cutoff_at, is_available, is_special_event, event_title, event_description, session_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, date, time, cutoff_time || '12:00', salesCutoff.value, is_available !== false ? 1 : 0, isSpecialType ? 1 : 0, event_title || null, event_description || null, sessionType]);
+      await run('INSERT INTO sessions (id, date, time, cutoff_time, sales_cutoff_at, is_available, is_special_event, event_title, event_description, event_image_url, session_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, date, time, cutoff_time || '12:00', salesCutoff.value, is_available !== false ? 1 : 0, isSpecialType ? 1 : 0, event_title || null, event_description || null, event_image_url || null, sessionType]);
 
       let chairCount = 0;
       for (let tableNumber = 1; tableNumber <= 75; tableNumber++) {
@@ -95,10 +95,10 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         }
       }
 
-      await logAudit('session_created', 'session', id, { date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, session_type: sessionType, is_special_event: isSpecialType, event_title });
+      await logAudit('session_created', 'session', id, { date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url });
       await saveDb();
 
-      res.json({ id, date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, is_available, session_type: sessionType, is_special_event: isSpecialType, event_title, totalChairs: chairCount });
+      res.json({ id, date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, is_available, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url: event_image_url || null, totalChairs: chairCount });
     } catch (err) {
       console.error('POST /api/admin/sessions failed:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -107,7 +107,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
 
   app.patch('/api/admin/sessions/:id', adminAuth, async (req, res) => {
     try {
-      const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, session_type } = req.body;
+      const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, event_image_url, session_type } = req.body;
       const updates = [];
       const values = [];
       const currentSession = await get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
@@ -130,6 +130,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       }
       if (event_title !== undefined) { updates.push('event_title = ?'); values.push(event_title || null); }
       if (event_description !== undefined) { updates.push('event_description = ?'); values.push(event_description || null); }
+      if (event_image_url !== undefined) { updates.push('event_image_url = ?'); values.push(event_image_url || null); }
       if (req.body.sales_cutoff_at !== undefined) {
         const salesCutoff = effectiveSessionType === 'event' || effectiveSessionType === 'special_bingo'
           ? normalizeSalesCutoffAt(req.body.sales_cutoff_at)

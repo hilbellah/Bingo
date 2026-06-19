@@ -368,25 +368,6 @@ export default function BookingPanel({
                 </div>
               )}
 
-              {/* Instructions */}
-              <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-5">
-                <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-1">Instructions</p>
-                <ul className="text-sm text-blue-700 space-y-1">
-                  {isEvent ? (
-                    <>
-                      <li>&#8226; Live event tickets are general admission</li>
-                      <li>&#8226; No floor-plan or table selection is required</li>
-                    </>
-                  ) : (
-                    <>
-                      <li>&#8226; Daily booking cut-off at <strong>12:00 PM</strong></li>
-                      <li>&#8226; Paper card limits apply separately to each item</li>
-                      {isRegularBingo && <li>&#8226; PHD packages are limited separately to {phdInventory?.perPlayerLimit || 2} per player</li>}
-                    </>
-                  )}
-                </ul>
-              </div>
-
               {/* PHD Inventory Notice */}
               {phdInventory && optionalPkgs.some(p => p.is_phd) && (
                 <div className={`rounded-xl px-4 py-3 mb-4 border ${

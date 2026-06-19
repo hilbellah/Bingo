@@ -201,7 +201,7 @@ app.use(helmet({
       "script-src": ["'self'"],
       "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       "font-src": ["'self'", "https://fonts.gstatic.com", "data:"],
-      "img-src": ["'self'", "data:", "blob:"],
+      "img-src": ["'self'", "data:", "blob:", "https:"],
       "connect-src": ["'self'", "ws:", "wss:"],
       "frame-src": ["'self'", "https://accept.authorize.net", "https://test.authorize.net"],
       "form-action": ["'self'", "https://accept.authorize.net", "https://test.authorize.net"],

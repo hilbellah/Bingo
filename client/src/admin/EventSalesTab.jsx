@@ -7,6 +7,10 @@ export default function EventSalesTab() {
     sessions,
     newEvent,
     setNewEvent,
+    eventImageFile,
+    setEventImageFile,
+    eventImagePreview,
+    setEventImagePreview,
     handleCreateEvent,
     bookingSales,
     handleSalesDrilldown,
@@ -15,6 +19,11 @@ export default function EventSalesTab() {
     setEditingSession,
     editForm,
     setEditForm,
+    editImageFile,
+    setEditImageFile,
+    editImagePreview,
+    setEditImagePreview,
+    uploadingEventImage,
     handleSaveEdit,
     handleToggleSession,
     handleEditSessionPkgs,
@@ -121,12 +130,45 @@ export default function EventSalesTab() {
           <div className="flex items-end">
             <button
               onClick={handleCreateEvent}
-              disabled={!newEvent.date || !newEvent.event_title || !eventPackage.price}
+              disabled={!newEvent.date || !newEvent.event_title || !eventPackage.price || uploadingEventImage}
               className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90 disabled:opacity-40"
             >
-              Add Live Event / Venue
+              {uploadingEventImage ? 'Uploading...' : 'Add Live Event / Venue'}
             </button>
           </div>
+        </div>
+        <div className="mt-3">
+          <label className="block text-xs text-gray-400 mb-1">Event Image (optional)</label>
+          <div className="flex items-center gap-3">
+            <label className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm border transition-colors">
+              {eventImageFile ? 'Change Image' : 'Upload Image'}
+              <input type="file" accept="image/*" className="hidden" onChange={e => {
+                const file = e.target.files[0];
+                if (file) {
+                  setEventImageFile(file);
+                  setEventImagePreview(URL.createObjectURL(file));
+                  setNewEvent({ ...newEvent, event_image_url: '' });
+                }
+              }} />
+            </label>
+            <span className="text-gray-300">or</span>
+            <input value={newEvent.event_image_url || ''} onChange={e => {
+              setNewEvent({ ...newEvent, event_image_url: e.target.value });
+              setEventImageFile(null);
+              setEventImagePreview(null);
+            }} className="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Paste image URL..." />
+          </div>
+          {(eventImagePreview || newEvent.event_image_url) && (
+            <div className="mt-2 relative inline-block">
+              <img src={eventImagePreview || newEvent.event_image_url} alt="Live event preview"
+                className="h-20 w-32 rounded-lg object-cover border" />
+              <button onClick={() => {
+                setEventImageFile(null);
+                setEventImagePreview(null);
+                setNewEvent({ ...newEvent, event_image_url: '' });
+              }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600">&times;</button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -258,6 +300,39 @@ export default function EventSalesTab() {
                 <textarea value={editForm.event_description} onChange={e => setEditForm({ ...editForm, event_description: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg text-sm" rows={2} />
               </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Event Image (optional)</label>
+                <div className="flex items-center gap-3">
+                  <label className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm border transition-colors">
+                    {editImageFile ? 'Change Image' : 'Upload Image'}
+                    <input type="file" accept="image/*" className="hidden" onChange={e => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        setEditImageFile(file);
+                        setEditImagePreview(URL.createObjectURL(file));
+                        setEditForm({ ...editForm, event_image_url: '' });
+                      }
+                    }} />
+                  </label>
+                  <span className="text-gray-300">or</span>
+                  <input value={editForm.event_image_url || ''} onChange={e => {
+                    setEditForm({ ...editForm, event_image_url: e.target.value });
+                    setEditImageFile(null);
+                    setEditImagePreview(null);
+                  }} className="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Paste image URL..." />
+                </div>
+                {(editImagePreview || editForm.event_image_url) && (
+                  <div className="mt-2 relative inline-block">
+                    <img src={editImagePreview || editForm.event_image_url} alt="Event preview"
+                      className="h-20 w-32 rounded-lg object-cover border" />
+                    <button onClick={() => {
+                      setEditImageFile(null);
+                      setEditImagePreview(null);
+                      setEditForm({ ...editForm, event_image_url: '' });
+                    }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600">&times;</button>
+                  </div>
+                )}
+              </div>
               <label className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 p-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -271,8 +346,8 @@ export default function EventSalesTab() {
                 </span>
               </label>
               <div className="flex gap-3 pt-2">
-                <button onClick={handleSaveEdit} className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90">
-                  Save Changes
+                <button onClick={handleSaveEdit} disabled={uploadingEventImage} className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90 disabled:opacity-40">
+                  {uploadingEventImage ? 'Uploading...' : 'Save Changes'}
                 </button>
                 <button onClick={() => setEditingSession(null)} className="text-gray-500 px-4 py-2 rounded-lg text-sm hover:bg-gray-100">
                   Cancel

@@ -43,6 +43,10 @@ export default function ChairManagementTab() {
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [selectedSeatIds, setSelectedSeatIds] = useState(() => new Set());
   const selectedSession = sessions.find(session => session.id === chairMgmtSession);
+  const specialBingoSessions = sessions
+    .filter(session => (session.session_type || (session.is_special_event ? 'special_bingo' : 'regular_bingo')) === 'special_bingo')
+    .slice()
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
 
   const loadSessionSeats = async (sessionId) => {
     if (!sessionId) {
@@ -233,6 +237,13 @@ export default function ChairManagementTab() {
           </p>
 
           <div className="bg-brand-blue rounded-xl shadow-sm p-3 mb-6 overflow-hidden">
+            {specialBingoSessions.length > 0 && (
+              <SpecialBingoChairPicker
+                sessions={specialBingoSessions}
+                selectedSession={selectedSession}
+                onSelectSession={(session) => setChairMgmtSession(session.id)}
+              />
+            )}
             {sessions.length > 0 ? (
               <SessionWeekPicker
                 sessions={sessions}
@@ -276,6 +287,41 @@ export default function ChairManagementTab() {
         </div>
       )}
     </>
+  );
+}
+
+function SpecialBingoChairPicker({ sessions, selectedSession, onSelectSession }) {
+  return (
+    <section className="mb-3 border-b border-white/10 pb-3" aria-label="Special bingo chair management sessions">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gold">Special Bingo</h4>
+        <span className="text-xs text-white/45">{sessions.length} event{sessions.length === 1 ? '' : 's'}</span>
+      </div>
+      <div className="rail-scroll flex items-start gap-2 overflow-x-auto">
+        {sessions.map(session => {
+          const isSelected = selectedSession?.id === session.id;
+          return (
+            <button
+              key={session.id}
+              type="button"
+              onClick={() => onSelectSession(session)}
+              className={`min-w-[190px] rounded-lg px-3 py-2 text-left text-sm font-medium transition-all ${
+                isSelected
+                  ? 'bg-amber-900 text-amber-100 shadow-md ring-2 ring-amber-700'
+                  : 'bg-amber-900/30 text-amber-300 hover:bg-amber-900/40 ring-1 ring-amber-700/50'
+              }`}
+            >
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-200/80">Special Bingo</div>
+              <div className="font-bold">{session.date} @ {session.time}</div>
+              {session.event_title && (
+                <div className="truncate text-xs font-semibold text-amber-100/90">{session.event_title}</div>
+              )}
+              <div className="mt-1 text-xs text-white/60">{session.available_seats ?? 0} chairs</div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

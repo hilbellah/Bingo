@@ -115,8 +115,8 @@ export default function AdminDashboard() {
   const [specialBingoConfig, setSpecialBingoConfig] = useState(DEFAULT_SPECIAL_BINGO_CONFIG);
   const [bookingConfig, setBookingConfig] = useState(DEFAULT_BOOKING_CONFIG);
   const [bookingConfigSaved, setBookingConfigSaved] = useState(false);
-  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages() });
-  const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
+  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages() });
+  const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
   const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false, description: '' });
@@ -124,7 +124,7 @@ export default function AdminDashboard() {
   const [editingSessionPkgs, setEditingSessionPkgs] = useState(null); // session id being edited
   const [sessionPkgList, setSessionPkgList] = useState([]);
   const [editingSession, setEditingSession] = useState(null); // session object being edited
-  const [editForm, setEditForm] = useState({ date: '', time: '', cutoff_time: '', is_special_event: false, event_title: '', event_description: '' });
+  const [editForm, setEditForm] = useState({ date: '', time: '', cutoff_time: '', is_special_event: false, event_title: '', event_description: '', event_image_url: '' });
   const [bulkDateFrom, setBulkDateFrom] = useState('');
   const [bulkDateTo, setBulkDateTo] = useState('');
   const [bulkDepartment, setBulkDepartment] = useState('all');
@@ -168,6 +168,13 @@ export default function AdminDashboard() {
   const [announcementImageFile, setAnnouncementImageFile] = useState(null);
   const [announcementImagePreview, setAnnouncementImagePreview] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [sessionImageFile, setSessionImageFile] = useState(null);
+  const [sessionImagePreview, setSessionImagePreview] = useState(null);
+  const [eventImageFile, setEventImageFile] = useState(null);
+  const [eventImagePreview, setEventImagePreview] = useState(null);
+  const [editImageFile, setEditImageFile] = useState(null);
+  const [editImagePreview, setEditImagePreview] = useState(null);
+  const [uploadingEventImage, setUploadingEventImage] = useState(false);
   const [phdInventory, setPhdInventory] = useState(null);
   const [phdEditForm, setPhdEditForm] = useState({ totalStock: 200, perPlayerLimit: 2 });
   const [phdSaving, setPhdSaving] = useState(false);
@@ -351,6 +358,17 @@ export default function AdminDashboard() {
     navigate('/admin');
   };
 
+  const resolveEventImageUrl = async (currentUrl, imageFile) => {
+    if (!imageFile) return currentUrl || '';
+    setUploadingEventImage(true);
+    try {
+      const result = await uploadImage(token, imageFile);
+      return result.url || '';
+    } finally {
+      setUploadingEventImage(false);
+    }
+  };
+
   const handleCreateSession = async () => {
     if (!newSession.date) return;
     const payload = { ...newSession, session_type: newSession.is_special_event ? 'special_bingo' : 'regular_bingo' };
@@ -373,14 +391,21 @@ export default function AdminDashboard() {
     if (!payload.is_special_event) {
       delete payload.event_title;
       delete payload.event_description;
+      delete payload.event_image_url;
       delete payload.packages;
     }
     try {
+      if (payload.session_type === 'special_bingo') {
+        payload.event_image_url = await resolveEventImageUrl(payload.event_image_url, sessionImageFile);
+      }
       await createAdminSession(token, payload);
-      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', is_special_event: true, event_title: '', event_description: '', packages: defaultSpecialEventPackages(specialBingoConfig) });
+      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages(specialBingoConfig) });
+      setSessionImageFile(null);
+      setSessionImagePreview(null);
       loadSessions();
     } catch (err) {
       alert('Failed to create session: ' + (err?.message || 'Unknown error. Please try again.'));
+      setUploadingEventImage(false);
     }
   };
 
@@ -521,7 +546,10 @@ export default function AdminDashboard() {
       session_type: session.session_type || (session.is_special_event ? 'special_bingo' : 'regular_bingo'),
       event_title: session.event_title || '',
       event_description: session.event_description || '',
+      event_image_url: session.event_image_url || '',
     });
+    setEditImageFile(null);
+    setEditImagePreview(null);
   };
 
   const handleSaveEdit = async () => {
@@ -535,6 +563,7 @@ export default function AdminDashboard() {
     if (!payload.is_special_event && payload.session_type !== 'event') {
       payload.event_title = '';
       payload.event_description = '';
+      payload.event_image_url = '';
       payload.sales_cutoff_at = null;
     }
     if (!confirmAdminAction({
@@ -550,11 +579,17 @@ export default function AdminDashboard() {
         : 'This can affect booking availability and customer tickets.',
     })) return;
     try {
+      if (payload.session_type === 'event' || payload.session_type === 'special_bingo') {
+        payload.event_image_url = await resolveEventImageUrl(payload.event_image_url, editImageFile);
+      }
       await updateAdminSession(token, editingSession.id, payload);
       setEditingSession(null);
+      setEditImageFile(null);
+      setEditImagePreview(null);
       loadSessions();
     } catch (err) {
       alert('Failed to update session: ' + (err?.message || 'Unknown error'));
+      setUploadingEventImage(false);
     }
   };
 
@@ -741,12 +776,16 @@ export default function AdminDashboard() {
     if (!proceed) return;
 
     try {
+      payload.event_image_url = await resolveEventImageUrl(payload.event_image_url, eventImageFile);
       await createAdminSession(token, payload);
-      setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', packages: defaultEventPackages() });
+      setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
+      setEventImageFile(null);
+      setEventImagePreview(null);
       loadSessions();
       loadBookingSales();
     } catch (err) {
       alert('Failed to create live event / venue: ' + (err?.message || 'Unknown error. Please try again.'));
+      setUploadingEventImage(false);
     }
   };
 
@@ -938,14 +977,27 @@ export default function AdminDashboard() {
     sessions,
     newSession,
     setNewSession,
+    sessionImageFile,
+    setSessionImageFile,
+    sessionImagePreview,
+    setSessionImagePreview,
     handleCreateSession,
     newEvent,
     setNewEvent,
+    eventImageFile,
+    setEventImageFile,
+    eventImagePreview,
+    setEventImagePreview,
     handleCreateEvent,
     editingSession,
     setEditingSession,
     editForm,
     setEditForm,
+    editImageFile,
+    setEditImageFile,
+    editImagePreview,
+    setEditImagePreview,
+    uploadingEventImage,
     handleStartEdit,
     handleSaveEdit,
     handleToggleSession,

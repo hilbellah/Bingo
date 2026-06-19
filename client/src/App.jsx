@@ -653,6 +653,11 @@ export default function App() {
           Colored to blend with the dark casino body background so the FloorPlan
           itself remains the focal point. */}
       <div className="bg-casino-dark-soft border-b border-white/10 px-4 py-2 flex-shrink-0">
+        <FeaturedEventRail
+          events={featuredEventSessions}
+          selectedSession={selectedSession}
+          onSelectSession={handleSelectSession}
+        />
         <section aria-label="Weekly bingo schedule">
           <div className="mb-2 flex items-center justify-between gap-3">
             <h2 className="text-xs font-bold uppercase tracking-wider text-white/65">Weekly Bingo Schedule</h2>
@@ -666,11 +671,6 @@ export default function App() {
             onSelectSession={handleSelectSession}
           />
         </section>
-        <FeaturedEventRail
-          events={featuredEventSessions}
-          selectedSession={selectedSession}
-          onSelectSession={handleSelectSession}
-        />
       </div>
 
       <div className="flex-1 overflow-auto p-4 md:p-6">
@@ -899,49 +899,63 @@ function LiveEventBookingSurface({
 }) {
   const ticketPackage = packages.find(pkg => pkg.type === 'required');
   const ticketPrice = ticketPackage ? formatPrice(ticketPackage.price) : '';
+  const imageUrl = String(event?.event_image_url || '').trim();
 
   return (
-    <section className="mx-auto max-w-3xl rounded-2xl border border-sky-500/25 bg-sky-950/20 p-5 text-center shadow-xl">
-      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${
-        bookingClosed ? 'bg-red-500/20 text-red-100' : 'bg-sky-500 text-white'
-      }`}>
-        {bookingClosed ? 'Sales Closed' : 'General Admission'}
-      </span>
-      <h1 className="mt-4 text-2xl font-bold text-white md:text-3xl">
-        {event?.event_title || 'Live Event / Venue'}
-      </h1>
-      <p className="mt-2 text-sky-100/75">
-        {formatDateShort(event?.date)} at {formatTime(event?.time)}
-      </p>
-      {ticketPackage && (
-        <div className="mt-4 inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-left">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-sky-100/60">Ticket</p>
-            <p className="font-semibold text-white">{ticketPackage.name}</p>
-          </div>
-          <p className="text-xl font-bold text-brand-gold">{ticketPrice}</p>
+    <section className="mx-auto max-w-3xl overflow-hidden rounded-2xl border border-sky-500/25 bg-sky-950/20 text-center shadow-xl">
+      {imageUrl && (
+        <div className="h-52 border-b border-sky-500/20 bg-slate-950 md:h-64">
+          <img
+            src={imageUrl}
+            alt={event?.event_title || 'Live Event / Venue'}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
         </div>
       )}
-      <div className="mt-5 flex flex-wrap justify-center gap-3 text-sm text-white/70">
-        <span>{availableTickets} available</span>
-        <span>{soldTickets} sold</span>
-        {heldTickets > 0 && <span>{heldTickets} on hold</span>}
+      <div className="p-5">
+        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${
+          bookingClosed ? 'bg-red-500/20 text-red-100' : 'bg-sky-500 text-white'
+        }`}>
+          {bookingClosed ? 'Sales Closed' : 'General Admission'}
+        </span>
+        <h1 className="mt-4 text-2xl font-bold text-white md:text-3xl">
+          {event?.event_title || 'Live Event / Venue'}
+        </h1>
+        <p className="mt-2 text-sky-100/75">
+          {formatDateShort(event?.date)} at {formatTime(event?.time)}
+        </p>
+        {ticketPackage && (
+          <div className="mt-4 inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-left">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-sky-100/60">Ticket</p>
+              <p className="font-semibold text-white">{ticketPackage.name}</p>
+            </div>
+            <p className="text-xl font-bold text-brand-gold">{ticketPrice}</p>
+          </div>
+        )}
+        <div className="mt-5 flex flex-wrap justify-center gap-3 text-sm text-white/70">
+          <span>{availableTickets} available</span>
+          <span>{soldTickets} sold</span>
+          {heldTickets > 0 && <span>{heldTickets} on hold</span>}
+        </div>
+        {bookingClosed && bookingStatus.message ? (
+          <p className="mt-4 text-sm text-red-100">{bookingStatus.message}</p>
+        ) : null}
+        <button
+          type="button"
+          disabled={bookingClosed}
+          onClick={onStart}
+          className={`mt-6 rounded-xl px-6 py-3 font-semibold transition ${
+            bookingClosed
+              ? 'cursor-not-allowed border border-white/10 bg-white/10 text-white/40'
+              : 'bg-brand-gold text-white glow-gold-sm hover:bg-brand-gold-light'
+          }`}
+        >
+          {bookingClosed ? 'Booking Closed' : 'Buy Tickets'}
+        </button>
       </div>
-      {bookingClosed && bookingStatus.message ? (
-        <p className="mt-4 text-sm text-red-100">{bookingStatus.message}</p>
-      ) : null}
-      <button
-        type="button"
-        disabled={bookingClosed}
-        onClick={onStart}
-        className={`mt-6 rounded-xl px-6 py-3 font-semibold transition ${
-          bookingClosed
-            ? 'cursor-not-allowed border border-white/10 bg-white/10 text-white/40'
-            : 'bg-brand-gold text-white glow-gold-sm hover:bg-brand-gold-light'
-        }`}
-      >
-        {bookingClosed ? 'Booking Closed' : 'Buy Tickets'}
-      </button>
     </section>
   );
 }
@@ -950,13 +964,13 @@ function FeaturedEventRail({ events, selectedSession, onSelectSession }) {
   if (events.length === 0) return null;
 
   return (
-    <section className="mt-3 pt-1" aria-label="Upcoming special bingo and live events">
+    <section className="mb-3 border-b border-white/10 pb-3" aria-label="Upcoming special bingo and live events">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-sky-200">Upcoming Events</h2>
+        <h2 className="text-xs font-bold uppercase tracking-wider text-brand-gold">Featured Events</h2>
         <span className="text-xs text-white/40">{events.length} active</span>
       </div>
 
-      <div className="rail-scroll flex gap-3 overflow-x-auto">
+      <div className="rail-scroll flex items-start gap-2 overflow-x-auto">
         {events.map(event => {
           const sessionType = getSessionType(event);
           const isLiveEvent = sessionType === 'event';
@@ -966,47 +980,52 @@ function FeaturedEventRail({ events, selectedSession, onSelectSession }) {
           const actionLabel = isLiveEvent ? 'Buy Tickets' : 'Book Seats';
           const theme = isLiveEvent
             ? {
-                border: 'border-sky-500/35',
-                hover: 'hover:border-sky-300/70 hover:bg-sky-950/40',
-                background: 'bg-sky-950/25 text-sky-50',
-                selected: 'border-sky-300 bg-sky-950 text-white shadow-md',
                 badge: 'bg-sky-500 text-white',
-                date: 'text-sky-100/70',
+                selectedButton: 'bg-sky-950 text-sky-50 shadow-md ring-2 ring-sky-500',
+                button: 'bg-sky-950/35 text-sky-200 hover:bg-sky-950/50 ring-1 ring-sky-500/60',
+                titleSelected: 'text-sky-50',
+                title: 'text-sky-200',
               }
             : {
-                border: 'border-amber-500/40',
-                hover: 'hover:border-amber-300/70 hover:bg-amber-950/40',
-                background: 'bg-amber-950/25 text-amber-50',
-                selected: 'border-amber-300 bg-amber-950 text-white shadow-md',
                 badge: 'bg-amber-500 text-white',
-                date: 'text-amber-100/75',
+                selectedButton: 'bg-amber-900 text-amber-100 shadow-md ring-2 ring-amber-700',
+                button: 'bg-amber-900/30 text-amber-300 hover:bg-amber-900/40 ring-1 ring-amber-700/50',
+                titleSelected: 'text-amber-100',
+                title: 'text-amber-300',
               };
           return (
-            <button
-              key={event.id}
-              type="button"
-              onClick={() => onSelectSession(event)}
-              className={`min-w-[220px] rounded-xl border px-4 py-3 text-left transition-all ${
-                isSelected
-                  ? theme.selected
-                  : `${theme.border} ${theme.background} ${theme.hover}`
-              }`}
-            >
-              <span className={`mb-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                isClosed ? 'bg-red-500/20 text-red-100' : theme.badge
-              }`}>
-                {isClosed ? 'Closed' : actionLabel}
-              </span>
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-white/45">
-                {label}
-              </span>
-              <span className="block truncate text-sm font-bold">
-                {event.event_title || label}
-              </span>
-              <span className={`mt-1 block text-xs ${theme.date}`}>
-                {formatDateShort(event.date)} at {formatTime(event.time)}
-              </span>
-            </button>
+            <div key={event.id} className="flex-shrink-0 flex min-w-[190px] max-w-[260px] flex-col items-center">
+              <div className={`${isClosed ? 'bg-red-500/20 text-red-100' : theme.badge} text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-t-lg w-full text-center`}>
+                &#9733; {isClosed ? 'Closed' : label}
+              </div>
+              <button
+                type="button"
+                onClick={() => onSelectSession(event)}
+                className={`w-full rounded-b-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                  isClosed
+                    ? 'bg-red-950/50 text-red-100 ring-1 ring-red-500/50'
+                    : isSelected
+                      ? theme.selectedButton
+                      : theme.button
+                }`}
+                title={isClosed ? event.booking_closed_message : undefined}
+              >
+                {formatDateShort(event.date)} - {formatTime(event.time)}
+                <div className={`truncate text-xs font-semibold ${isSelected ? theme.titleSelected : theme.title}`}>
+                  {event.event_title || actionLabel}
+                </div>
+                {isClosed && (
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-red-200">
+                    {event.booking_closed_reason === 'ongoing' ? 'On-going' : 'Closed'}
+                  </div>
+                )}
+                <span className={`ml-1.5 text-xs ${
+                  isClosed ? 'text-red-200' : isSelected ? 'text-white/80' : Number(event.available_seats) > 100 ? 'text-green-400' : Number(event.available_seats) > 30 ? 'text-amber-400' : 'text-red-400'
+                }`}>
+                  ({event.available_seats})
+                </span>
+              </button>
+            </div>
           );
         })}
       </div>
