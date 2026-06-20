@@ -1114,7 +1114,9 @@ async function getBookingItemRefundAmount(itemId) {
   const item = await get('SELECT price FROM booking_items WHERE id = ?', [itemId]);
   if (!item) return null;
   const addons = await get('SELECT COALESCE(SUM(price), 0) as total FROM booking_addons WHERE booking_item_id = ?', [itemId]);
-  return (item.price || 0) + (addons?.total || 0);
+  const itemPrice = Number(item.price || 0);
+  const addonTotal = Number(addons?.total || 0);
+  return itemPrice + addonTotal;
 }
 
 async function markBookingItemRefunded({
