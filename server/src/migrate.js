@@ -364,6 +364,30 @@ async function migrateVenueTo75Tables(db) {
   }
 }
 
+async function repairRefundAmounts() {
+  try {
+    const repairResult = await run(`
+      UPDATE booking_items
+      SET refund_amount = price + COALESCE((
+        SELECT SUM(price)
+        FROM booking_addons
+        WHERE booking_item_id = booking_items.id
+      ), 0)
+      WHERE COALESCE(refund_status, 'active') = 'refunded'
+        AND refund_amount != price + COALESCE((
+          SELECT SUM(price)
+          FROM booking_addons
+          WHERE booking_item_id = booking_items.id
+        ), 0)
+    `);
+    if (repairResult?.changes) {
+      console.log(`Repaired ${repairResult.changes} refunded booking item amount(s).`);
+    }
+  } catch (e) {
+    console.warn('Refund amount repair skipped:', e.message);
+  }
+}
+
 async function migrate() {
   // This SQLite migration runner is a no-op when running against Postgres.
   // Postgres schema is owned by server/migrations/postgres/*.sql, applied via
@@ -371,6 +395,7 @@ async function migrate() {
   // call in server/src/index.js (`await migrate()`) doesn't need any
   // driver-awareness.
   if ((process.env.DB_DRIVER || 'sqlite').toLowerCase() === 'postgres') {
+    await repairRefundAmounts();
     console.log('migrate.js: DB_DRIVER=postgres detected. Skipping SQLite-style migrations.');
     console.log('migrate.js: Postgres schema must be applied separately via `npm run migrate:postgres`.');
     return;
@@ -816,27 +841,7 @@ async function migrate() {
   try { await exec('CREATE INDEX idx_payment_events_booking ON payment_events(booking_id)'); } catch(e) {}
   try { await exec('CREATE INDEX idx_payment_events_type ON payment_events(event_type)'); } catch(e) {}
 
-  try {
-    const repairResult = await run(`
-      UPDATE booking_items
-      SET refund_amount = price + COALESCE((
-        SELECT SUM(price)
-        FROM booking_addons
-        WHERE booking_item_id = booking_items.id
-      ), 0)
-      WHERE COALESCE(refund_status, 'active') = 'refunded'
-        AND refund_amount != price + COALESCE((
-          SELECT SUM(price)
-          FROM booking_addons
-          WHERE booking_item_id = booking_items.id
-        ), 0)
-    `);
-    if (repairResult?.changes) {
-      console.log(`Repaired ${repairResult.changes} refunded booking item amount(s).`);
-    }
-  } catch (e) {
-    console.warn('Refund amount repair skipped:', e.message);
-  }
+  await repairRefundAmounts();
 
   console.log('Migrations complete.');
 }
