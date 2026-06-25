@@ -298,6 +298,9 @@ Running record of admin/backend changes, where to access them, and the save-poin
 - `node scripts/authorize-net-refund-webhook-api-check.mjs`
 - `npm run check`
 
+**Save point**
+- `edf4e4d` - Automate external Authorize.Net refund cleanup
+
 ## How To Update This File
 
 For each future change, add:
