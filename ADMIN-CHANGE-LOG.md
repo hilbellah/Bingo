@@ -363,7 +363,7 @@ Running record of admin/backend changes, where to access them, and the save-poin
 - `npm run check`
 
 **Save point**
-- `a97acf7` - Add admin credit assigned seat and print staff workflows
+- `a20982f` - Add admin credit assigned seat and print staff workflows
 
 ## How To Update This File
 
