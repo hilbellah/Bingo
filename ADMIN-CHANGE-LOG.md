@@ -170,6 +170,46 @@ Running record of admin/backend changes, where to access them, and the save-poin
 **Timeline note**
 - These changes were requested for follow-up after July 12; the current bingo/live event exposed the operational gap.
 
+### System Stabilization Pass
+
+**What changed**
+- Ran a full health check before starting the next feature update.
+- Confirmed existing platform features so future work does not duplicate what already exists:
+  - Seat moves already exist for active paid tickets.
+  - Platform refund/void already exists when initiated from admin.
+  - Legacy/admin booking cancel exists for bookings without payment processor records.
+  - Super user management exists for admin user edits and password resets.
+- Updated server dependencies to clear production audit issues:
+  - `multer` lockfile resolved to `2.2.0`
+  - `nodemailer` updated to `^9.0.1`
+- Strengthened the admin seat move API regression check to verify:
+  - Successful seat move
+  - Old seat is freed
+  - New seat is sold
+  - Cannot move to the same seat
+  - Cannot move to an occupied/sold seat
+  - Cannot move to a disabled seat
+
+**Verification performed**
+- `npm run check`
+  - Syntax check passed
+  - Production client build passed
+  - Receipt rendering check passed
+  - Smoke check passed
+  - Hold config check passed
+  - API regression suite passed
+  - Client production audit passed with 0 vulnerabilities
+  - Server production audit passed with 0 vulnerabilities
+
+**Remaining known gaps**
+- External refunds made directly in Authorize.Net still need live/payment-event verification before relying on them to update seat state automatically.
+- No-show credit workflow is not built.
+- Promo/donation assigned-seat workflow is not built.
+- Print-staff limited role is recommended but not built yet.
+
+**Save point**
+- `f463209` - Stabilize admin seat move checks and dependencies
+
 ## How To Update This File
 
 For each future change, add:
