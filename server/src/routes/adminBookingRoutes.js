@@ -13,11 +13,11 @@ async function loadAdminBookings(whereClause = '', params = []) {
   const rows = await all(`
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at, b.email,
            b.customer_first_name, b.customer_last_name,
-           s.date as session_date, s.time as session_time,
+           s.id as session_id, s.date as session_date, s.time as session_time,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
            bi.reference_number as item_reference_number, bi.refund_status,
            bi.refunded_at, bi.refund_transaction_id, bi.refund_amount, bi.refund_action,
-           seats.table_number, seats.chair_number,
+           seats.id as seat_id, seats.table_number, seats.chair_number,
            COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
     FROM bookings b
     JOIN sessions s ON b.session_id = s.id
@@ -42,6 +42,7 @@ async function loadAdminBookings(whereClause = '', params = []) {
         email: row.email,
         customerFirstName: row.customer_first_name,
         customerLastName: row.customer_last_name,
+        sessionId: row.session_id,
         sessionDate: row.session_date,
         sessionTime: row.session_time,
         items: []
@@ -67,6 +68,7 @@ async function loadAdminBookings(whereClause = '', params = []) {
       tableNumber: row.table_number,
       chairNumber: row.chair_number,
       referenceNumber: row.item_reference_number,
+      seatId: row.seat_id,
       packageName: row.package_name,
       packagePrice: row.package_price,
       packagePriceFormatted: formatCurrency(row.package_price),
@@ -431,6 +433,98 @@ export function registerAdminBookingRoutes(app, {
     });
     } catch (err) {
       console.error('POST /api/admin/booking-items/:id/refund failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/admin/booking-items/:id/move-seat', adminAuth, async (req, res) => {
+    try {
+      const tableNumber = Number(req.body?.tableNumber);
+      const chairNumber = Number(req.body?.chairNumber);
+      if (!Number.isInteger(tableNumber) || !Number.isInteger(chairNumber) || tableNumber <= 0 || chairNumber <= 0) {
+        return res.status(400).json({ error: 'A valid target table and chair are required.' });
+      }
+
+      const item = await get(`
+        SELECT bi.*, b.id as booking_id, b.reference_number as booking_reference,
+               b.session_id, b.payment_status, old_seat.table_number as old_table_number,
+               old_seat.chair_number as old_chair_number
+        FROM booking_items bi
+        JOIN bookings b ON b.id = bi.booking_id
+        JOIN seats old_seat ON old_seat.id = bi.seat_id
+        WHERE bi.id = ?
+      `, [req.params.id]);
+      if (!item) return res.status(404).json({ error: 'Ticket not found' });
+      if (item.refund_status === 'refunded') {
+        return res.status(400).json({ error: 'Cannot move a refunded ticket.' });
+      }
+      if (!['paid', 'partially_refunded'].includes(item.payment_status)) {
+        return res.status(400).json({ error: `Cannot move a ticket from booking status '${item.payment_status}'.` });
+      }
+
+      const targetSeat = await get(
+        `SELECT *
+         FROM seats
+         WHERE session_id = ? AND table_number = ? AND chair_number = ?`,
+        [item.session_id, tableNumber, chairNumber]
+      );
+      if (!targetSeat) {
+        return res.status(404).json({ error: `Seat T${tableNumber}-C${chairNumber} was not found for this session.` });
+      }
+      if (targetSeat.id === item.seat_id) {
+        return res.status(400).json({ error: 'This ticket is already assigned to that seat.' });
+      }
+      if (targetSeat.is_disabled) {
+        return res.status(409).json({ error: `Seat T${tableNumber}-C${chairNumber} is disabled.` });
+      }
+      if (targetSeat.status !== 'vacant') {
+        return res.status(409).json({ error: `Seat T${tableNumber}-C${chairNumber} is currently ${targetSeat.status}.` });
+      }
+
+      await run('UPDATE booking_items SET seat_id = ? WHERE id = ?', [targetSeat.id, item.id]);
+      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
+      await run("UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?", [targetSeat.id]);
+
+      await logAudit('booking_item_seat_moved', 'booking_item', item.id, {
+        bookingId: item.booking_id,
+        referenceNumber: item.booking_reference,
+        sessionId: item.session_id,
+        fromSeatId: item.seat_id,
+        fromTable: item.old_table_number,
+        fromChair: item.old_chair_number,
+        toSeatId: targetSeat.id,
+        toTable: targetSeat.table_number,
+        toChair: targetSeat.chair_number,
+        movedBy: req.adminUser?.email || null,
+      });
+
+      io.to(`session:${item.session_id}`).emit('seats:refresh', { sessionId: item.session_id });
+      io.to('admin:receipts').emit('booking:seat_moved', {
+        bookingId: item.booking_id,
+        bookingItemId: item.id,
+        sessionId: item.session_id,
+        fromSeatId: item.seat_id,
+        toSeatId: targetSeat.id,
+      });
+      await saveDb();
+
+      res.json({
+        ok: true,
+        bookingId: item.booking_id,
+        bookingItemId: item.id,
+        fromSeat: {
+          id: item.seat_id,
+          tableNumber: item.old_table_number,
+          chairNumber: item.old_chair_number,
+        },
+        toSeat: {
+          id: targetSeat.id,
+          tableNumber: targetSeat.table_number,
+          chairNumber: targetSeat.chair_number,
+        },
+      });
+    } catch (err) {
+      console.error('POST /api/admin/booking-items/:id/move-seat failed:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   });

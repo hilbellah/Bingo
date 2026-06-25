@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, getExportUrl, adminHeaders,
+  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, moveAdminBookingItemSeat, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -916,6 +916,54 @@ export default function AdminDashboard() {
     }
   };
 
+  const refreshBookingViewsAfterSeatChange = () => {
+    loadBookings(reportSession);
+    loadBookingSales();
+    loadDailySales(dailySalesDate, dailySalesSearch);
+    loadDashboard(dashboardDateFrom, dashboardDateTo);
+    if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
+    if (soldModal?.session?.id) {
+      fetchAdminBookings(token, soldModal.session.id).then(data => {
+        setSoldModal({ session: soldModal.session, bookings: data });
+      });
+    }
+  };
+
+  const handleMoveBookingItemSeat = async (item, booking) => {
+    const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
+    const currentSeat = `T${item.tableNumber}-C${item.chairNumber}`;
+    const tableValue = window.prompt(
+      `Move ${item.referenceNumber || 'this ticket'}${ticketName ? ` for ${ticketName}` : ''}\nCurrent seat: ${currentSeat}\n\nTarget table number:`
+    );
+    if (tableValue === null) return;
+    const chairValue = window.prompt('Target chair number:');
+    if (chairValue === null) return;
+    const tableNumber = Number(tableValue);
+    const chairNumber = Number(chairValue);
+    if (!Number.isInteger(tableNumber) || !Number.isInteger(chairNumber) || tableNumber <= 0 || chairNumber <= 0) {
+      window.alert('Enter a valid table number and chair number.');
+      return;
+    }
+
+    const proceed = confirmAdminAction({
+      action: `Move ticket ${item.referenceNumber || ''} from ${currentSeat} to T${tableNumber}-C${chairNumber}`,
+      details: [
+        `Booking: ${booking?.referenceNumber || ''}`,
+        ticketName ? `Ticket holder: ${ticketName}` : '',
+      ].filter(Boolean),
+      warning: 'This keeps the booking paid and only changes the assigned seat. The target seat must be vacant.',
+    });
+    if (!proceed) return;
+
+    const result = await moveAdminBookingItemSeat(token, item.id, { tableNumber, chairNumber });
+    if (result.ok) {
+      window.alert(`Seat moved to T${result.toSeat?.tableNumber || tableNumber}-C${result.toSeat?.chairNumber || chairNumber}.`);
+      refreshBookingViewsAfterSeatChange();
+    } else {
+      window.alert('Seat move failed: ' + (result.error || 'Unknown error'));
+    }
+  };
+
   const handleExport = () => {
     const url = getExportUrl(token, reportSession);
     // Need to add auth header for download — open in iframe or use fetch+blob
@@ -1138,6 +1186,7 @@ export default function AdminDashboard() {
     setSalesDrilldown,
     handlePrintSalesDrilldown,
     handleSaveSalesDrilldownCsv,
+    handleMoveBookingItemSeat,
     soldModal,
     setSoldModal,
     handlePrintPurchasers,

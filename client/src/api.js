@@ -373,6 +373,16 @@ export async function refundAdminBookingItem(token, id) {
   return { ok: res.ok, ...json };
 }
 
+export async function moveAdminBookingItemSeat(token, id, { tableNumber, chairNumber }) {
+  const res = await fetch(`${API}/admin/booking-items/${id}/move-seat`, {
+    method: 'POST',
+    headers: adminHeaders(token),
+    body: JSON.stringify({ tableNumber, chairNumber })
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
 export function getExportUrl(token, sessionId) {
   const base = `${API}/admin/bookings/export`;
   return sessionId ? `${base}?sessionId=${sessionId}` : base;

@@ -6,6 +6,7 @@ export default function SoldTicketsModal() {
     handlePrintBookingReceipt,
     handleRefundBooking,
     handleRefundBookingItem,
+    handleMoveBookingItemSeat,
     soldModal,
     setSoldModal,
     handlePrintPurchasers,
@@ -96,14 +97,27 @@ export default function SoldTicketsModal() {
                                 <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
                                   Refunded {item.refundAmountFormatted || ''}
                                 </span>
-                              ) : ['paid', 'partially_refunded'].includes(b.paymentStatus) && handleRefundBookingItem ? (
-                                <button
-                                  onClick={() => handleRefundBookingItem(item, b)}
-                                  className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                                  title="Refund only this ticket"
-                                >
-                                  Refund Ticket
-                                </button>
+                              ) : ['paid', 'partially_refunded'].includes(b.paymentStatus) ? (
+                                <div className="flex justify-end gap-2">
+                                  {handleMoveBookingItemSeat && (
+                                    <button
+                                      onClick={() => handleMoveBookingItemSeat(item, b)}
+                                      className="px-2 py-0.5 text-xs bg-brand-blue text-white rounded hover:bg-blue-800"
+                                      title="Move this ticket to another vacant seat"
+                                    >
+                                      Move Seat
+                                    </button>
+                                  )}
+                                  {handleRefundBookingItem && (
+                                    <button
+                                      onClick={() => handleRefundBookingItem(item, b)}
+                                      className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                      title="Refund only this ticket"
+                                    >
+                                      Refund Ticket
+                                    </button>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-xs text-gray-400">-</span>
                               )}
