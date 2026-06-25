@@ -131,6 +131,45 @@ Running record of admin/backend changes, where to access them, and the save-poin
 - `b864659` - Allow admins to move booked seats
 - `811a962` - Add seat move option to chair management
 
+### Seat Management for Live Event Bookings
+
+**Case**
+- Table 44 Seat 1 was booked by mistake.
+- Refund was processed in Authorize.Net.
+- Customer rebooked elsewhere.
+- Interim workaround was to manually block a table for overflow.
+
+**Current status**
+- Partially addressed.
+
+**Fixed**
+- Authorized admin users can move an active paid ticket to a different vacant enabled seat in the same session.
+- Seat move is available from:
+  - `Bookings` / `Sales & Transactions` -> `Booking Sales` -> booking details -> `Move Seat`
+  - `Bingo` -> `Manage Chairs` -> click a sold chair
+- Moving a seat keeps the booking paid, frees the old seat, marks the new seat sold, refreshes seat maps, and writes an audit record.
+
+**Partially covered**
+- Platform refund/void exists for paid bookings and individual tickets when initiated from the admin system.
+- Direct cancel exists for legacy/admin bookings without payment processor records.
+
+**Not fully fixed yet**
+- Refunds processed directly in Authorize.Net are not guaranteed to be linked back to the in-platform booking and seat state.
+- No-show handling does not yet support a formal credit workflow.
+- Promo/donation seat blocking with assigned names is not built yet.
+- Bulk-printed promo/donation tickets do not yet pull assigned-person names from a dedicated comp/hold workflow.
+- Direct paid-order cancellation should be clarified as either refund/void, cancel-with-credit, or admin comp transfer.
+
+**Requested future features**
+- Move an order to a different seat. Status: fixed for active paid tickets in the same session.
+- Cancel orders directly in the platform. Status: partially covered; needs clearer paid-order workflow.
+- Handle no-shows via refund or credit. Status: refund covered when initiated in platform; credit not built.
+- Block seats and assign names for promos/donations so bulk-printed tickets include the assigned person. Status: not built.
+- Link external Authorize.Net refunds back to booking and seat status. Status: not fully fixed.
+
+**Timeline note**
+- These changes were requested for follow-up after July 12; the current bingo/live event exposed the operational gap.
+
 ## How To Update This File
 
 For each future change, add:
