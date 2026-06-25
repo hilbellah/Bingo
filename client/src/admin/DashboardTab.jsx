@@ -18,6 +18,8 @@ export default function DashboardTab() {
     dashboard,
     dashboardDateFrom,
     dashboardDateTo,
+    dashboardRange,
+    setDashboardRange,
     handleDashboardDateFromChange,
     handleDashboardDateToChange,
     setDashboardDateFrom,
@@ -49,6 +51,48 @@ export default function DashboardTab() {
     if (setTab) setTab('inventory');
   };
 
+  const formatDate = (date) => date.toISOString().split('T')[0];
+  const addDays = (dateText, days) => {
+    const date = new Date(`${dateText}T00:00:00`);
+    date.setDate(date.getDate() + days);
+    return formatDate(date);
+  };
+  const startOfWeek = (dateText) => {
+    const date = new Date(`${dateText}T00:00:00`);
+    const daysSinceMonday = (date.getDay() + 6) % 7;
+    date.setDate(date.getDate() - daysSinceMonday);
+    return formatDate(date);
+  };
+  const endOfMonth = (dateText) => {
+    const date = new Date(`${dateText}T00:00:00`);
+    return formatDate(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+  };
+  const startOfMonth = (dateText) => {
+    const date = new Date(`${dateText}T00:00:00`);
+    return formatDate(new Date(date.getFullYear(), date.getMonth(), 1));
+  };
+  const applyDashboardRange = (range) => {
+    const anchor = dashboardDateFrom || formatDate(new Date());
+    let from = anchor;
+    let to = anchor;
+    if (range === 'multi-day') {
+      to = dashboardDateTo && dashboardDateTo >= anchor ? dashboardDateTo : addDays(anchor, 6);
+    } else if (range === 'weekly') {
+      from = startOfWeek(anchor);
+      to = addDays(from, 6);
+    } else if (range === 'monthly') {
+      from = startOfMonth(anchor);
+      to = endOfMonth(anchor);
+    }
+    setDashboardRange(range);
+    setDashboardDateFrom(from);
+    setDashboardDateTo(to);
+    loadDashboard(from, to);
+  };
+  const dashboardRangeLabel = dashboardDateFrom === dashboardDateTo
+    ? dashboardDateFrom
+    : `${dashboardDateFrom} to ${dashboardDateTo}`;
+
   const openSessionSales = (session) => {
     const quantity = Number(session.sold || session.quantity || 0);
     if (!quantity || !handleSalesDrilldown) return;
@@ -76,6 +120,27 @@ export default function DashboardTab() {
           <div>
             {/* Date Range Filter */}
             <div className="flex flex-wrap items-center gap-3 mb-6">
+              <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
+                {[
+                  ['daily', 'Daily'],
+                  ['multi-day', 'Multi-day'],
+                  ['weekly', 'Weekly'],
+                  ['monthly', 'Monthly'],
+                ].map(([range, label]) => (
+                  <button
+                    key={range}
+                    type="button"
+                    onClick={() => applyDashboardRange(range)}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                      dashboardRange === range
+                        ? 'bg-brand-blue text-white shadow-sm'
+                        : 'text-gray-600 hover:bg-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <div className="flex items-center gap-1.5">
                 <label className="text-sm font-medium text-gray-600">From:</label>
                 <input
@@ -96,11 +161,14 @@ export default function DashboardTab() {
                 />
               </div>
               <button
-                onClick={() => { const t = new Date().toISOString().split('T')[0]; setDashboardDateFrom(t); setDashboardDateTo(t); loadDashboard(t, t); }}
+                onClick={() => { const t = formatDate(new Date()); setDashboardRange('daily'); setDashboardDateFrom(t); setDashboardDateTo(t); loadDashboard(t, t); }}
                 className="text-xs text-brand-blue hover:underline"
               >
                 Today
               </button>
+              <span className="text-sm text-gray-500">
+                Showing {dashboardRangeLabel}
+              </span>
             </div>
 
             {/* Metric Cards Row 1 - Key Stats */}
@@ -423,5 +491,4 @@ export default function DashboardTab() {
     </>
   );
 }
-
 

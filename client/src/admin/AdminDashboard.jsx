@@ -148,6 +148,7 @@ export default function AdminDashboard() {
   const [transactionFilters, setTransactionFilters] = useState({ dateFrom: '', dateTo: '', status: 'all', search: '' });
   const [dashboardDateFrom, setDashboardDateFrom] = useState(new Date().toISOString().split('T')[0]);
   const [dashboardDateTo, setDashboardDateTo] = useState(new Date().toISOString().split('T')[0]);
+  const [dashboardRange, setDashboardRange] = useState('daily');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [autoPrint, setAutoPrint] = useState(false);
   const [recentReceipts, setRecentReceipts] = useState([]);
@@ -943,12 +944,14 @@ export default function AdminDashboard() {
 
   const handleDashboardDateFromChange = (e) => {
     const newDate = e.target.value;
+    setDashboardRange('multi-day');
     setDashboardDateFrom(newDate);
     if (newDate > dashboardDateTo) setDashboardDateTo(newDate);
     loadDashboard(newDate, newDate > dashboardDateTo ? newDate : dashboardDateTo);
   };
   const handleDashboardDateToChange = (e) => {
     const newDate = e.target.value;
+    setDashboardRange('multi-day');
     setDashboardDateTo(newDate);
     loadDashboard(dashboardDateFrom, newDate);
   };
@@ -986,6 +989,8 @@ export default function AdminDashboard() {
     dashboard,
     dashboardDateFrom,
     dashboardDateTo,
+    dashboardRange,
+    setDashboardRange,
     handleDashboardDateFromChange,
     handleDashboardDateToChange,
     setDashboardDateFrom,
