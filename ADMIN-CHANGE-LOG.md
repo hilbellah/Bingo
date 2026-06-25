@@ -154,7 +154,7 @@ Running record of admin/backend changes, where to access them, and the save-poin
 - Direct cancel exists for legacy/admin bookings without payment processor records.
 
 **Not fully fixed yet**
-- Refunds processed directly in Authorize.Net are not guaranteed to be linked back to the in-platform booking and seat state.
+- Full-booking refunds and voids processed directly in Authorize.Net are automatically linked back when Authorize.Net sends a signed webhook with the booking reference, or when the platform can resolve the booking reference from the transaction details.
 - No-show handling does not yet support a formal credit workflow.
 - Promo/donation seat blocking with assigned names is not built yet.
 - Bulk-printed promo/donation tickets do not yet pull assigned-person names from a dedicated comp/hold workflow.
@@ -165,7 +165,7 @@ Running record of admin/backend changes, where to access them, and the save-poin
 - Cancel orders directly in the platform. Status: partially covered; needs clearer paid-order workflow.
 - Handle no-shows via refund or credit. Status: refund covered when initiated in platform; credit not built.
 - Block seats and assign names for promos/donations so bulk-printed tickets include the assigned person. Status: not built.
-- Link external Authorize.Net refunds back to booking and seat status. Status: not fully fixed.
+- Link external Authorize.Net refunds back to booking and seat status. Status: automated for signed full-booking refund/void webhooks with a resolvable booking reference.
 
 **How to move a booked seat today**
 - Use this when the customer is keeping the same paid order but needs a different chair.
@@ -203,13 +203,22 @@ Running record of admin/backend changes, where to access them, and the save-poin
   - `Refund` for settled payments.
 - Seats tied to refunded/voided tickets are released by the platform.
 
-**How to handle a booking already refunded directly in Authorize.Net**
-- This is not fully automated yet.
-- Do not assume the platform seat was released just because Authorize.Net shows a refund.
-- Check the booking in `Bookings` / `Sales & Transactions`.
-- Check the chair in `Bingo` -> `Manage Chairs`.
-- If the platform still shows the chair as sold, do not move or resell it until the booking state is corrected in-platform.
-- Current safest workflow is to perform refunds/voids from the admin platform whenever possible so seat release and reports stay linked.
+**How direct Authorize.Net refunds are handled now**
+- If a full booking is refunded or voided directly in Authorize.Net, Authorize.Net sends a webhook to the platform.
+- When the webhook is signed and includes the booking reference, the platform automatically:
+  - Marks the booking as `refunded` or `voided`
+  - Marks the ticket items as refunded
+  - Releases the seats
+  - Refreshes the seat map
+  - Logs the payment event and audit record
+  - Sends the refund/void notification when email is configured
+- If the webhook does not include the booking reference, the platform now tries to resolve the reference from Authorize.Net transaction details.
+- Recommended staff workflow:
+  - Prefer refunding/voiding from the admin platform when possible.
+  - If a refund was done directly in Authorize.Net, wait briefly for the webhook to arrive.
+  - Check `Bookings` / `Sales & Transactions` and confirm the booking changed to `refunded` or `voided`.
+  - Check `Bingo` -> `Manage Chairs` and confirm the chair is vacant.
+  - If the booking still shows paid and the chair still shows sold, the webhook likely did not contain a usable booking reference or was not delivered; correct it before reselling the seat.
 
 **How to block overflow or unavailable chairs today**
 - Go to `https://booking.wolastoqcasino.ca/admin`
@@ -223,7 +232,7 @@ Running record of admin/backend changes, where to access them, and the save-poin
 **What staff should not try yet**
 - Do not use chair blocking as a replacement for named promo/donation tickets if the printed ticket must show a person's name.
 - Do not promise a no-show credit workflow yet; credit handling is not built.
-- Do not rely on external Authorize.Net refunds to automatically clean up the booking in the platform until that path is verified or improved.
+- Do not resell a chair after an external Authorize.Net refund until the platform shows the booking as refunded/voided and the chair as vacant.
 
 **Timeline note**
 - These changes were requested for follow-up after July 12; the current bingo/live event exposed the operational gap.
@@ -260,13 +269,34 @@ Running record of admin/backend changes, where to access them, and the save-poin
   - Server production audit passed with 0 vulnerabilities
 
 **Remaining known gaps**
-- External refunds made directly in Authorize.Net still need live/payment-event verification before relying on them to update seat state automatically.
+- External Authorize.Net full-booking refund/void webhooks are automated and covered by regression tests. Staff should still verify the booking state before reselling a chair if the refund was done outside the admin platform.
 - No-show credit workflow is not built.
 - Promo/donation assigned-seat workflow is not built.
 - Print-staff limited role is recommended but not built yet.
 
 **Save point**
 - `f463209` - Stabilize admin seat move checks and dependencies
+
+### External Authorize.Net Refund Automation
+
+**What changed**
+- Strengthened the Authorize.Net webhook handler for external refund/void events.
+- Signed `net.authorize.payment.refund.created` webhooks now automatically mark the matching booking as refunded and release the seats.
+- Signed `net.authorize.payment.void.created` webhooks continue to mark the matching booking as voided and release the seats.
+- If the webhook payload does not include the booking reference, the platform now attempts to resolve it from Authorize.Net transaction details before giving up.
+- Full external refunds can now complete the remaining cleanup even if the booking was already `partially_refunded`.
+- Added an automated regression check for an external Authorize.Net refund webhook releasing Table 44 Seat 1.
+
+**How it works**
+- Authorize.Net must be configured to send webhooks to:
+  - `https://booking.wolastoqcasino.ca/api/webhooks/authorize-net`
+- The webhook must be signed using the configured `ANET_SIGNATURE_KEY`.
+- The webhook must include, or allow the platform to resolve, the booking reference number.
+- When those conditions are met, no staff action is required to free the seat.
+
+**Verification performed**
+- `node scripts/authorize-net-refund-webhook-api-check.mjs`
+- `npm run check`
 
 ## How To Update This File
 

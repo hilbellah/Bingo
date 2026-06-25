@@ -1036,14 +1036,15 @@ function sendRefundNotificationAsync({ bookingId, action, refundTransactionId, b
   });
 }
 
-// Idempotently mark a 'paid' booking as 'refunded' (post-settlement reversal).
+// Idempotently mark a 'paid' or 'partially_refunded' booking as 'refunded'
+// (post-settlement reversal).
 // Releases seats, refreshes public seat maps, and emails the customer plus
 // EMAIL_BCC recipients.
 async function markBookingRefunded({ bookingId, transactionId = null, refundTransactionId = null, source = 'admin' }) {
   const booking = await get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (booking.payment_status === 'refunded') return { ok: true, alreadyRefunded: true };
-  if (booking.payment_status !== 'paid') {
+  if (!['paid', 'partially_refunded'].includes(booking.payment_status)) {
     return { ok: false, error: `cannot refund booking in status '${booking.payment_status}'` };
   }
 
@@ -2069,8 +2070,18 @@ app.all('/payment/cancel', async (req, res) => {
 async function processAuthorizeNetWebhook({ rawBody, sigHeader, event }) {
   const { eventType, payload, notificationId } = event || {};
   const transId = payload?.id;
-  const invoiceNumber = payload?.merchantReferenceId || payload?.invoiceNumber;
+  let invoiceNumber = payload?.merchantReferenceId || payload?.invoiceNumber;
   const signatureValid = verifyWebhookSignature(rawBody, sigHeader);
+
+  if (!invoiceNumber && signatureValid && transId) {
+    const verify = await verifyTransaction(transId);
+    if (verify.ok && verify.invoiceNumber) {
+      invoiceNumber = verify.invoiceNumber;
+      console.log(`[webhooks] resolved missing invoiceNumber from transaction details for ${eventType}: ${invoiceNumber}`);
+    } else {
+      console.warn(`[webhooks] could not resolve invoiceNumber for ${eventType} transId=${transId}: ${verify.error || 'no invoiceNumber'}`);
+    }
+  }
 
   if (!invoiceNumber) {
     console.warn(`[webhooks] event has no invoiceNumber: ${eventType}`);
