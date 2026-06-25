@@ -4,6 +4,7 @@ import { useAdminDashboard } from './AdminDashboardContext';
 import { confirmAdminAction } from './adminConfirm';
 
 const emptyForm = { email: '', displayName: '', password: '', isSuperUser: false };
+const emptyEditForm = { email: '', displayName: '', password: '', isSuperUser: false, isActive: true };
 
 export default function UsersTab() {
   const { tab, token, isSuperUser } = useAdminDashboard();
@@ -11,6 +12,8 @@ export default function UsersTab() {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editForm, setEditForm] = useState(emptyEditForm);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -78,6 +81,60 @@ export default function UsersTab() {
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  const startEdit = (user) => {
+    setError('');
+    setSuccess('');
+    setEditingUser(user);
+    setEditForm({
+      email: user.email || '',
+      displayName: user.display_name || '',
+      password: '',
+      isSuperUser: !!user.is_super_user,
+      isActive: !!user.is_active,
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingUser(null);
+    setEditForm(emptyEditForm);
+  };
+
+  const handleUpdate = async (event) => {
+    event.preventDefault();
+    if (!editingUser) return;
+    if (!confirmAdminAction({
+      action: 'Update this admin user',
+      details: [
+        `User: ${editingUser.display_name || editingUser.email}`,
+        `Email: ${editForm.email}`,
+        `Display name: ${editForm.displayName || '(none)'}`,
+        `Role: ${editForm.isSuperUser ? 'Super user' : 'Admin'}`,
+        `Status: ${editForm.isActive ? 'Active' : 'Inactive'}`,
+        editForm.password ? 'Password: will be reset' : 'Password: unchanged',
+      ],
+      warning: 'These changes affect admin dashboard access.',
+    })) return;
+
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        email: editForm.email,
+        displayName: editForm.displayName,
+        isSuperUser: editForm.isSuperUser,
+        isActive: editForm.isActive,
+      };
+      if (editForm.password) payload.password = editForm.password;
+      await updateAdminUser(token, editingUser.id, payload);
+      cancelEdit();
+      await loadUsers();
+      showSuccess('User updated.');
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
   };
 
   const handleToggleSuper = async (user) => {
@@ -164,6 +221,83 @@ export default function UsersTab() {
         </button>
       </form>
 
+      {editingUser && (
+        <form onSubmit={handleUpdate} className="bg-white rounded-xl p-5 shadow-sm border-2 border-brand-blue/20">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <h4 className="font-semibold text-gray-700">Edit Admin User</h4>
+              <p className="text-sm text-gray-500 mt-1">{editingUser.display_name || editingUser.email}</p>
+            </div>
+            <button
+              type="button"
+              onClick={cancelEdit}
+              className="text-sm text-gray-500 hover:text-gray-800"
+            >
+              Cancel
+            </button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Email</label>
+              <input
+                type="email"
+                value={editForm.email}
+                onChange={e => setEditForm({ ...editForm, email: e.target.value })}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Display Name</label>
+              <input
+                type="text"
+                value={editForm.displayName}
+                onChange={e => setEditForm({ ...editForm, displayName: e.target.value })}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Reset Password</label>
+              <input
+                type="password"
+                value={editForm.password}
+                onChange={e => setEditForm({ ...editForm, password: e.target.value })}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                minLength={8}
+                placeholder="Leave blank to keep current password"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-5 pt-6">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editForm.isSuperUser}
+                  onChange={e => setEditForm({ ...editForm, isSuperUser: e.target.checked })}
+                  className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
+                />
+                <span className="text-sm text-gray-700">Super user</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editForm.isActive}
+                  onChange={e => setEditForm({ ...editForm, isActive: e.target.checked })}
+                  className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
+                />
+                <span className="text-sm text-gray-700">Active</span>
+              </label>
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="mt-4 bg-brand-blue text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </form>
+      )}
+
       <div className="bg-white rounded-xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h4 className="font-semibold text-gray-700">Admin Users</h4>
@@ -203,6 +337,12 @@ export default function UsersTab() {
                       </span>
                     </td>
                     <td className="py-3 text-right">
+                      <button
+                        onClick={() => startEdit(user)}
+                        className="text-sm text-brand-blue hover:text-blue-800 font-medium mr-4"
+                      >
+                        Edit / Reset
+                      </button>
                       <button
                         onClick={() => handleToggleActive(user)}
                         className="text-sm text-brand-blue hover:text-blue-800 font-medium"
