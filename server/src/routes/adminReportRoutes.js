@@ -6,6 +6,116 @@ import { sessionTypeSql } from '../services/sessionPackages.js';
 import { clearExpiredHolds } from '../services/holds.js';
 import { formatCurrency, formatLocalDate } from '../utils/format.js';
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseLocalDate(value) {
+  const text = String(value || '').trim();
+  if (!DATE_RE.test(text)) return null;
+  const [year, month, day] = text.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfWeek(date) {
+  const start = new Date(date);
+  const day = start.getDay();
+  const daysSinceMonday = (day + 6) % 7;
+  start.setDate(start.getDate() - daysSinceMonday);
+  return start;
+}
+
+function endOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function normalizeSalesReportRange(query) {
+  const today = formatLocalDate(new Date());
+  const requestedRange = String(query.range || query.period || '').trim().toLowerCase();
+  const allowedRanges = new Set(['', 'daily', 'day', 'multi-day', 'multiday', 'custom', 'weekly', 'week', 'monthly', 'month']);
+  if (!allowedRanges.has(requestedRange)) {
+    return { error: `Unsupported range "${requestedRange}". Use daily, multi-day, weekly, or monthly.` };
+  }
+
+  const anchorText = String(query.date || today).trim();
+  const anchorDate = parseLocalDate(anchorText);
+  if (!anchorDate) {
+    return { error: 'Invalid date. Use YYYY-MM-DD.' };
+  }
+
+  let range = requestedRange || 'daily';
+  let dateFrom = String(query.dateFrom || '').trim();
+  let dateTo = String(query.dateTo || '').trim();
+
+  if (dateFrom || dateTo) {
+    dateFrom = dateFrom || dateTo;
+    dateTo = dateTo || dateFrom;
+    range = range === 'weekly' || range === 'week' || range === 'monthly' || range === 'month'
+      ? range
+      : dateFrom === dateTo
+        ? 'daily'
+        : 'multi-day';
+  } else if (range === 'weekly' || range === 'week') {
+    const start = startOfWeek(anchorDate);
+    dateFrom = formatLocalDate(start);
+    dateTo = formatLocalDate(addDays(start, 6));
+    range = 'weekly';
+  } else if (range === 'monthly' || range === 'month') {
+    dateFrom = formatLocalDate(new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1));
+    dateTo = formatLocalDate(endOfMonth(anchorDate));
+    range = 'monthly';
+  } else {
+    dateFrom = anchorText;
+    dateTo = anchorText;
+    range = 'daily';
+  }
+
+  const fromDate = parseLocalDate(dateFrom);
+  const toDate = parseLocalDate(dateTo);
+  if (!fromDate || !toDate) {
+    return { error: 'Invalid dateFrom or dateTo. Use YYYY-MM-DD.' };
+  }
+  if (fromDate > toDate) {
+    return { error: 'dateFrom must be on or before dateTo.' };
+  }
+
+  const normalizedFrom = formatLocalDate(fromDate);
+  const normalizedTo = formatLocalDate(toDate);
+  const isSingleDay = normalizedFrom === normalizedTo;
+  const normalizedRange = isSingleDay && range !== 'weekly' && range !== 'monthly' ? 'daily' : range;
+  const label = isSingleDay ? normalizedFrom : `${normalizedFrom} to ${normalizedTo}`;
+
+  return {
+    date: anchorText,
+    dateFrom: normalizedFrom,
+    dateTo: normalizedTo,
+    range: normalizedRange,
+    isSingleDay,
+    label,
+  };
+}
+
+function formatSalesSummary(summary) {
+  return {
+    ...summary,
+    packageSubtotalFormatted: formatCurrency(summary.packageSubtotal),
+    addonSubtotalFormatted: formatCurrency(summary.addonSubtotal),
+    grandTotalFormatted: formatCurrency(summary.grandTotal),
+  };
+}
+
 async function addSalesCutoff(where, params, expression) {
   const cutoff = await getSalesReportCutoff();
   if (cutoff) {
@@ -137,7 +247,10 @@ export function registerAdminReportRoutes(app) {
 
   app.get('/api/admin/daily-sales', adminAuth, async (req, res) => {
     try {
-      const date = req.query.date || formatLocalDate(new Date());
+      const reportRange = normalizeSalesReportRange(req.query);
+      if (reportRange.error) {
+        return res.status(400).json({ error: reportRange.error });
+      }
       const search = (req.query.search || '').trim().toLowerCase();
       const cutoff = await getSalesReportCutoff();
       const cutoffSql = cutoff ? "AND datetime(COALESCE(b.payment_completed_at, b.created_at)) >= datetime(?)" : '';
@@ -158,12 +271,12 @@ export function registerAdminReportRoutes(app) {
         JOIN seats ON seats.id = bi.seat_id
         LEFT JOIN packages p ON p.id = bi.package_id
         LEFT JOIN session_packages sp ON sp.id = bi.package_id
-        WHERE s.date = ?
+        WHERE s.date >= ? AND s.date <= ?
           AND b.payment_status IN ('paid', 'partially_refunded')
           AND COALESCE(bi.refund_status, 'active') != 'refunded'
           ${cutoffSql}
-        ORDER BY b.created_at ASC, b.id, bi.id
-      `, [date, ...cutoffParams]);
+        ORDER BY s.date ASC, s.time ASC, b.created_at ASC, b.id, bi.id
+      `, [reportRange.dateFrom, reportRange.dateTo, ...cutoffParams]);
 
       const allAddons = await all(`
         SELECT ba.booking_item_id, ba.quantity, ba.price,
@@ -174,11 +287,11 @@ export function registerAdminReportRoutes(app) {
         JOIN booking_items bi ON bi.id = ba.booking_item_id
         JOIN bookings b ON b.id = bi.booking_id
         JOIN sessions s ON s.id = b.session_id
-        WHERE s.date = ?
+        WHERE s.date >= ? AND s.date <= ?
           AND b.payment_status IN ('paid', 'partially_refunded')
           AND COALESCE(bi.refund_status, 'active') != 'refunded'
           ${cutoffSql}
-      `, [date, ...cutoffParams]);
+      `, [reportRange.dateFrom, reportRange.dateTo, ...cutoffParams]);
       const addonsByItem = {};
       for (const addon of allAddons) {
         if (!addonsByItem[addon.booking_item_id]) addonsByItem[addon.booking_item_id] = [];
@@ -202,11 +315,11 @@ export function registerAdminReportRoutes(app) {
           FROM booking_addons
           GROUP BY booking_item_id
         ) addons ON addons.booking_item_id = bi.id
-        WHERE s.date = ?
+        WHERE s.date >= ? AND s.date <= ?
           AND b.payment_status IN ('paid', 'partially_refunded')
           ${cutoffSql}
         GROUP BY b.id, b.total_amount
-      `, [date, ...cutoffParams]);
+      `, [reportRange.dateFrom, reportRange.dateTo, ...cutoffParams]);
       const serviceChargeByBooking = {};
       const ticketCountByBooking = {};
       for (const booking of bookingSubtotals) {
@@ -221,7 +334,9 @@ export function registerAdminReportRoutes(app) {
       const filtered = search
         ? rows.filter(row => {
             const fullName = `${row.first_name} ${row.last_name}`.toLowerCase();
-            return fullName.includes(search) || row.reference_number.toLowerCase().includes(search);
+            const bookingReference = String(row.reference_number || '').toLowerCase();
+            const itemReference = String(row.item_reference_number || '').toLowerCase();
+            return fullName.includes(search) || bookingReference.includes(search) || itemReference.includes(search);
           })
         : rows;
 
@@ -268,9 +383,55 @@ export function registerAdminReportRoutes(app) {
         return sum + Math.round((serviceCharge * selectedTicketCount) / ticketCount);
       }, 0);
       const grandTotal = subtotalWithoutServiceCharges + serviceChargeSubtotal;
+      const dailyRollup = {};
+      const sessionRollup = {};
+      for (const item of items) {
+        const addonTotal = item.addons ? item.addons.reduce((sum, addon) => sum + addon.price, 0) : 0;
+        const dailyKey = item.sessionDate;
+        const sessionKey = `${item.sessionDate}|${item.sessionTime}|${item.description}`;
+        if (!dailyRollup[dailyKey]) {
+          dailyRollup[dailyKey] = {
+            date: item.sessionDate,
+            ticketSet: new Set(),
+            bookingSet: new Set(),
+            packageSubtotal: 0,
+            addonSubtotal: 0,
+            grandTotal: 0,
+          };
+        }
+        if (!sessionRollup[sessionKey]) {
+          sessionRollup[sessionKey] = {
+            date: item.sessionDate,
+            time: item.sessionTime,
+            description: item.description,
+            ticketSet: new Set(),
+            bookingSet: new Set(),
+            packageSubtotal: 0,
+            addonSubtotal: 0,
+            grandTotal: 0,
+          };
+        }
+        for (const rollup of [dailyRollup[dailyKey], sessionRollup[sessionKey]]) {
+          rollup.ticketSet.add(item.id);
+          rollup.bookingSet.add(item.bookingId);
+          rollup.packageSubtotal += item.itemPrice;
+          rollup.addonSubtotal += addonTotal;
+          rollup.grandTotal += item.itemPrice + addonTotal;
+        }
+      }
+      const toSummaryRows = rowsByKey => Object.values(rowsByKey).map(row => formatSalesSummary({
+        ...row,
+        totalTickets: row.ticketSet.size,
+        totalBookings: row.bookingSet.size,
+      })).map(({ ticketSet, bookingSet, ...row }) => row);
 
       res.json({
-        date,
+        date: reportRange.isSingleDay ? reportRange.dateFrom : reportRange.date,
+        dateFrom: reportRange.dateFrom,
+        dateTo: reportRange.dateTo,
+        range: reportRange.range,
+        rangeLabel: reportRange.label,
+        reportTitle: reportRange.isSingleDay ? 'Daily Sales Report' : 'Sales Report',
         salesReportCutoffAt: cutoff,
         items,
         totalTickets: items.length,
@@ -286,7 +447,9 @@ export function registerAdminReportRoutes(app) {
         packageSubtotal,
         packageSubtotalFormatted: formatCurrency(packageSubtotal),
         addonSubtotal,
-        addonSubtotalFormatted: formatCurrency(addonSubtotal)
+        addonSubtotalFormatted: formatCurrency(addonSubtotal),
+        dailyTotals: toSummaryRows(dailyRollup),
+        sessionTotals: toSummaryRows(sessionRollup)
       });
     } catch (err) {
       console.error('GET /api/admin/daily-sales failed:', err);
