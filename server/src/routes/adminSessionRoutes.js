@@ -478,18 +478,28 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       await releaseExpiredHolds(io);
       const seats = await all(`
         SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled,
-               bi.first_name as booked_name
+               bi.id as booking_item_id,
+               bi.booking_id,
+               bi.reference_number as ticket_reference_number,
+               bi.first_name as booked_first_name,
+               bi.last_name as booked_last_name,
+               b.reference_number as booking_reference_number
         FROM seats s
         LEFT JOIN (
-          SELECT bi.seat_id, bi.first_name
+          SELECT bi.id, bi.booking_id, bi.seat_id, bi.reference_number, bi.first_name, bi.last_name
           FROM booking_items bi
           JOIN bookings b ON b.id = bi.booking_id
-          WHERE b.payment_status = 'paid'
+          WHERE b.payment_status IN ('paid', 'partially_refunded')
+            AND COALESCE(bi.refund_status, 'active') != 'refunded'
         ) bi ON bi.seat_id = s.id
+        LEFT JOIN bookings b ON b.id = bi.booking_id
         WHERE s.session_id = ?
         ORDER BY s.table_number ASC, s.chair_number ASC
       `, [req.params.id]);
-      res.json(seats);
+      res.json(seats.map(seat => ({
+        ...seat,
+        booked_name: [seat.booked_first_name, seat.booked_last_name].filter(Boolean).join(' '),
+      })));
     } catch (err) {
       console.error('GET /api/admin/sessions/:id/seats failed:', err);
       res.status(500).json({ error: 'Internal server error' });
