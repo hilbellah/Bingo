@@ -29,6 +29,8 @@ await getDb();
 const sessionId = 'seat-move-session';
 const oldSeatId = 'seat-move-old-seat';
 const newSeatId = 'seat-move-new-seat';
+const soldSeatId = 'seat-move-sold-seat';
+const disabledSeatId = 'seat-move-disabled-seat';
 const packageId = 'seat-move-package';
 const bookingId = 'seat-move-booking';
 const itemId = 'seat-move-item';
@@ -43,8 +45,12 @@ await run(
 await run(
   `INSERT INTO seats
     (id, session_id, table_number, chair_number, status, is_disabled)
-   VALUES (?, ?, 1, 1, 'sold', 0), (?, ?, 1, 2, 'vacant', 0)`,
-  [oldSeatId, sessionId, newSeatId, sessionId]
+   VALUES
+     (?, ?, 1, 1, 'sold', 0),
+     (?, ?, 1, 2, 'vacant', 0),
+     (?, ?, 1, 3, 'sold', 0),
+     (?, ?, 1, 4, 'vacant', 1)`,
+  [oldSeatId, sessionId, newSeatId, sessionId, soldSeatId, sessionId, disabledSeatId, sessionId]
 );
 await run(
   `INSERT INTO packages
@@ -109,12 +115,26 @@ try {
   assert.equal(newSeat.held_by, null);
   assert.equal(newSeat.held_until, null);
 
-  const moveToSold = await postJson(`/api/admin/booking-items/${itemId}/move-seat`, {
+  const moveToOccupiedSeat = await postJson(`/api/admin/booking-items/${itemId}/move-seat`, {
+    tableNumber: 1,
+    chairNumber: 3,
+  });
+  assert.equal(moveToOccupiedSeat.response.status, 409);
+  assert.match(moveToOccupiedSeat.data.error, /currently sold/i);
+
+  const moveToDisabledSeat = await postJson(`/api/admin/booking-items/${itemId}/move-seat`, {
+    tableNumber: 1,
+    chairNumber: 4,
+  });
+  assert.equal(moveToDisabledSeat.response.status, 409);
+  assert.match(moveToDisabledSeat.data.error, /disabled/i);
+
+  const moveBackToOriginalSeat = await postJson(`/api/admin/booking-items/${itemId}/move-seat`, {
     tableNumber: 1,
     chairNumber: 1,
   });
-  assert.equal(moveToSold.response.status, 200);
-  assert.equal(moveToSold.data.ok, true);
+  assert.equal(moveBackToOriginalSeat.response.status, 200);
+  assert.equal(moveBackToOriginalSeat.data.ok, true);
 
   const moveToSameSeat = await postJson(`/api/admin/booking-items/${itemId}/move-seat`, {
     tableNumber: 1,
