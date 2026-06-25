@@ -52,7 +52,7 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 const TABLES = [
   { name: 'sessions',             cols: ['id', 'date', 'time', 'cutoff_time', 'sales_cutoff_at', 'is_available', 'created_at', 'is_special_event', 'event_title', 'event_description', 'event_image_url', 'session_type', 'deleted_at'] },
   { name: 'packages',             cols: ['id', 'name', 'price', 'type', 'max_quantity', 'is_active', 'sort_order', 'is_phd', 'description'] },
-  { name: 'bookings',             cols: ['id', 'session_id', 'reference_number', 'total_amount', 'payment_status', 'created_at', 'email', 'customer_first_name', 'customer_last_name', 'email_verified_at', 'payment_provider', 'transaction_id', 'auth_code', 'payment_attempted_at', 'payment_completed_at', 'payment_failure_reason', 'hosted_token', 'ticket_access_token'] },
+  { name: 'bookings',             cols: ['id', 'session_id', 'reference_number', 'total_amount', 'payment_status', 'created_at', 'email', 'customer_first_name', 'customer_last_name', 'email_verified_at', 'payment_provider', 'transaction_id', 'auth_code', 'payment_attempted_at', 'payment_completed_at', 'payment_failure_reason', 'hosted_token', 'ticket_access_token', 'booking_source', 'admin_note'] },
   { name: 'seats',                cols: ['id', 'session_id', 'table_number', 'chair_number', 'status', 'held_by', 'held_until', 'is_disabled'] },
   { name: 'session_packages',     cols: ['id', 'session_id', 'name', 'price', 'type', 'max_quantity', 'sort_order', 'is_phd', 'description', 'created_at'] },
   { name: 'booking_items',        cols: ['id', 'booking_id', 'first_name', 'last_name', 'seat_id', 'package_id', 'price', 'reference_number', 'printed_at', 'refund_status', 'refunded_at', 'refund_transaction_id', 'refund_amount', 'refund_action'] },
@@ -64,7 +64,8 @@ const TABLES = [
   { name: 'recurring_schedules',  cols: ['id', 'day_of_week', 'time', 'cutoff_time', 'session_type', 'is_active', 'created_at', 'updated_at'] },
   { name: 'email_verifications',  cols: ['id', 'email', 'code_hash', 'customer_first_name', 'customer_last_name', 'attempts', 'expires_at', 'verified_at', 'created_at'] },
   { name: 'customers',            cols: ['id', 'email', 'first_name', 'last_name', 'email_verified_at', 'first_booking_at', 'last_booking_at', 'created_at', 'updated_at'] },
-  { name: 'admin_users',          cols: ['id', 'email', 'password_hash', 'display_name', 'is_active', 'is_super_user', 'created_at', 'updated_at'] },
+  { name: 'admin_users',          cols: ['id', 'email', 'password_hash', 'display_name', 'is_active', 'is_super_user', 'role', 'created_at', 'updated_at'] },
+  { name: 'customer_credits',     cols: ['id', 'booking_id', 'booking_item_id', 'code', 'amount', 'status', 'reason', 'note', 'created_by', 'created_at', 'redeemed_at'] },
 ];
 
 const BATCH_SIZE = 500;

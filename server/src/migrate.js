@@ -686,7 +686,10 @@ async function migrate() {
   try { await exec('ALTER TABLE booking_items ADD COLUMN refund_transaction_id TEXT'); } catch(e) {}
   try { await exec('ALTER TABLE booking_items ADD COLUMN refund_amount INTEGER DEFAULT 0'); } catch(e) {}
   try { await exec('ALTER TABLE booking_items ADD COLUMN refund_action TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE bookings ADD COLUMN booking_source TEXT DEFAULT \'online\''); } catch(e) {}
+  try { await exec('ALTER TABLE bookings ADD COLUMN admin_note TEXT'); } catch(e) {}
   try { await run("UPDATE booking_items SET refund_status = 'active' WHERE refund_status IS NULL OR refund_status = ''"); } catch(e) {}
+  try { await run("UPDATE bookings SET booking_source = 'online' WHERE booking_source IS NULL OR booking_source = ''"); } catch(e) {}
   await mirrorSessionPackagesForPackageForeignKeys();
   try { await exec('CREATE INDEX idx_booking_items_booking ON booking_items(booking_id)'); } catch(e) {}
   try { await exec('CREATE INDEX idx_booking_items_seat ON booking_items(seat_id)'); } catch(e) {}
@@ -793,6 +796,29 @@ async function migrate() {
     )
   `);
   try { await exec('ALTER TABLE admin_users ADD COLUMN is_super_user INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
+  try { await exec("ALTER TABLE admin_users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'"); } catch(e) {}
+  try { await run("UPDATE admin_users SET role = 'super_user' WHERE is_super_user = 1 AND (role IS NULL OR role = '' OR role = 'admin')"); } catch(e) {}
+  try { await run("UPDATE admin_users SET role = 'admin' WHERE role IS NULL OR role = ''"); } catch(e) {}
+
+  await exec(`
+    CREATE TABLE IF NOT EXISTS customer_credits (
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL,
+      booking_item_id TEXT NOT NULL UNIQUE,
+      code TEXT NOT NULL UNIQUE,
+      amount INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      reason TEXT NOT NULL DEFAULT 'no_show',
+      note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      redeemed_at TEXT,
+      FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
+      FOREIGN KEY (booking_item_id) REFERENCES booking_items(id) ON DELETE CASCADE
+    )
+  `);
+  try { await exec('CREATE INDEX idx_customer_credits_status ON customer_credits(status)'); } catch(e) {}
+  try { await exec('CREATE INDEX idx_customer_credits_booking ON customer_credits(booking_id)'); } catch(e) {}
 
   // Backfill existing booking_items that have no reference_number
   const itemsWithoutRef = await all("SELECT bi.id, b.reference_number as booking_ref FROM booking_items bi JOIN bookings b ON b.id = bi.booking_id WHERE bi.reference_number IS NULL");

@@ -1,7 +1,8 @@
+import { v4 as uuid } from 'uuid';
 import { all, get, run, saveDb } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { refundTransaction, verifyTransaction, voidTransaction } from '../services/payments.js';
-import { formatCurrency } from '../utils/format.js';
+import { formatCurrency, generateRef } from '../utils/format.js';
 
 function csvCell(value) {
   let text = String(value ?? '');
@@ -12,19 +13,22 @@ function csvCell(value) {
 async function loadAdminBookings(whereClause = '', params = []) {
   const rows = await all(`
     SELECT b.id, b.reference_number, b.total_amount, b.payment_status, b.created_at, b.email,
-           b.customer_first_name, b.customer_last_name,
+           b.customer_first_name, b.customer_last_name, b.booking_source, b.admin_note,
            s.id as session_id, s.date as session_date, s.time as session_time,
            bi.id as item_id, bi.first_name, bi.last_name, bi.price as item_price,
            bi.reference_number as item_reference_number, bi.refund_status,
            bi.refunded_at, bi.refund_transaction_id, bi.refund_amount, bi.refund_action,
+           cc.id as credit_id, cc.code as credit_code, cc.amount as credit_amount,
+           cc.status as credit_status, cc.note as credit_note, cc.created_at as credit_created_at,
            seats.id as seat_id, seats.table_number, seats.chair_number,
-           COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
+           COALESCE(p.name, sp.name) as package_name, bi.price as package_price
     FROM bookings b
     JOIN sessions s ON b.session_id = s.id
     JOIN booking_items bi ON bi.booking_id = b.id
     JOIN seats ON seats.id = bi.seat_id
     LEFT JOIN packages p ON p.id = bi.package_id
     LEFT JOIN session_packages sp ON sp.id = bi.package_id
+    LEFT JOIN customer_credits cc ON cc.booking_item_id = bi.id
     ${whereClause}
     ORDER BY b.created_at DESC, b.id, bi.id
   `, params);
@@ -42,6 +46,8 @@ async function loadAdminBookings(whereClause = '', params = []) {
         email: row.email,
         customerFirstName: row.customer_first_name,
         customerLastName: row.customer_last_name,
+        bookingSource: row.booking_source || 'online',
+        adminNote: row.admin_note || '',
         sessionId: row.session_id,
         sessionDate: row.session_date,
         sessionTime: row.session_time,
@@ -78,6 +84,15 @@ async function loadAdminBookings(whereClause = '', params = []) {
       refundAmount: row.refund_amount || 0,
       refundAmountFormatted: formatCurrency(row.refund_amount || 0),
       refundAction: row.refund_action,
+      credit: row.credit_id ? {
+        id: row.credit_id,
+        code: row.credit_code,
+        amount: row.credit_amount || 0,
+        amountFormatted: formatCurrency(row.credit_amount || 0),
+        status: row.credit_status,
+        note: row.credit_note || '',
+        createdAt: row.credit_created_at,
+      } : null,
       addons
     });
   }
@@ -433,6 +448,187 @@ export function registerAdminBookingRoutes(app, {
     });
     } catch (err) {
       console.error('POST /api/admin/booking-items/:id/refund failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/admin/booking-items/:id/no-show-credit', adminAuth, async (req, res) => {
+    try {
+      const item = await get(`
+        SELECT bi.*, b.id as booking_id, b.reference_number as booking_reference,
+               b.payment_status, b.email, b.customer_first_name, b.customer_last_name
+        FROM booking_items bi
+        JOIN bookings b ON b.id = bi.booking_id
+        WHERE bi.id = ?
+      `, [req.params.id]);
+      if (!item) return res.status(404).json({ error: 'Ticket not found' });
+      if (item.refund_status === 'refunded') return res.status(400).json({ error: 'Cannot credit a refunded ticket.' });
+      if (!['paid', 'partially_refunded'].includes(item.payment_status)) {
+        return res.status(400).json({ error: `Cannot credit a ticket from booking status '${item.payment_status}'.` });
+      }
+
+      const existing = await get('SELECT code, status FROM customer_credits WHERE booking_item_id = ?', [item.id]);
+      if (existing) {
+        return res.status(409).json({ error: `This ticket already has credit ${existing.code} (${existing.status}).` });
+      }
+
+      const requestedAmount = Number(req.body?.amountCents);
+      const defaultAmount = await getBookingItemRefundAmount(item.id);
+      const amountCents = Number.isFinite(requestedAmount) && requestedAmount >= 0
+        ? Math.round(requestedAmount)
+        : defaultAmount;
+      if (!Number.isFinite(amountCents) || amountCents < 0) {
+        return res.status(400).json({ error: 'Credit amount must be zero or greater.' });
+      }
+
+      const id = uuid();
+      const code = `CR-${generateRef().replace(/^BNG-/, '')}`;
+      const note = String(req.body?.note || '').trim();
+      await run(
+        `INSERT INTO customer_credits
+          (id, booking_id, booking_item_id, code, amount, status, reason, note, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, 'active', 'no_show', ?, ?, ?)`,
+        [id, item.booking_id, item.id, code, amountCents, note || null, req.adminUser?.email || null, new Date().toISOString()]
+      );
+
+      await logAudit('no_show_credit_issued', 'booking_item', item.id, {
+        bookingId: item.booking_id,
+        bookingReference: item.booking_reference,
+        creditId: id,
+        code,
+        amountCents,
+        attendee: `${item.first_name} ${item.last_name}`,
+        note: note || null,
+        issuedBy: req.adminUser?.email || null,
+      });
+      await saveDb();
+
+      res.json({
+        ok: true,
+        credit: {
+          id,
+          code,
+          amount: amountCents,
+          amountFormatted: formatCurrency(amountCents),
+          status: 'active',
+          note,
+        },
+      });
+    } catch (err) {
+      console.error('POST /api/admin/booking-items/:id/no-show-credit failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/admin/assigned-tickets', adminAuth, async (req, res) => {
+    try {
+      const sessionId = String(req.body?.sessionId || '').trim();
+      const tableNumber = Number(req.body?.tableNumber);
+      const chairNumber = Number(req.body?.chairNumber);
+      const firstName = String(req.body?.firstName || '').trim();
+      const lastName = String(req.body?.lastName || '').trim();
+      const type = ['promo', 'donation'].includes(String(req.body?.type || '').toLowerCase())
+        ? String(req.body.type).toLowerCase()
+        : 'promo';
+      const note = String(req.body?.note || '').trim();
+
+      if (!sessionId) return res.status(400).json({ error: 'Session is required.' });
+      if (!firstName || !lastName) return res.status(400).json({ error: 'First and last name are required.' });
+      if (!Number.isInteger(tableNumber) || !Number.isInteger(chairNumber) || tableNumber <= 0 || chairNumber <= 0) {
+        return res.status(400).json({ error: 'A valid table and chair are required.' });
+      }
+
+      const session = await get('SELECT id, date, time, event_title FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
+      if (!session) return res.status(404).json({ error: 'Session not found.' });
+
+      const seat = await get(
+        'SELECT * FROM seats WHERE session_id = ? AND table_number = ? AND chair_number = ?',
+        [sessionId, tableNumber, chairNumber]
+      );
+      if (!seat) return res.status(404).json({ error: `Seat T${tableNumber}-C${chairNumber} was not found.` });
+      if (seat.is_disabled) return res.status(409).json({ error: `Seat T${tableNumber}-C${chairNumber} is disabled.` });
+      if (seat.status !== 'vacant') return res.status(409).json({ error: `Seat T${tableNumber}-C${chairNumber} is currently ${seat.status}.` });
+
+      const pkg = await get(`
+        SELECT id, name FROM session_packages WHERE session_id = ? AND type = 'required' ORDER BY sort_order ASC LIMIT 1
+      `, [sessionId]) || await get(`
+        SELECT id, name FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC LIMIT 1
+      `);
+      if (!pkg) return res.status(409).json({ error: 'No required ticket package is available for this session.' });
+
+      const bookingId = uuid();
+      const itemId = uuid();
+      const bookingRef = generateRef();
+      const itemRef = generateRef();
+      const now = new Date().toISOString();
+      const label = type === 'donation' ? 'Donation assigned seat' : 'Promo assigned seat';
+
+      await run(
+        `INSERT INTO bookings
+          (id, session_id, reference_number, total_amount, payment_status, created_at,
+           email, customer_first_name, customer_last_name, payment_provider, booking_source, admin_note)
+         VALUES (?, ?, ?, 0, 'paid', ?, NULL, ?, ?, 'admin_assigned', ?, ?)`,
+        [bookingId, sessionId, bookingRef, now, firstName, lastName, type, note || label]
+      );
+      await run(
+        `INSERT INTO booking_items
+          (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+        [itemId, bookingId, firstName, lastName, seat.id, pkg.id, itemRef]
+      );
+      await run("UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?", [seat.id]);
+
+      await logAudit('assigned_ticket_created', 'booking', bookingId, {
+        bookingReference: bookingRef,
+        ticketReference: itemRef,
+        sessionId,
+        type,
+        attendee: `${firstName} ${lastName}`,
+        tableNumber,
+        chairNumber,
+        packageId: pkg.id,
+        packageName: pkg.name,
+        note: note || null,
+        createdBy: req.adminUser?.email || null,
+      });
+
+      io.to(`session:${sessionId}`).emit('seats:refresh', { sessionId });
+      io.to('admin:receipts').emit('booking:new', {
+        id: bookingId,
+        referenceNumber: bookingRef,
+        totalAmount: 0,
+        totalFormatted: formatCurrency(0),
+        paymentStatus: 'paid',
+        createdAt: now,
+        sessionDate: session.date,
+        sessionTime: session.time,
+        sessionTitle: session.event_title || label,
+        items: [{
+          id: itemId,
+          firstName,
+          lastName,
+          tableNumber,
+          chairNumber,
+          referenceNumber: itemRef,
+          packageName: label,
+          packagePrice: 0,
+          packagePriceFormatted: formatCurrency(0),
+          addons: [],
+        }],
+      });
+      await saveDb();
+
+      res.status(201).json({
+        ok: true,
+        bookingId,
+        bookingReference: bookingRef,
+        bookingItemId: itemId,
+        ticketReference: itemRef,
+        type,
+        seat: { id: seat.id, tableNumber, chairNumber },
+      });
+    } catch (err) {
+      console.error('POST /api/admin/assigned-tickets failed:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   });

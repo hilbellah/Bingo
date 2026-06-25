@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, moveAdminBookingItemSeat, getExportUrl, adminHeaders,
+  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -105,6 +105,8 @@ export default function AdminDashboard() {
   const token = sessionStorage.getItem('admin_token');
   const adminDisplayName = sessionStorage.getItem('admin_display_name') || 'Admin';
   const isSuperUser = sessionStorage.getItem('admin_is_super_user') === 'true';
+  const adminRole = isSuperUser ? 'super_user' : (sessionStorage.getItem('admin_role') || 'admin');
+  const isPrintStaff = adminRole === 'print_staff';
 
   const [tab, setTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
@@ -191,7 +193,10 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!token) { navigate('/admin'); return; }
-    loadDashboard();
+    if (isPrintStaff && !['bulkprint', 'settings'].includes(tab)) {
+      setTab('bulkprint');
+    }
+    if (!isPrintStaff) loadDashboard();
     // Load receipt config from server
     fetchSettings(token, 'receipt_config').then(config => {
       if (config) {
@@ -203,19 +208,21 @@ export default function AdminDashboard() {
         }
       }
     });
-    fetchSettings(token, 'special_bingo_config').then(config => {
-      if (!config) return;
-      const merged = normalizeSpecialBingoConfig(config);
-      setSpecialBingoConfig(merged);
-      setNewSession(prev => ({
-        ...prev,
-        packages: defaultSpecialEventPackages(merged),
-      }));
-    }).catch(() => {});
-    fetchSettings(token, 'booking_config').then(config => {
-      if (!config) return;
-      setBookingConfig({ ...DEFAULT_BOOKING_CONFIG, ...config });
-    }).catch(() => {});
+    if (!isPrintStaff) {
+      fetchSettings(token, 'special_bingo_config').then(config => {
+        if (!config) return;
+        const merged = normalizeSpecialBingoConfig(config);
+        setSpecialBingoConfig(merged);
+        setNewSession(prev => ({
+          ...prev,
+          packages: defaultSpecialEventPackages(merged),
+        }));
+      }).catch(() => {});
+      fetchSettings(token, 'booking_config').then(config => {
+        if (!config) return;
+        setBookingConfig({ ...DEFAULT_BOOKING_CONFIG, ...config });
+      }).catch(() => {});
+    }
   }, []);
 
   const loadDashboard = (from, to) => fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard);
@@ -250,6 +257,10 @@ export default function AdminDashboard() {
   const loadCustomers = (search) => fetchAdminCustomers(token, search ?? customerSearch).then(setCustomers);
 
   useEffect(() => {
+    if (isPrintStaff && !['bulkprint', 'settings'].includes(tab)) {
+      setTab('bulkprint');
+      return;
+    }
     if (tab === 'sessions') loadSessions();
     if (tab === 'events') { loadSessions(); loadBookingSales(); }
     if (tab === 'packages') loadPackages();
@@ -296,8 +307,8 @@ export default function AdminDashboard() {
       if (autoPrintRef.current) {
         printBookingReceipt(receiptData);
       }
-      // Refresh dashboard if on dashboard tab
-      loadDashboard();
+      // Refresh dashboard if this role can view it.
+      if (!isPrintStaff) loadDashboard();
     });
 
     socket.on('phd:updated', (phdData) => {
@@ -377,6 +388,7 @@ export default function AdminDashboard() {
     sessionStorage.removeItem('admin_token');
     sessionStorage.removeItem('admin_display_name');
     sessionStorage.removeItem('admin_is_super_user');
+    sessionStorage.removeItem('admin_role');
     navigate('/admin');
   };
 
@@ -916,6 +928,46 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleIssueNoShowCredit = async (item, booking) => {
+    if (item.credit?.code) {
+      window.alert(`This ticket already has credit ${item.credit.code}.`);
+      return;
+    }
+    const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
+    const defaultAmount = Number(item.packagePrice || 0) + (item.addons || []).reduce((sum, addon) => sum + Number(addon.price || 0), 0);
+    const amountValue = window.prompt(
+      `Issue no-show credit${ticketName ? ` for ${ticketName}` : ''}\nTicket: ${item.referenceNumber || ''}\n\nCredit amount in dollars:`,
+      (defaultAmount / 100).toFixed(2)
+    );
+    if (amountValue === null) return;
+    const amountCents = Math.round(Number(amountValue) * 100);
+    if (!Number.isFinite(amountCents) || amountCents < 0) {
+      window.alert('Enter a valid credit amount.');
+      return;
+    }
+    const note = window.prompt('Credit note (optional):', 'No-show credit');
+    if (note === null) return;
+
+    const proceed = confirmAdminAction({
+      action: `Issue no-show credit for ${item.referenceNumber || 'this ticket'}`,
+      details: [
+        `Booking: ${booking?.referenceNumber || ''}`,
+        ticketName ? `Ticket holder: ${ticketName}` : '',
+        `Credit amount: ${formatPrice(amountCents)}`,
+      ].filter(Boolean),
+      warning: 'This records a store credit only. It does not refund Authorize.Net and does not change the paid booking status.',
+    });
+    if (!proceed) return;
+
+    const result = await issueNoShowCredit(token, item.id, { amountCents, note });
+    if (!result.ok) {
+      window.alert('No-show credit failed: ' + (result.error || 'Unknown error'));
+      return;
+    }
+    window.alert(`Credit created: ${result.credit?.code || ''} (${result.credit?.amountFormatted || formatPrice(amountCents)})`);
+    refreshBookingViewsAfterSeatChange();
+  };
+
   const refreshBookingViewsAfterSeatChange = () => {
     loadBookings(reportSession);
     loadBookingSales();
@@ -1034,6 +1086,8 @@ export default function AdminDashboard() {
     tab,
     setTab,
     isSuperUser,
+    adminRole,
+    isPrintStaff,
     dashboard,
     dashboardDateFrom,
     dashboardDateTo,
@@ -1143,6 +1197,7 @@ export default function AdminDashboard() {
     handleResetSalesReporting,
     handleRefundBooking,
     handleRefundBookingItem,
+    handleIssueNoShowCredit,
     handleExport,
     bulkDateFrom,
     setBulkDateFrom,
@@ -1201,6 +1256,7 @@ export default function AdminDashboard() {
       onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
       adminDisplayName={adminDisplayName}
       isSuperUser={isSuperUser}
+      adminRole={adminRole}
       onLogout={handleLogout}
       rightActions={adminHeaderActions}
     >

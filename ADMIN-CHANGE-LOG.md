@@ -301,6 +301,70 @@ Running record of admin/backend changes, where to access them, and the save-poin
 **Save point**
 - `edf4e4d` - Automate external Authorize.Net refund cleanup
 
+### No-Show Credits, Promo/Donation Seats, and Print Staff Role
+
+**What changed**
+- Added a tracked no-show credit workflow for paid tickets.
+- Added promo/donation assigned-seat ticket creation from `Manage Chairs`.
+- Added a real `Print staff` admin role.
+- Added database support for:
+  - `customer_credits`
+  - booking source labels such as `online`, `promo`, and `donation`
+  - admin user roles: `super_user`, `admin`, `print_staff`
+- Added Postgres migration `010_admin_roles_credits_assigned_tickets.sql`.
+- Added automated regression coverage for all three workflows.
+
+**How to issue a no-show credit**
+- Go to `https://booking.wolastoqcasino.ca/admin`
+- Open `Bookings` / `Sales & Transactions`.
+- Open `Booking Sales`.
+- Click the session row or ticket count.
+- Find the active paid ticket.
+- Click `No-Show Credit`.
+- Enter the credit amount.
+- Enter an optional note.
+- Confirm the warning prompt.
+- The platform creates a credit code and records it against the ticket.
+- This does not refund Authorize.Net and does not change the paid booking status.
+
+**How to assign a promo or donation seat**
+- Go to `https://booking.wolastoqcasino.ca/admin`
+- Open `Bingo` -> `Manage Chairs` or `Live Event / Venue` -> `Manage Chairs`.
+- Select the correct session.
+- Click an available chair.
+- Type `P` to assign a promo ticket, or `N` to assign a donation ticket.
+- Enter the person's first and last name.
+- Enter an optional note.
+- Confirm the warning prompt.
+- The platform creates a zero-dollar paid ticket, marks the chair sold, and includes the assigned person in bulk printing.
+
+**How to bulk print assigned promo/donation tickets**
+- Go to `https://booking.wolastoqcasino.ca/admin`
+- Open `Shared Operations` -> `Bulk Print`.
+- Select the date or date range.
+- Select the relevant department.
+- Click `Load Tickets`.
+- Promo/donation assigned seats appear with the assigned person's name.
+- Print using `Print Special Paper` or `Print Thermal Copy`.
+
+**How to create a print staff user**
+- Sign in as a super user.
+- Open `System` -> `Users`.
+- Add or edit a user.
+- Set `Role` to `Print staff`.
+- Save the user.
+- Print staff can access only:
+  - `Shared Operations` -> `Bulk Print`
+  - `System` -> `Printing Settings`
+- Print staff cannot access management, live events, customer reports, sales reports, users, or chair management endpoints.
+
+**Verification performed**
+- `node scripts/admin-operations-workflows-api-check.mjs`
+- `npm run check`
+
+**Save point**
+- `a97acf7` - Add admin credit assigned seat and print staff workflows
+
 ## How To Update This File
 
 For each future change, add:

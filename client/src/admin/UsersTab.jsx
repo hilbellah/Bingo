@@ -3,8 +3,14 @@ import { createAdminUser, deactivateAdminUser, fetchAdminUsers, updateAdminUser 
 import { useAdminDashboard } from './AdminDashboardContext';
 import { confirmAdminAction } from './adminConfirm';
 
-const emptyForm = { email: '', displayName: '', password: '', isSuperUser: false };
-const emptyEditForm = { email: '', displayName: '', password: '', isSuperUser: false, isActive: true };
+const ROLE_LABELS = {
+  super_user: 'Super user',
+  admin: 'Admin',
+  print_staff: 'Print staff',
+};
+
+const emptyForm = { email: '', displayName: '', password: '', role: 'admin' };
+const emptyEditForm = { email: '', displayName: '', password: '', role: 'admin', isActive: true };
 
 export default function UsersTab() {
   const { tab, token, isSuperUser } = useAdminDashboard();
@@ -45,7 +51,7 @@ export default function UsersTab() {
       details: [
         `Email: ${form.email}`,
         `Display name: ${form.displayName || '(none)'}`,
-        `Role: ${form.isSuperUser ? 'Super user' : 'Admin'}`,
+        `Role: ${ROLE_LABELS[form.role] || 'Admin'}`,
       ],
       warning: 'This person will be able to access the admin dashboard.',
     })) return;
@@ -91,7 +97,7 @@ export default function UsersTab() {
       email: user.email || '',
       displayName: user.display_name || '',
       password: '',
-      isSuperUser: !!user.is_super_user,
+      role: user.role || (user.is_super_user ? 'super_user' : 'admin'),
       isActive: !!user.is_active,
     });
   };
@@ -110,7 +116,7 @@ export default function UsersTab() {
         `User: ${editingUser.display_name || editingUser.email}`,
         `Email: ${editForm.email}`,
         `Display name: ${editForm.displayName || '(none)'}`,
-        `Role: ${editForm.isSuperUser ? 'Super user' : 'Admin'}`,
+        `Role: ${ROLE_LABELS[editForm.role] || 'Admin'}`,
         `Status: ${editForm.isActive ? 'Active' : 'Inactive'}`,
         editForm.password ? 'Password: will be reset' : 'Password: unchanged',
       ],
@@ -123,7 +129,7 @@ export default function UsersTab() {
       const payload = {
         email: editForm.email,
         displayName: editForm.displayName,
-        isSuperUser: editForm.isSuperUser,
+        role: editForm.role,
         isActive: editForm.isActive,
       };
       if (editForm.password) payload.password = editForm.password;
@@ -135,23 +141,6 @@ export default function UsersTab() {
       setError(err.message);
     }
     setSaving(false);
-  };
-
-  const handleToggleSuper = async (user) => {
-    if (!confirmAdminAction({
-      action: `${user.is_super_user ? 'Remove super user access from' : 'Grant super user access to'} this admin user`,
-      details: [`User: ${user.display_name || user.email}`],
-      warning: user.is_super_user
-        ? 'This user will lose super user permissions.'
-        : 'This user will be able to manage other admin users.',
-    })) return;
-    setError('');
-    try {
-      await updateAdminUser(token, user.id, { isSuperUser: !user.is_super_user });
-      await loadUsers();
-    } catch (err) {
-      setError(err.message);
-    }
   };
 
   if (tab !== 'users') return null;
@@ -202,15 +191,18 @@ export default function UsersTab() {
               required
             />
           </div>
-          <label className="flex items-center gap-3 mt-6 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={form.isSuperUser}
-              onChange={e => setForm({ ...form, isSuperUser: e.target.checked })}
-              className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
-            />
-            <span className="text-sm text-gray-700">Super user</span>
-          </label>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Role</label>
+            <select
+              value={form.role}
+              onChange={e => setForm({ ...form, role: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+            >
+              <option value="admin">Admin</option>
+              <option value="print_staff">Print staff</option>
+              <option value="super_user">Super user</option>
+            </select>
+          </div>
         </div>
         <button
           type="submit"
@@ -267,16 +259,19 @@ export default function UsersTab() {
                 placeholder="Leave blank to keep current password"
               />
             </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Role</label>
+              <select
+                value={editForm.role}
+                onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+              >
+                <option value="admin">Admin</option>
+                <option value="print_staff">Print staff</option>
+                <option value="super_user">Super user</option>
+              </select>
+            </div>
             <div className="flex flex-wrap items-center gap-5 pt-6">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={editForm.isSuperUser}
-                  onChange={e => setEditForm({ ...editForm, isSuperUser: e.target.checked })}
-                  className="w-4 h-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
-                />
-                <span className="text-sm text-gray-700">Super user</span>
-              </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -324,12 +319,15 @@ export default function UsersTab() {
                       <div className="text-xs text-gray-500">{user.email}</div>
                     </td>
                     <td className="py-3 pr-3">
-                      <button
-                        onClick={() => handleToggleSuper(user)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${user.is_super_user ? 'bg-brand-gold/20 text-brand-blue' : 'bg-gray-100 text-gray-600'}`}
-                      >
-                        {user.is_super_user ? 'Super user' : 'Admin'}
-                      </button>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        user.role === 'super_user' || user.is_super_user
+                          ? 'bg-brand-gold/20 text-brand-blue'
+                          : user.role === 'print_staff'
+                            ? 'bg-blue-50 text-blue-700'
+                            : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {ROLE_LABELS[user.role || (user.is_super_user ? 'super_user' : 'admin')] || 'Admin'}
+                      </span>
                     </td>
                     <td className="py-3 pr-3">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${user.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>

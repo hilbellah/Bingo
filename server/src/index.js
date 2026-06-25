@@ -2300,16 +2300,19 @@ app.post('/api/admin/login', adminLoginLimiter, async (req, res) => {
     // Check env-var admin
     if (username.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() && password === process.env.ADMIN_PASSWORD) {
       const token = Buffer.from(`${username}:${password}`).toString('base64');
-      return res.json({ token, displayName: 'Admin', isSuperUser: true });
+      return res.json({ token, displayName: 'Admin', isSuperUser: true, role: 'super_user' });
     }
     // Check DB admin users
     const dbUser = await get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [username]);
     if (dbUser && bcrypt.compareSync(password, dbUser.password_hash)) {
+      const superUser = isSuperUser(dbUser.email, 'db', dbUser);
+      const role = superUser ? 'super_user' : ['admin', 'print_staff'].includes(String(dbUser.role || '').toLowerCase()) ? String(dbUser.role).toLowerCase() : 'admin';
       const token = Buffer.from(`${username}:${password}`).toString('base64');
       return res.json({
         token,
         displayName: dbUser.display_name || dbUser.email,
-        isSuperUser: isSuperUser(dbUser.email, 'db', dbUser),
+        isSuperUser: superUser,
+        role,
       });
     }
     res.status(401).json({ error: 'Invalid credentials' });
@@ -2323,7 +2326,7 @@ app.post('/api/admin/login', adminLoginLimiter, async (req, res) => {
 
 app.get('/api/admin/users', adminAuth, requireSuperUser, async (req, res) => {
   try {
-    const users = await all('SELECT id, email, display_name, is_active, is_super_user, created_at FROM admin_users ORDER BY created_at');
+    const users = await all("SELECT id, email, display_name, is_active, is_super_user, COALESCE(role, CASE WHEN is_super_user = 1 THEN 'super_user' ELSE 'admin' END) as role, created_at FROM admin_users ORDER BY created_at");
     res.json(users);
   } catch (err) {
     console.error('GET /api/admin/users failed:', err);
@@ -2334,6 +2337,9 @@ app.get('/api/admin/users', adminAuth, requireSuperUser, async (req, res) => {
 app.post('/api/admin/users', adminAuth, requireSuperUser, async (req, res) => {
   try {
     const { email, password, displayName, isSuperUser: makeSuperUser } = req.body;
+    const role = ['super_user', 'admin', 'print_staff'].includes(String(req.body.role || '').toLowerCase())
+      ? String(req.body.role).toLowerCase()
+      : makeSuperUser ? 'super_user' : 'admin';
     const normalizedEmail = (email || '').trim();
     if (!normalizedEmail || !password) return res.status(400).json({ error: 'Email and password are required' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'A valid email address is required' });
@@ -2342,15 +2348,16 @@ app.post('/api/admin/users', adminAuth, requireSuperUser, async (req, res) => {
     if (existing) return res.status(409).json({ error: 'User with this email already exists' });
     const id = uuid();
     const hash = bcrypt.hashSync(password, 10);
-    await run('INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user) VALUES (?, ?, ?, ?, ?)',
-      [id, normalizedEmail, hash, displayName || null, makeSuperUser ? 1 : 0]);
+    await run('INSERT INTO admin_users (id, email, password_hash, display_name, is_super_user, role) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, normalizedEmail, hash, displayName || null, role === 'super_user' ? 1 : 0, role]);
     await logAudit('admin_user_created', 'admin_user', id, {
       email: normalizedEmail,
       displayName: displayName || null,
-      isSuperUser: !!makeSuperUser,
+      role,
+      isSuperUser: role === 'super_user',
       createdBy: req.adminUser.email,
     });
-    res.status(201).json({ id, email: normalizedEmail, displayName: displayName || null, isSuperUser: !!makeSuperUser });
+    res.status(201).json({ id, email: normalizedEmail, displayName: displayName || null, isSuperUser: role === 'super_user', role });
   } catch (err) {
     console.error('POST /api/admin/users failed:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -2378,11 +2385,17 @@ app.patch('/api/admin/users/:id', adminAuth, requireSuperUser, async (req, res) 
       }
       await run('UPDATE admin_users SET is_active = ?, updated_at = datetime(\'now\') WHERE id = ?', [isActive ? 1 : 0, req.params.id]);
     }
-    if (req.body.isSuperUser !== undefined) {
-      if (user.email.toLowerCase() === 'kylepaul@stmec.com' && !req.body.isSuperUser) {
+    if (req.body.role !== undefined || req.body.isSuperUser !== undefined) {
+      const nextRole = req.body.role !== undefined
+        ? String(req.body.role || '').toLowerCase()
+        : req.body.isSuperUser ? 'super_user' : 'admin';
+      if (!['super_user', 'admin', 'print_staff'].includes(nextRole)) {
+        return res.status(400).json({ error: 'Invalid role' });
+      }
+      if (user.email.toLowerCase() === 'kylepaul@stmec.com' && nextRole !== 'super_user') {
         return res.status(400).json({ error: 'Kyle account must remain a super user' });
       }
-      await run('UPDATE admin_users SET is_super_user = ?, updated_at = datetime(\'now\') WHERE id = ?', [req.body.isSuperUser ? 1 : 0, req.params.id]);
+      await run('UPDATE admin_users SET role = ?, is_super_user = ?, updated_at = datetime(\'now\') WHERE id = ?', [nextRole, nextRole === 'super_user' ? 1 : 0, req.params.id]);
     }
     await logAudit('admin_user_updated', 'admin_user', req.params.id, {
       email: email !== undefined ? email : user.email,

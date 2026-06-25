@@ -37,7 +37,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
     const departmentPlaceholders = requestedDepartments.map(() => '?').join(',');
     const rows = await all(`
       SELECT b.id as booking_id, b.reference_number, b.total_amount, b.payment_status,
-             b.created_at as booking_created_at,
+             b.created_at as booking_created_at, b.booking_source, b.admin_note,
              s.id as session_id, s.date as session_date, s.time as session_time
              ${specialCols},
              bi.first_name, bi.last_name, bi.price as item_price,
@@ -45,7 +45,7 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
              bi.reference_number as item_reference_number,
              bi.printed_at as item_printed_at,
              seats.table_number, seats.chair_number,
-             COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
+             COALESCE(p.name, sp.name) as package_name, bi.price as package_price
       FROM bookings b
       JOIN sessions s ON b.session_id = s.id
       JOIN booking_items bi ON bi.booking_id = b.id
@@ -101,6 +101,8 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
           totalAmount: row.total_amount,
           totalFormatted: formatCurrency(row.total_amount),
           createdAt: row.booking_created_at,
+          bookingSource: row.booking_source || 'online',
+          adminNote: row.admin_note || '',
           tickets: []
         };
       }

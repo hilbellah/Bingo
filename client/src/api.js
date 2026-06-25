@@ -173,6 +173,11 @@ export async function adminLogin(username, password) {
   return res.json();
 }
 
+export function getAdminRole() {
+  if (sessionStorage.getItem('admin_is_super_user') === 'true') return 'super_user';
+  return sessionStorage.getItem('admin_role') || 'admin';
+}
+
 export async function fetchAdminDashboard(token, dateFrom, dateTo) {
   const params = new URLSearchParams();
   if (dateFrom) params.set('dateFrom', dateFrom);
@@ -378,6 +383,26 @@ export async function moveAdminBookingItemSeat(token, id, { tableNumber, chairNu
     method: 'POST',
     headers: adminHeaders(token),
     body: JSON.stringify({ tableNumber, chairNumber })
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
+export async function issueNoShowCredit(token, id, { amountCents, note } = {}) {
+  const res = await fetch(`${API}/admin/booking-items/${id}/no-show-credit`, {
+    method: 'POST',
+    headers: adminHeaders(token),
+    body: JSON.stringify({ amountCents, note })
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
+export async function createAssignedTicket(token, data) {
+  const res = await fetch(`${API}/admin/assigned-tickets`, {
+    method: 'POST',
+    headers: adminHeaders(token),
+    body: JSON.stringify(data)
   });
   const json = await res.json();
   return { ok: res.ok, ...json };

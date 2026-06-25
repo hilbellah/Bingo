@@ -50,7 +50,7 @@ export const ADMIN_TABS = [
     theme: 'neutral',
     children: [
       { id: 'bookings', label: 'All Sales & Transactions', icon: '$' },
-      { id: 'bulkprint', label: 'Bulk Print', icon: 'P' },
+      { id: 'bulkprint', label: 'Bulk Print', icon: 'P', allowedRoles: ['super_user', 'admin', 'print_staff'] },
       { id: 'customers', label: 'Customers', icon: 'U' },
       { id: 'announcements', label: 'Announcements', icon: 'N' },
       { id: 'archive', label: 'Archive & Audit', icon: 'R' },
@@ -63,7 +63,7 @@ export const ADMIN_TABS = [
     description: 'Settings and access',
     theme: 'neutral',
     children: [
-      { id: 'settings', label: 'Printing Settings', icon: 'P' },
+      { id: 'settings', label: 'Printing Settings', icon: 'P', allowedRoles: ['super_user', 'admin', 'print_staff'] },
       { id: 'users', label: 'Users', icon: 'U', requiresSuperUser: true },
     ],
   },

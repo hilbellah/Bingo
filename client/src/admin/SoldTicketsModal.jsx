@@ -6,6 +6,7 @@ export default function SoldTicketsModal() {
     handlePrintBookingReceipt,
     handleRefundBooking,
     handleRefundBookingItem,
+    handleIssueNoShowCredit,
     handleMoveBookingItemSeat,
     soldModal,
     setSoldModal,
@@ -98,7 +99,20 @@ export default function SoldTicketsModal() {
                                   Refunded {item.refundAmountFormatted || ''}
                                 </span>
                               ) : ['paid', 'partially_refunded'].includes(b.paymentStatus) ? (
-                                <div className="flex justify-end gap-2">
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  {item.credit?.code ? (
+                                    <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700" title={item.credit.note || 'No-show credit'}>
+                                      Credit {item.credit.code}
+                                    </span>
+                                  ) : handleIssueNoShowCredit && (
+                                    <button
+                                      onClick={() => handleIssueNoShowCredit(item, b)}
+                                      className="px-2 py-0.5 text-xs bg-amber-600 text-white rounded hover:bg-amber-700"
+                                      title="Issue a tracked no-show credit without refunding the payment"
+                                    >
+                                      No-Show Credit
+                                    </button>
+                                  )}
                                   {handleMoveBookingItemSeat && (
                                     <button
                                       onClick={() => handleMoveBookingItemSeat(item, b)}

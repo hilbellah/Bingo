@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
-import { fetchAdminSeats, moveAdminBookingItemSeat, toggleAdminSeat, toggleAdminTableSeats, toggleAdminSeatsBulk } from '../api';
+import { createAssignedTicket, fetchAdminSeats, moveAdminBookingItemSeat, toggleAdminSeat, toggleAdminTableSeats, toggleAdminSeatsBulk } from '../api';
 import SessionWeekPicker from '../components/SessionWeekPicker';
 import { SECTIONS } from '../seatLayout';
 import { confirmAdminAction } from './adminConfirm';
@@ -75,6 +75,23 @@ export default function ChairManagementTab() {
   const handleToggleChair = async (chair) => {
     if (chair.status === 'sold') return;
 
+    if (chair.status === 'vacant' && !chair.is_disabled) {
+      const choice = window.prompt(
+        `Table ${chair.table_number}, Chair ${chair.chair_number}\n\nType D to disable this chair.\nType P to assign a promo ticket.\nType N to assign a donation ticket.`,
+        'D'
+      );
+      if (choice === null) return;
+      const action = choice.trim().toUpperCase();
+      if (action === 'P' || action === 'N') {
+        await handleCreateAssignedTicket(chair, action === 'N' ? 'donation' : 'promo');
+        return;
+      }
+      if (action !== 'D') {
+        window.alert('No change made.');
+        return;
+      }
+    }
+
     const nextDisabled = !chair.is_disabled;
     if (!confirmAdminAction({
       action: `${nextDisabled ? 'Disable' : 'Enable'} this chair`,
@@ -97,6 +114,47 @@ export default function ChairManagementTab() {
     setChairMgmtSeats(prev => prev.map(seat =>
       seat.id === chair.id ? { ...seat, is_disabled: nextDisabled ? 1 : 0 } : seat
     ));
+  };
+
+  const handleCreateAssignedTicket = async (chair, type) => {
+    const firstName = window.prompt(`${type === 'donation' ? 'Donation' : 'Promo'} assigned ticket\nFirst name:`);
+    if (firstName === null) return;
+    const lastName = window.prompt('Last name:');
+    if (lastName === null) return;
+    const cleanFirstName = firstName.trim();
+    const cleanLastName = lastName.trim();
+    if (!cleanFirstName || !cleanLastName) {
+      window.alert('First and last name are required.');
+      return;
+    }
+    const note = window.prompt('Note (optional):', type === 'donation' ? 'Donation seat' : 'Promo seat');
+    if (note === null) return;
+
+    if (!confirmAdminAction({
+      action: `Create ${type} assigned ticket`,
+      details: [
+        selectedSession ? `Session: ${selectedSession.date} at ${selectedSession.time}` : '',
+        `Seat: T${chair.table_number}-C${chair.chair_number}`,
+        `Assigned to: ${cleanFirstName} ${cleanLastName}`,
+      ].filter(Boolean),
+      warning: 'This creates a zero-dollar paid ticket, marks the chair sold, and includes the name in bulk printing.',
+    })) return;
+
+    const result = await createAssignedTicket(token, {
+      sessionId: chairMgmtSession,
+      tableNumber: chair.table_number,
+      chairNumber: chair.chair_number,
+      firstName: cleanFirstName,
+      lastName: cleanLastName,
+      type,
+      note,
+    });
+    if (!result.ok) {
+      window.alert(result.error || 'Could not create assigned ticket.');
+      return;
+    }
+    window.alert(`Assigned ticket created: ${result.ticketReference || result.bookingReference}`);
+    await loadSessionSeats(chairMgmtSession);
   };
 
   const handleMoveSoldChair = async (chair) => {
@@ -839,7 +897,12 @@ function AdminChair({ chair, onToggleChair, onMoveSoldChair, bulkSelectMode, sel
     statusText = 'Disabled';
   } else if (isSold) {
     stateClass = 'bg-gray-600 border-gray-500 text-gray-100 hover:scale-150';
-    statusText = chair.booked_name ? `Sold to ${chair.booked_name}` : 'Sold';
+    const sourceLabel = chair.booking_source === 'promo'
+      ? 'Promo'
+      : chair.booking_source === 'donation'
+        ? 'Donation'
+        : 'Sold';
+    statusText = chair.booked_name ? `${sourceLabel} to ${chair.booked_name}` : sourceLabel;
   } else if (isHeld) {
     stateClass = 'bg-amber-500 border-amber-200 text-white hover:scale-150';
     statusText = 'Held';

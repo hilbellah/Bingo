@@ -483,7 +483,8 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
                bi.reference_number as ticket_reference_number,
                bi.first_name as booked_first_name,
                bi.last_name as booked_last_name,
-               b.reference_number as booking_reference_number
+               b.reference_number as booking_reference_number,
+               b.booking_source
         FROM seats s
         LEFT JOIN (
           SELECT bi.id, bi.booking_id, bi.seat_id, bi.reference_number, bi.first_name, bi.last_name

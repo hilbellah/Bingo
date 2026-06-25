@@ -70,14 +70,24 @@ export default function AdminShell({
   onToggleCollapsed,
   adminDisplayName,
   isSuperUser,
+  adminRole = 'admin',
   onLogout,
   rightActions,
   children
 }) {
+  const canSeeTab = (tab) => {
+    if (adminRole === 'print_staff') return tab.allowedRoles?.includes('print_staff');
+    return !tab.allowedRoles || tab.allowedRoles.includes(adminRole);
+  };
+
   const visibleTabs = ADMIN_TABS
     .map(tab => {
+      if (!tab.children && !canSeeTab(tab)) return null;
       if (!tab.children) return tab;
-      const visibleChildren = tab.children.filter(c => !c.requiresSuperUser || isSuperUser);
+      const visibleChildren = tab.children.filter(c =>
+        (!c.requiresSuperUser || isSuperUser) &&
+        canSeeTab(c)
+      );
       if (visibleChildren.length === 0) return null;
       return { ...tab, children: visibleChildren };
     })

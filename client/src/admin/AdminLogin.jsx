@@ -19,11 +19,12 @@ export default function AdminLogin() {
     setLoading(true);
     setError('');
     try {
-      const { token, displayName, isSuperUser } = await adminLogin(username, password);
+      const { token, displayName, isSuperUser, role } = await adminLogin(username, password);
       sessionStorage.setItem('admin_token', token);
       sessionStorage.setItem('admin_display_name', displayName || username);
       sessionStorage.setItem('admin_is_super_user', isSuperUser ? 'true' : 'false');
-      navigate('/admin/dashboard');
+      sessionStorage.setItem('admin_role', role || (isSuperUser ? 'super_user' : 'admin'));
+      navigate((role === 'print_staff' && !isSuperUser) ? '/admin/bulkprint' : '/admin/dashboard');
     } catch {
       setError('Invalid username or password');
     }
