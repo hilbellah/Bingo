@@ -167,6 +167,64 @@ Running record of admin/backend changes, where to access them, and the save-poin
 - Block seats and assign names for promos/donations so bulk-printed tickets include the assigned person. Status: not built.
 - Link external Authorize.Net refunds back to booking and seat status. Status: not fully fixed.
 
+**How to move a booked seat today**
+- Use this when the customer is keeping the same paid order but needs a different chair.
+- Option 1:
+  - Go to `https://booking.wolastoqcasino.ca/admin`
+  - Open `Bookings` / `Sales & Transactions`
+  - Open `Booking Sales`
+  - Click the session row or ticket count.
+  - Find the ticket.
+  - Click `Move Seat`.
+  - Enter the new table number.
+  - Enter the new chair number.
+  - Confirm the warning prompt.
+- Option 2:
+  - Go to `https://booking.wolastoqcasino.ca/admin`
+  - Open `Bingo` -> `Manage Chairs`
+  - Select the correct session.
+  - Click the sold chair that needs to move.
+  - Enter the new table number.
+  - Enter the new chair number.
+  - Confirm the warning prompt.
+- The target chair must be vacant and enabled.
+- The system keeps the booking paid, frees the old chair, marks the new chair sold, and logs the move.
+
+**How to refund or void inside the platform today**
+- Use this when money should be returned through the admin platform, not directly through Authorize.Net.
+- Go to `https://booking.wolastoqcasino.ca/admin`
+- Open `Bookings` / `Sales & Transactions`
+- Open the booking details from `Booking Sales` or the sold-ticket details.
+- For a full booking refund/void, use the booking-level `Refund` action.
+- For a single-ticket refund, use the ticket-level refund action beside that ticket.
+- Confirm the warning prompt.
+- The system checks Authorize.Net and chooses the valid action:
+  - `Void` for unsettled payments.
+  - `Refund` for settled payments.
+- Seats tied to refunded/voided tickets are released by the platform.
+
+**How to handle a booking already refunded directly in Authorize.Net**
+- This is not fully automated yet.
+- Do not assume the platform seat was released just because Authorize.Net shows a refund.
+- Check the booking in `Bookings` / `Sales & Transactions`.
+- Check the chair in `Bingo` -> `Manage Chairs`.
+- If the platform still shows the chair as sold, do not move or resell it until the booking state is corrected in-platform.
+- Current safest workflow is to perform refunds/voids from the admin platform whenever possible so seat release and reports stay linked.
+
+**How to block overflow or unavailable chairs today**
+- Go to `https://booking.wolastoqcasino.ca/admin`
+- Open `Bingo` -> `Manage Chairs`
+- Select the correct session.
+- Click an available chair to disable it, or use the table/bulk controls for multiple chairs.
+- Confirm the warning prompt.
+- Disabled chairs cannot be purchased by customers.
+- This only blocks availability. It does not assign a promo/donation name or create printable assigned tickets.
+
+**What staff should not try yet**
+- Do not use chair blocking as a replacement for named promo/donation tickets if the printed ticket must show a person's name.
+- Do not promise a no-show credit workflow yet; credit handling is not built.
+- Do not rely on external Authorize.Net refunds to automatically clean up the booking in the platform until that path is verified or improved.
+
 **Timeline note**
 - These changes were requested for follow-up after July 12; the current bingo/live event exposed the operational gap.
 
