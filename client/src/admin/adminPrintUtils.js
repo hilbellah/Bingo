@@ -395,7 +395,7 @@ export function buildDailySalesReceiptLines(dailySales, cfg = {}) {
     `<div class="sub-header">${escapeHtml(cfg.businessSubtitle || "Saint Mary's Entertainment Centre")}</div>`,
     '<div class="line"></div>',
     '<div class="center bold">DAILY SALES REPORT</div>',
-    `<div class="center">${escapeHtml(dailySales.date)}</div>`,
+    `<div class="center">${escapeHtml(dailySales.rangeLabel || dailySales.date)}</div>`,
     '<div class="line"></div>',
     '<div class="item-row"><span class="item-qty bold">#</span><span class="item-desc bold">Name / Ticket</span><span class="item-amt bold">Price</span></div>',
     '<div class="line"></div>',

@@ -26,6 +26,10 @@ export default function BookingsTab() {
     loadDailySales,
     dailySalesDate,
     setDailySalesDate,
+    dailySalesDateTo,
+    setDailySalesDateTo,
+    dailySalesRange,
+    setDailySalesRange,
     dailySales,
     transactions,
     transactionFilters,
@@ -84,6 +88,33 @@ export default function BookingsTab() {
     return 'bg-gray-100 text-gray-600';
   };
   const canPrintTransactionReceipt = (status) => ['paid', 'partially_refunded', 'refunded', 'voided'].includes(status);
+  const addDays = (dateText, days) => {
+    const date = new Date(`${dateText}T00:00:00`);
+    date.setDate(date.getDate() + days);
+    return date.toISOString().split('T')[0];
+  };
+  const dailySalesRangeLabel = dailySales?.rangeLabel || dailySalesDate;
+  const dailySalesReportTitle = dailySales?.reportTitle || 'Daily Sales Report';
+  const getDailySalesFilters = (overrides = {}) => {
+    const range = overrides.range || dailySalesRange;
+    const date = overrides.date || dailySalesDate;
+    const dateFrom = overrides.dateFrom || date;
+    const dateTo = overrides.dateTo || dailySalesDateTo || dateFrom;
+    const search = overrides.search ?? dailySalesSearch;
+    if (range === 'multi-day') return { range, dateFrom, dateTo, search };
+    return { range, date, search };
+  };
+  const refreshDailySales = (overrides = {}) => loadDailySales(getDailySalesFilters(overrides));
+  const updateDailySalesRange = (range) => {
+    setDailySalesRange(range);
+    const overrides = { range };
+    if (range === 'multi-day' && dailySalesDateTo < dailySalesDate) {
+      const nextDateTo = addDays(dailySalesDate, 6);
+      setDailySalesDateTo(nextDateTo);
+      overrides.dateTo = nextDateTo;
+    }
+    refreshDailySales(overrides);
+  };
   return (
     <>
         {/* BOOKINGS TAB - Sales & Transactions */}
@@ -387,22 +418,69 @@ export default function BookingsTab() {
             {activeBoard === 'dailySales' && (
             <SalesPanel
               title="Daily Sales"
-              description="A ticket-level report for one selected day, including attendee names, seats, packages, add-ons, export, print, and receipt tools."
+              description="Ticket-level reports by day, custom date range, week, or month, including attendee names, seats, packages, add-ons, export, print, and receipt tools."
             >
               <div className="flex items-center gap-3 flex-wrap mb-4 pt-4">
+                  <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
+                    {[
+                      ['daily', 'Daily'],
+                      ['multi-day', 'Multi-day'],
+                      ['weekly', 'Weekly'],
+                      ['monthly', 'Monthly'],
+                    ].map(([range, label]) => (
+                      <button
+                        key={range}
+                        type="button"
+                        onClick={() => updateDailySalesRange(range)}
+                        className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                          dailySalesRange === range
+                            ? 'bg-brand-blue text-white shadow-sm'
+                            : 'text-gray-600 hover:bg-white'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     type="text"
                     placeholder="Search by name..."
                     value={dailySalesSearch}
-                    onChange={e => { setDailySalesSearch(e.target.value); loadDailySales(dailySalesDate, e.target.value); }}
+                    onChange={e => { setDailySalesSearch(e.target.value); refreshDailySales({ search: e.target.value }); }}
                     className="px-3 py-1.5 border rounded-lg text-sm w-48"
                   />
                   <input
                     type="date"
                     value={dailySalesDate}
-                    onChange={e => { setDailySalesDate(e.target.value); loadDailySales(e.target.value, dailySalesSearch); }}
+                    onChange={e => {
+                      setDailySalesDate(e.target.value);
+                      const overrides = { date: e.target.value, dateFrom: e.target.value };
+                      if (dailySalesRange === 'multi-day' && dailySalesDateTo < e.target.value) {
+                        const nextDateTo = e.target.value;
+                        setDailySalesDateTo(nextDateTo);
+                        overrides.dateTo = nextDateTo;
+                      }
+                      refreshDailySales(overrides);
+                    }}
                     className="px-3 py-1.5 border rounded-lg text-sm"
                   />
+                  {dailySalesRange === 'multi-day' && (
+                    <>
+                      <span className="text-sm text-gray-500">to</span>
+                      <input
+                        type="date"
+                        value={dailySalesDateTo}
+                        min={dailySalesDate}
+                        onChange={e => { setDailySalesDateTo(e.target.value); refreshDailySales({ dateTo: e.target.value }); }}
+                        className="px-3 py-1.5 border rounded-lg text-sm"
+                      />
+                    </>
+                  )}
+                  {dailySales && (
+                    <span className="text-sm text-gray-500">
+                      Showing {dailySalesRangeLabel}
+                    </span>
+                  )}
                   {dailySales && dailySales.items.length > 0 && (
                     <button
                       onClick={() => {
@@ -428,7 +506,7 @@ export default function BookingsTab() {
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `daily-sales-${dailySales.date}.csv`;
+                        a.download = `sales-report-${dailySales.rangeLabel || dailySales.date}.csv`;
                         a.click();
                         URL.revokeObjectURL(url);
                       }}
@@ -444,7 +522,7 @@ export default function BookingsTab() {
                         const subtotalWithoutServiceCharges = dailySales.subtotalWithoutServiceChargesFormatted || dailySales.grandTotalFormatted;
                         const serviceChargeSubtotal = dailySales.serviceChargeSubtotalFormatted || 'CA$0.00';
                         const totalWithServiceCharges = dailySales.totalWithServiceChargesFormatted || dailySales.grandTotalFormatted;
-                        w.document.write(`<html><head><title>Daily Sales - ${dailySales.date}</title>
+                        w.document.write(`<html><head><title>${dailySalesReportTitle} - ${dailySalesRangeLabel}</title>
                           <style>body{font-family:Arial,sans-serif;padding:20px;color:#333}
                           h2{margin:0 0 4px}p.sub{color:#666;font-size:14px;margin:0 0 16px}
                           table{width:100%;border-collapse:collapse;font-size:13px}
@@ -453,7 +531,7 @@ export default function BookingsTab() {
                           .right{text-align:right}.center{text-align:center}
                           tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:10px}
                           @media print{body{padding:0;color:#000;background:#fff}*,*::before,*::after{color:#000!important;background:#fff!important;border-color:#000!important;box-shadow:none!important;text-shadow:none!important}}</style></head><body>`);
-                        w.document.write(`<h2>Daily Sales Report</h2><p class="sub">${dailySales.date} — ${dailySales.totalTickets} ticket(s) / ${dailySales.totalBookings} booking(s) — ${totalWithServiceCharges}</p>`);
+                        w.document.write(`<h2>${dailySalesReportTitle}</h2><p class="sub">${dailySalesRangeLabel} — ${dailySales.totalTickets} ticket(s) / ${dailySales.totalBookings} booking(s) — ${totalWithServiceCharges}</p>`);
                         w.document.write('<table><thead><tr><th>#</th><th>Reference</th><th>Name</th><th>Table</th><th>Chair</th><th>Package</th><th>Add-ons</th><th>Session</th><th class="right">Price</th><th>Time</th></tr></thead><tbody>');
                         for (const item of dailySales.items) {
                           const addonText = item.addons && item.addons.length > 0 ? item.addons.map(a => `${a.packageName} x${a.quantity} (${a.priceFormatted})`).join(', ') : '';
@@ -518,7 +596,7 @@ export default function BookingsTab() {
               {!dailySales ? (
                 <p className="text-gray-400 text-center py-8">Loading...</p>
               ) : dailySales.items.length === 0 ? (
-                <p className="text-gray-400 text-center py-8">No sales for {dailySales.date}{dailySalesSearch ? ` matching "${dailySalesSearch}"` : ''}</p>
+                <p className="text-gray-400 text-center py-8">No sales for {dailySalesRangeLabel}{dailySalesSearch ? ` matching "${dailySalesSearch}"` : ''}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">

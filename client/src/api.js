@@ -243,10 +243,16 @@ export async function deleteAdminPackage(token, id) {
   return { ok: res.ok, status: res.status, ...body };
 }
 
-export async function fetchDailySales(token, date, search) {
+export async function fetchDailySales(token, dateOrFilters, search) {
   const params = new URLSearchParams();
-  if (date) params.set('date', date);
-  if (search) params.set('search', search);
+  const filters = typeof dateOrFilters === 'object' && dateOrFilters !== null
+    ? dateOrFilters
+    : { date: dateOrFilters, search };
+  if (filters.date) params.set('date', filters.date);
+  if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+  if (filters.dateTo) params.set('dateTo', filters.dateTo);
+  if (filters.range) params.set('range', filters.range);
+  if (filters.search) params.set('search', filters.search);
   const qs = params.toString() ? `?${params.toString()}` : '';
   const res = await fetch(`${API}/admin/daily-sales${qs}`, { headers: adminHeaders(token) });
   return res.json();

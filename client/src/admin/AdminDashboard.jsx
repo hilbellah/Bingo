@@ -141,6 +141,8 @@ export default function AdminDashboard() {
   const [salesDrilldown, setSalesDrilldown] = useState(null); // { session, bookings }
   const [dailySales, setDailySales] = useState(null);
   const [dailySalesDate, setDailySalesDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dailySalesDateTo, setDailySalesDateTo] = useState(new Date().toISOString().split('T')[0]);
+  const [dailySalesRange, setDailySalesRange] = useState('daily');
   const [dailySalesSearch, setDailySalesSearch] = useState('');
   const [transactions, setTransactions] = useState({ items: [], summary: null, filters: {} });
   const [transactionFilters, setTransactionFilters] = useState({ dateFrom: '', dateTo: '', status: 'all', search: '' });
@@ -223,7 +225,26 @@ export default function AdminDashboard() {
   const loadDeletedSessions = () => fetchDeletedSessions(token).then(setDeletedSessions);
   const loadAuditLogs = () => fetchAuditLog(token, { limit: 50 }).then(setAuditLogs);
   const loadBookingSales = () => fetchBookingSales(token).then(setBookingSales);
-  const loadDailySales = (date, search) => fetchDailySales(token, date, search).then(setDailySales);
+  const loadDailySales = (filters = {}, legacySearch) => {
+    const nextFilters = typeof filters === 'object' && filters !== null
+      ? filters
+      : { date: filters, search: legacySearch };
+    const range = nextFilters.range || dailySalesRange;
+    const date = nextFilters.date || dailySalesDate;
+    const dateFrom = nextFilters.dateFrom || date;
+    const dateTo = nextFilters.dateTo || dailySalesDateTo || dateFrom;
+    const request = {
+      range,
+      search: nextFilters.search ?? dailySalesSearch,
+    };
+    if (range === 'multi-day') {
+      request.dateFrom = dateFrom;
+      request.dateTo = dateTo;
+    } else {
+      request.date = date;
+    }
+    return fetchDailySales(token, request).then(setDailySales);
+  };
   const loadTransactions = (filters = transactionFilters) => fetchAdminTransactions(token, filters).then(setTransactions);
   const loadCustomers = (search) => fetchAdminCustomers(token, search ?? customerSearch).then(setCustomers);
 
@@ -231,7 +252,7 @@ export default function AdminDashboard() {
     if (tab === 'sessions') loadSessions();
     if (tab === 'events') { loadSessions(); loadBookingSales(); }
     if (tab === 'packages') loadPackages();
-    if (tab === 'bookings') { loadBookingSales(); loadDailySales(dailySalesDate); loadTransactions(transactionFilters); }
+    if (tab === 'bookings') { loadBookingSales(); loadDailySales(); loadTransactions(transactionFilters); }
     if (tab === 'customers') loadCustomers();
     if (tab === 'dashboard') loadDashboard();
     if (tab === 'announcements') loadAnnouncements();
@@ -1047,6 +1068,10 @@ export default function AdminDashboard() {
     loadDailySales,
     dailySalesDate,
     setDailySalesDate,
+    dailySalesDateTo,
+    setDailySalesDateTo,
+    dailySalesRange,
+    setDailySalesRange,
     dailySales,
     transactions,
     transactionFilters,
