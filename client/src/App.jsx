@@ -570,7 +570,7 @@ export default function App() {
       return pkg ? addonSum + pkg.price * addon.quantity : addonSum;
     }, 0);
   }, 0);
-  const serviceFeeUnitAmount = isSelectedSpecialBingo ? 0 : bookingConfig.serviceFeePerPersonAmount;
+  const serviceFeeUnitAmount = (isSelectedSpecialBingo || isSelectedEvent) ? 0 : bookingConfig.serviceFeePerPersonAmount;
   const serviceFeeAmount = partySize > 0 ? serviceFeeUnitAmount * partySize : 0;
   const total = orderSubtotal + serviceFeeAmount;
 

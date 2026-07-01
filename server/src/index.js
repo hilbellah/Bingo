@@ -124,7 +124,7 @@ function isAuthorizeNetWebhookPath(req) {
 }
 
 function getCheckoutServiceFeeCents(attendees = [], sessionType = 'regular_bingo') {
-  if (sessionType === 'special_bingo') return 0;
+  if (sessionType === 'special_bingo' || sessionType === 'event') return 0;
   return CHECKOUT_SERVICE_FEE_CENTS * Math.max(0, attendees.length || 0);
 }
 

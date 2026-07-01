@@ -42,6 +42,13 @@ const admissionPackageId = 'special-no-service-fee-admission';
 const phdPackageId = 'special-no-service-fee-phd';
 const admissionPrice = 7500;
 const phdPrice = 5000;
+const eventSessionId = 'event-no-service-fee-session';
+const eventSeatId = 'event-no-service-fee-seat';
+const eventInitiateSeatId = 'event-no-service-fee-initiate-seat';
+const eventHolderId = 'event-no-service-fee-holder';
+const eventInitiateHolderId = 'event-no-service-fee-initiate-holder';
+const eventPackageId = 'event-no-service-fee-admission';
+const eventAdmissionPrice = 3000;
 
 await run(
   `INSERT INTO sessions
@@ -78,6 +85,30 @@ await run(
     (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description)
    VALUES (?, ?, 'PHD Unit', ?, 'optional', 1, 1, 1, 'Handheld device for special bingo.')`,
   [phdPackageId, sessionId, phdPrice]
+);
+await run(
+  `INSERT INTO sessions
+    (id, date, time, cutoff_time, is_available, session_type, is_special_event, event_title)
+   VALUES (?, ?, '19:30', '12:00', 1, 'event', 1, 'Live Event')`,
+  [eventSessionId, futureDate]
+);
+await run(
+  `INSERT INTO seats
+    (id, session_id, table_number, chair_number, status, held_by, held_until)
+   VALUES (?, ?, 1, 1, 'held', ?, ?)`,
+  [eventSeatId, eventSessionId, eventHolderId, holdUntil]
+);
+await run(
+  `INSERT INTO seats
+    (id, session_id, table_number, chair_number, status, held_by, held_until)
+   VALUES (?, ?, 1, 2, 'held', ?, ?)`,
+  [eventInitiateSeatId, eventSessionId, eventInitiateHolderId, holdUntil]
+);
+await run(
+  `INSERT INTO session_packages
+    (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description)
+   VALUES (?, ?, 'Live Event Admission', ?, 'required', 1, 0, 0, '')`,
+  [eventPackageId, eventSessionId, eventAdmissionPrice]
 );
 await saveDb();
 
@@ -163,7 +194,55 @@ try {
   assert.equal(savedBooking.total_amount, admissionPrice);
   assert.equal(savedBooking.payment_status, 'paid');
 
-  console.log('Special bingo service fee API check passed.');
+  const eventResult = await postJson('/api/bookings', {
+    sessionId: eventSessionId,
+    holderId: eventHolderId,
+    email: '',
+    customerFirstName: 'Event',
+    customerLastName: 'Tester',
+    attendees: [
+      {
+        firstName: 'Event',
+        lastName: 'Tester',
+        seatId: eventSeatId,
+        addons: [],
+      },
+    ],
+  }, { Authorization: `Basic ${auth}` });
+
+  assert.equal(eventResult.response.status, 200);
+  assert.ok(eventResult.data.bookingId);
+  assert.equal(eventResult.data.totalAmount, eventAdmissionPrice);
+  assert.equal(eventResult.data.totalFormatted, 'CA$30.00');
+
+  const savedEventBooking = await get('SELECT total_amount, payment_status FROM bookings WHERE id = ?', [eventResult.data.bookingId]);
+  assert.equal(savedEventBooking.total_amount, eventAdmissionPrice);
+  assert.equal(savedEventBooking.payment_status, 'paid');
+
+  const eventInitiateResult = await postJson('/api/bookings/initiate', {
+    sessionId: eventSessionId,
+    holderId: eventInitiateHolderId,
+    email: 'event-service-fee@example.com',
+    customerFirstName: 'Event',
+    customerLastName: 'Checkout',
+    attendees: [
+      {
+        firstName: 'Event',
+        lastName: 'Checkout',
+        seatId: eventInitiateSeatId,
+        addons: [],
+      },
+    ],
+  });
+
+  assert.equal(eventInitiateResult.response.status, 200);
+  assert.ok(eventInitiateResult.data.bookingId);
+  assert.equal(eventInitiateResult.data.totalAmount, eventAdmissionPrice);
+  assert.equal(eventInitiateResult.data.totalFormatted, 'CA$30.00');
+  assert.equal(eventInitiateResult.data.serviceFeeAmount, 0);
+  assert.equal(eventInitiateResult.data.serviceFeeQuantity, 1);
+
+  console.log('Special bingo and live event service fee API check passed.');
 } finally {
   await new Promise(resolve => listener.close(resolve));
   fs.rmSync(tmpDir, { recursive: true, force: true });
