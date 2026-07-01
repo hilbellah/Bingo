@@ -98,7 +98,7 @@ function formatPriceDollars(cents) {
   return 'CA$' + ((cents || 0) / 100).toFixed(2);
 }
 
-function getBookingChargeBreakdown(booking, attendees, pkgById) {
+function getBookingChargeBreakdown(booking, session, attendees, pkgById) {
   const subtotal = (attendees || []).reduce((sum, attendee) => {
     const packagePrice = Number.isFinite(Number(attendee.packagePrice))
       ? Number(attendee.packagePrice)
@@ -111,9 +111,11 @@ function getBookingChargeBreakdown(booking, attendees, pkgById) {
   }, 0);
   const totalAmount = Number(booking?.totalAmount) || 0;
   const serviceCharge = Math.max(0, totalAmount - subtotal);
+  const sessionType = normalizeSessionType(session?.session_type, session?.is_special_event);
   return {
     subtotal,
     serviceCharge,
+    serviceChargeLabel: sessionType === 'event' ? 'HST (15%)' : 'Service charge',
     totalAmount: totalAmount || subtotal + serviceCharge,
   };
 }
@@ -222,7 +224,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
   const pkgById = new Map(packages.map(p => [p.id, p]));
   const thankYouMessage = 'Thank you for booking with us. We look forward to seeing you there!';
   const presentation = getBookingPresentation(session);
-  const charges = getBookingChargeBreakdown(booking, attendees, pkgById);
+  const charges = getBookingChargeBreakdown(booking, session, attendees, pkgById);
 
   const attendeeBlocks = attendees.map((att, idx) => {
     const seat = seatById.get(att.seatId) || {};
@@ -303,7 +305,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
               <td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(formatPriceDollars(charges.subtotal))}</td>
             </tr>
             <tr>
-              <td style="padding:6px 0;font-size:13px;color:#6b7280;">Service charge</td>
+              <td style="padding:6px 0;font-size:13px;color:#6b7280;">${escapeHtml(charges.serviceChargeLabel)}</td>
               <td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right;">${escapeHtml(formatPriceDollars(charges.serviceCharge))}</td>
             </tr>
             <tr>
@@ -366,7 +368,7 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   const seatById = new Map(seats.map(s => [s.id, s]));
   const pkgById = new Map(packages.map(p => [p.id, p]));
   const presentation = getBookingPresentation(session);
-  const charges = getBookingChargeBreakdown(booking, attendees, pkgById);
+  const charges = getBookingChargeBreakdown(booking, session, attendees, pkgById);
   const lines = [];
 
   lines.push(`${presentation.readyLine} ${presentation.confirmationLine}.`);
@@ -375,7 +377,7 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
   if (session?.event_title) lines.push(`${presentation.sessionType === 'event' ? 'Event' : 'Title'}: ${session.event_title}`);
   lines.push(`${presentation.sessionLabel}: ${formatDateLong(session?.date)} at ${formatTime12h(session?.time)}`);
   lines.push(`Subtotal: ${formatPriceDollars(charges.subtotal)}`);
-  lines.push(`Service charge: ${formatPriceDollars(charges.serviceCharge)}`);
+  lines.push(`${charges.serviceChargeLabel}: ${formatPriceDollars(charges.serviceCharge)}`);
   lines.push(`Total paid: ${formatPriceDollars(charges.totalAmount)}`);
   lines.push('');
   lines.push('Thank you for booking with us. We look forward to seeing you there!');

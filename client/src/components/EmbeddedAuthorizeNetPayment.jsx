@@ -254,6 +254,12 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
                     <span className="font-semibold text-gray-700">{payment.checkoutSummary.serviceFee.priceFormatted}</span>
                   </div>
                 )}
+                {payment.checkoutSummary?.salesTax && (
+                  <div className="mb-3 flex items-center justify-between gap-4 text-sm">
+                    <span className="text-gray-500">{payment.checkoutSummary.salesTax.name}</span>
+                    <span className="font-semibold text-gray-700">{payment.checkoutSummary.salesTax.priceFormatted}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-gray-600 font-medium">Total Due</span>
                   <span className="text-2xl font-bold text-brand-gold">{payment.totalFormatted}</span>

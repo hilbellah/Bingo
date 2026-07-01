@@ -49,6 +49,8 @@ const eventHolderId = 'event-no-service-fee-holder';
 const eventInitiateHolderId = 'event-no-service-fee-initiate-holder';
 const eventPackageId = 'event-no-service-fee-admission';
 const eventAdmissionPrice = 3000;
+const eventHstAmount = 450;
+const eventTotalAmount = eventAdmissionPrice + eventHstAmount;
 
 await run(
   `INSERT INTO sessions
@@ -212,11 +214,11 @@ try {
 
   assert.equal(eventResult.response.status, 200);
   assert.ok(eventResult.data.bookingId);
-  assert.equal(eventResult.data.totalAmount, eventAdmissionPrice);
-  assert.equal(eventResult.data.totalFormatted, 'CA$30.00');
+  assert.equal(eventResult.data.totalAmount, eventTotalAmount);
+  assert.equal(eventResult.data.totalFormatted, 'CA$34.50');
 
   const savedEventBooking = await get('SELECT total_amount, payment_status FROM bookings WHERE id = ?', [eventResult.data.bookingId]);
-  assert.equal(savedEventBooking.total_amount, eventAdmissionPrice);
+  assert.equal(savedEventBooking.total_amount, eventTotalAmount);
   assert.equal(savedEventBooking.payment_status, 'paid');
 
   const eventInitiateResult = await postJson('/api/bookings/initiate', {
@@ -237,10 +239,12 @@ try {
 
   assert.equal(eventInitiateResult.response.status, 200);
   assert.ok(eventInitiateResult.data.bookingId);
-  assert.equal(eventInitiateResult.data.totalAmount, eventAdmissionPrice);
-  assert.equal(eventInitiateResult.data.totalFormatted, 'CA$30.00');
+  assert.equal(eventInitiateResult.data.totalAmount, eventTotalAmount);
+  assert.equal(eventInitiateResult.data.totalFormatted, 'CA$34.50');
   assert.equal(eventInitiateResult.data.serviceFeeAmount, 0);
   assert.equal(eventInitiateResult.data.serviceFeeQuantity, 1);
+  assert.equal(eventInitiateResult.data.salesTaxAmount, eventHstAmount);
+  assert.equal(eventInitiateResult.data.salesTaxFormatted, 'CA$4.50');
 
   console.log('Special bingo and live event service fee API check passed.');
 } finally {

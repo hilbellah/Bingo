@@ -116,6 +116,7 @@ const HOLD_CONFIG = resolveHoldConfig();
 const HOLD_MINUTES = HOLD_CONFIG.holdMinutes;
 const PAYMENT_FAILURE_HOLD_MINUTES = HOLD_CONFIG.paymentFailureHoldMinutes;
 const CHECKOUT_SERVICE_FEE_CENTS = 200;
+const EVENT_HST_RATE_BASIS_POINTS = 1500;
 const startTime = Date.now();
 const bookingInitiationLocks = new Map();
 
@@ -126,6 +127,11 @@ function isAuthorizeNetWebhookPath(req) {
 function getCheckoutServiceFeeCents(attendees = [], sessionType = 'regular_bingo') {
   if (sessionType === 'special_bingo' || sessionType === 'event') return 0;
   return CHECKOUT_SERVICE_FEE_CENTS * Math.max(0, attendees.length || 0);
+}
+
+function getTicketSalesTaxCents(ticketSubtotalCents = 0, sessionType = 'regular_bingo') {
+  if (sessionType !== 'event') return 0;
+  return Math.round((Number(ticketSubtotalCents) || 0) * EVENT_HST_RATE_BASIS_POINTS / 10000);
 }
 
 function generateTicketAccessToken() {
@@ -509,6 +515,7 @@ async function insertBookingRecord({
     }
   }
 
+  let ticketSubtotal = 0;
   let totalAmount = getCheckoutServiceFeeCents(attendees, sessionType);
   const bookingId = uuid();
   const refNumber = generateRef();
@@ -523,10 +530,12 @@ async function insertBookingRecord({
     itemRefs.push(itemRef);
     const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg];
     const primaryRequiredPkg = includedRequiredPkgs[0];
+    ticketSubtotal += primaryRequiredPkg.price;
     totalAmount += primaryRequiredPkg.price;
     itemRows.push([itemId, bookingId, att.firstName, att.lastName, att.seatId, primaryRequiredPkg.id, primaryRequiredPkg.price, itemRef]);
 
     for (const requiredAddonPkg of includedRequiredPkgs.slice(1)) {
+      ticketSubtotal += requiredAddonPkg.price;
       totalAmount += requiredAddonPkg.price;
       addonRows.push([uuid(), itemId, requiredAddonPkg.id, 1, requiredAddonPkg.price]);
     }
@@ -538,12 +547,16 @@ async function insertBookingRecord({
           : await get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
         if (pkg) {
           const addonPrice = pkg.price * addon.quantity;
+          ticketSubtotal += addonPrice;
           totalAmount += addonPrice;
           addonRows.push([uuid(), itemId, addon.packageId, addon.quantity, addonPrice]);
         }
       }
     }
   }
+
+  const salesTaxAmount = getTicketSalesTaxCents(ticketSubtotal, sessionType);
+  totalAmount += salesTaxAmount;
 
   let bookingInserted = false;
   try {
@@ -597,7 +610,7 @@ async function insertBookingRecord({
     throw err;
   }
 
-  return { bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken };
+  return { bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken, salesTaxAmount };
 }
 
 function sortedSeatIds(attendees) {
@@ -612,6 +625,36 @@ function sameSeatSet(left, right) {
   return left.every((seatId, index) => seatId === right[index]);
 }
 
+async function calculateRequestedTicketSubtotal({
+  attendees,
+  requiredPkg,
+  requiredPkgs = [requiredPkg].filter(Boolean),
+  sessionPkgs,
+  useSessionPkgs,
+}) {
+  let ticketSubtotal = 0;
+  const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg].filter(Boolean);
+
+  for (const att of attendees || []) {
+    for (const pkg of includedRequiredPkgs) {
+      const pkgPrice = Number(pkg.price || 0);
+      ticketSubtotal += pkgPrice;
+    }
+
+    for (const addon of att.addons || []) {
+      const pkg = useSessionPkgs
+        ? sessionPkgs.find(p => p.id === addon.packageId)
+        : await get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
+      if (pkg) {
+        const addonPrice = Number(pkg.price || 0) * Number(addon.quantity || 0);
+        ticketSubtotal += addonPrice;
+      }
+    }
+  }
+
+  return ticketSubtotal;
+}
+
 async function calculateRequestedBookingTotal({
   attendees,
   requiredPkg,
@@ -620,25 +663,16 @@ async function calculateRequestedBookingTotal({
   useSessionPkgs,
   sessionType = 'regular_bingo',
 }) {
-  let totalAmount = getCheckoutServiceFeeCents(attendees, sessionType);
-  const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg].filter(Boolean);
-
-  for (const att of attendees || []) {
-    for (const pkg of includedRequiredPkgs) {
-      totalAmount += Number(pkg.price || 0);
-    }
-
-    for (const addon of att.addons || []) {
-      const pkg = useSessionPkgs
-        ? sessionPkgs.find(p => p.id === addon.packageId)
-        : await get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
-      if (pkg) {
-        totalAmount += Number(pkg.price || 0) * Number(addon.quantity || 0);
-      }
-    }
-  }
-
-  return totalAmount;
+  const ticketSubtotal = await calculateRequestedTicketSubtotal({
+    attendees,
+    requiredPkg,
+    requiredPkgs,
+    sessionPkgs,
+    useSessionPkgs,
+  });
+  return ticketSubtotal
+    + getCheckoutServiceFeeCents(attendees, sessionType)
+    + getTicketSalesTaxCents(ticketSubtotal, sessionType);
 }
 
 function buildInitiateResponse({
@@ -653,6 +687,7 @@ function buildInitiateResponse({
   token,
   serviceFeeAmount = CHECKOUT_SERVICE_FEE_CENTS,
   serviceFeeQuantity = 1,
+  salesTaxAmount = 0,
   duplicate = false,
 }) {
   return {
@@ -666,6 +701,9 @@ function buildInitiateResponse({
     serviceFeeUnitAmount: CHECKOUT_SERVICE_FEE_CENTS,
     serviceFeeUnitFormatted: formatCurrency(CHECKOUT_SERVICE_FEE_CENTS),
     serviceFeeQuantity,
+    salesTaxAmount,
+    salesTaxFormatted: formatCurrency(salesTaxAmount),
+    salesTaxLabel: 'HST (15%)',
     email,
     customerFirstName,
     customerLastName,
@@ -1646,6 +1684,14 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           useSessionPkgs,
           sessionType,
         });
+        const refreshedTicketSubtotal = await calculateRequestedTicketSubtotal({
+          attendees,
+          requiredPkg,
+          requiredPkgs,
+          sessionPkgs,
+          useSessionPkgs,
+        });
+        const refreshedSalesTaxAmount = getTicketSalesTaxCents(refreshedTicketSubtotal, sessionType);
 
         const result = await createHostedPaymentPage({
           bookingId: reusable.bookingId,
@@ -1685,14 +1731,15 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
             token: result.token,
             serviceFeeAmount: getCheckoutServiceFeeCents(attendees, sessionType),
             serviceFeeQuantity: attendees.length,
+            salesTaxAmount: refreshedSalesTaxAmount,
             duplicate: true,
           }),
         };
       }
 
-      let bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken;
+      let bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken, salesTaxAmount;
       try {
-        ({ bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken } = await insertBookingRecord({
+        ({ bookingId, refNumber, totalAmount, itemRefs, ticketAccessToken, salesTaxAmount } = await insertBookingRecord({
           sessionId,
           attendees,
           requiredPkg,
@@ -1757,6 +1804,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           token: result.token,
           serviceFeeAmount: getCheckoutServiceFeeCents(attendees, sessionType),
           serviceFeeQuantity: attendees.length,
+          salesTaxAmount,
         }),
       };
     });

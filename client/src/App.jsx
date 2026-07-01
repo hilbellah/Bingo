@@ -24,6 +24,7 @@ import { formatDateShort, formatPrice, formatTime } from './utils/formatters';
 import { useSocket } from './useSocket';
 
 const CHECKOUT_SERVICE_FEE_CENTS = 200;
+const EVENT_HST_RATE = 0.15;
 
 // Detect payment-related URLs at app mount. Returns null for the normal
 // booking flow, or { bookingId } when the customer has just returned from
@@ -441,6 +442,7 @@ export default function App() {
     const serviceFeeAmount = result.serviceFeeAmount || 0;
     const serviceFeeQuantity = result.serviceFeeQuantity || attendees.length || 1;
     const serviceFeeUnitFormatted = result.serviceFeeUnitFormatted || formatPrice(result.serviceFeeUnitAmount || CHECKOUT_SERVICE_FEE_CENTS);
+    const salesTaxAmount = result.salesTaxAmount || 0;
     setPaymentSession({
       ...result,
       checkoutSummary: {
@@ -449,6 +451,11 @@ export default function App() {
           name: `Service charge (${serviceFeeUnitFormatted} x ${serviceFeeQuantity} ${serviceFeeQuantity === 1 ? 'player' : 'players'})`,
           price: serviceFeeAmount,
           priceFormatted: result.serviceFeeFormatted || formatPrice(serviceFeeAmount),
+        } : null,
+        salesTax: salesTaxAmount > 0 ? {
+          name: result.salesTaxLabel || 'HST (15%)',
+          price: salesTaxAmount,
+          priceFormatted: result.salesTaxFormatted || formatPrice(salesTaxAmount),
         } : null,
       },
     });
@@ -572,7 +579,8 @@ export default function App() {
   }, 0);
   const serviceFeeUnitAmount = (isSelectedSpecialBingo || isSelectedEvent) ? 0 : bookingConfig.serviceFeePerPersonAmount;
   const serviceFeeAmount = partySize > 0 ? serviceFeeUnitAmount * partySize : 0;
-  const total = orderSubtotal + serviceFeeAmount;
+  const salesTaxAmount = isSelectedEvent ? Math.round(orderSubtotal * EVENT_HST_RATE) : 0;
+  const total = orderSubtotal + serviceFeeAmount + salesTaxAmount;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -769,6 +777,7 @@ export default function App() {
         optionalPkgs={optionalPkgs}
         serviceFeeUnitAmount={serviceFeeUnitAmount}
         serviceFeeAmount={serviceFeeAmount}
+        salesTaxAmount={salesTaxAmount}
         maxOptionalPackagesPerPlayer={bookingConfig.maxOptionalPackagesPerPlayer}
         total={total}
         allNamesValid={allNamesValid}

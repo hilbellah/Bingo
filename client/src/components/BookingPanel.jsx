@@ -13,7 +13,7 @@ const PHD_CREDIT_PACKAGE_ID = 'pkg-regular-optional-phd-credit';
 export default function BookingPanel({
   isOpen, onClose, onPickChairs, session, partySize, onPartySize,
   attendees, onAttendees, selectedSeats, seats,
-  requiredPkg, requiredPkgs, optionalPkgs, serviceFeeUnitAmount = 0, serviceFeeAmount = 0, total,
+  requiredPkg, requiredPkgs, optionalPkgs, serviceFeeUnitAmount = 0, serviceFeeAmount = 0, salesTaxAmount = 0, total,
   maxOptionalPackagesPerPlayer = 3,
   allNamesValid, allSeatsSelected, loading, onSubmit, holdExpiry,
   step, onStepChange, phdInventory
@@ -621,6 +621,12 @@ export default function BookingPanel({
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">Service charge ({formatPrice(serviceFeeUnitAmount)} x {partySize} {partySize === 1 ? 'player' : 'players'})</span>
                       <span className="text-gray-700 font-medium">{formatPrice(serviceFeeAmount)}</span>
+                    </div>
+                  )}
+                  {salesTaxAmount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">HST (15%)</span>
+                      <span className="text-gray-700 font-medium">{formatPrice(salesTaxAmount)}</span>
                     </div>
                   )}
                 </div>
