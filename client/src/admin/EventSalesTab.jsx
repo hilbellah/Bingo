@@ -40,12 +40,46 @@ export default function EventSalesTab() {
 
   const eventSessions = sessions.filter(session => session.session_type === 'event');
   const eventSales = bookingSales.filter(sale => sale.sessionType === 'event');
-  const eventPackage = newEvent.packages[0] || { name: 'Live Event / Venue Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false };
+  const eventPackages = newEvent.packages?.length
+    ? newEvent.packages
+    : [{ name: 'General Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false }];
+  const hasValidEventTicket = eventPackages.some(pkg => pkg.name?.trim() && Number(pkg.price) > 0);
 
-  const updatePackage = (patch) => {
+  const normalizeEventPackage = (pkg, index) => ({
+    ...pkg,
+    type: 'required',
+    max_quantity: 1,
+    sort_order: index,
+    is_phd: false,
+  });
+
+  const updateEventPackage = (index, patch) => {
+    const packages = eventPackages.map((pkg, pkgIndex) => (
+      pkgIndex === index ? normalizeEventPackage({ ...pkg, ...patch }, pkgIndex) : normalizeEventPackage(pkg, pkgIndex)
+    ));
     setNewEvent({
       ...newEvent,
-      packages: [{ ...eventPackage, ...patch, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false }],
+      packages,
+    });
+  };
+
+  const addEventPackage = () => {
+    setNewEvent({
+      ...newEvent,
+      packages: [
+        ...eventPackages.map(normalizeEventPackage),
+        normalizeEventPackage({ name: '', price: 0, description: '' }, eventPackages.length),
+      ],
+    });
+  };
+
+  const removeEventPackage = (index) => {
+    const packages = eventPackages
+      .filter((_, pkgIndex) => pkgIndex !== index)
+      .map(normalizeEventPackage);
+    setNewEvent({
+      ...newEvent,
+      packages: packages.length ? packages : [normalizeEventPackage({ name: 'General Admission', price: 0, description: '' }, 0)],
     });
   };
 
@@ -54,7 +88,7 @@ export default function EventSalesTab() {
       <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
         <h3 className="font-semibold text-brand-blue mb-3">Create Live Event / Venue</h3>
         <p className="text-sm text-gray-500 mb-4">
-          Concerts and shows use one set admission price, no add-ons, advance sales, and 6-up template printing.
+          Concerts and shows can use multiple ticket types, no add-ons, advance sales, and 6-up template printing.
         </p>
         <div className="grid md:grid-cols-5 gap-3">
           <div>
@@ -103,34 +137,51 @@ export default function EventSalesTab() {
             />
           </div>
         </div>
-        <div className="grid md:grid-cols-3 gap-3 mt-3">
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Ticket Name</label>
-            <input
-              value={eventPackage.name}
-              onChange={e => updatePackage({ name: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg text-sm"
-              placeholder="Live Event / Venue Admission"
-            />
+        <div className="mt-3">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-semibold text-brand-blue">Ticket Types</h4>
+            <button onClick={addEventPackage} className="text-xs text-brand-blue hover:underline font-medium">Add Ticket Type</button>
           </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Price (CAD)</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={eventPackage.price ? String(eventPackage.price / 100) : ''}
-              onChange={e => {
-                const val = e.target.value.replace(/[^0-9.]/g, '');
-                updatePackage({ price: Math.round(parseFloat(val || 0) * 100) });
-              }}
-              className="w-full px-3 py-2 border rounded-lg text-sm"
-              placeholder="25.00"
-            />
+          <div className="space-y-2">
+            {eventPackages.map((pkg, index) => (
+              <div key={index} className="grid md:grid-cols-[1fr_140px_auto] gap-2 items-end">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Ticket Name</label>
+                  <input
+                    value={pkg.name}
+                    onChange={e => updateEventPackage(index, { name: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    placeholder={index === 0 ? 'General Admission' : 'VIP / Youth / Balcony'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Price (CAD)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={pkg.price ? String(pkg.price / 100) : ''}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                      updateEventPackage(index, { price: Math.round(parseFloat(val || 0) * 100) });
+                    }}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    placeholder="25.00"
+                  />
+                </div>
+                <button
+                  onClick={() => removeEventPackage(index)}
+                  disabled={eventPackages.length <= 1}
+                  className="px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 disabled:opacity-30"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
           </div>
-          <div className="flex items-end">
+          <div className="mt-3 flex justify-end">
             <button
               onClick={handleCreateEvent}
-              disabled={!newEvent.date || !newEvent.event_title || !eventPackage.price || uploadingEventImage}
+              disabled={!newEvent.date || !newEvent.event_title || !hasValidEventTicket || uploadingEventImage}
               className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90 disabled:opacity-40"
             >
               {uploadingEventImage ? 'Uploading...' : 'Add Live Event / Venue'}
@@ -360,15 +411,16 @@ export default function EventSalesTab() {
 
       {editingSessionPkgs && sessions.find(session => session.id === editingSessionPkgs)?.session_type === 'event' && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full">
-            <h3 className="font-semibold text-brand-blue mb-4">Edit Live Event / Venue Price</h3>
-            {(sessionPkgList.length ? sessionPkgList : [{ name: 'Live Event / Venue Admission', price: 0 }]).slice(0, 1).map((pkg, i) => (
-              <div key={i} className="grid grid-cols-2 gap-3">
+          <div className="bg-white rounded-xl p-6 max-w-2xl w-full">
+            <h3 className="font-semibold text-brand-blue mb-4">Edit Live Event / Venue Ticket Types</h3>
+            <div className="space-y-3">
+              {(sessionPkgList.length ? sessionPkgList : [{ name: 'General Admission', price: 0 }]).map((pkg, i) => (
+              <div key={i} className="grid md:grid-cols-[1fr_140px_auto] gap-3 items-end">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Ticket Name</label>
                   <input value={pkg.name} onChange={e => {
                     const list = [...sessionPkgList];
-                    list[0] = { ...(list[0] || pkg), name: e.target.value, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false };
+                    list[i] = { ...(list[i] || pkg), name: e.target.value, type: 'required', max_quantity: 1, sort_order: i, is_phd: false };
                     setSessionPkgList(list);
                   }} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
@@ -377,15 +429,29 @@ export default function EventSalesTab() {
                   <input type="text" inputMode="decimal" value={pkg.price ? pkg.price / 100 : ''} onChange={e => {
                     const val = e.target.value.replace(/[^0-9.]/g, '');
                     const list = [...sessionPkgList];
-                    list[0] = { ...(list[0] || pkg), price: Math.round(parseFloat(val || 0) * 100), type: 'required', max_quantity: 1, sort_order: 0, is_phd: false };
+                    list[i] = { ...(list[i] || pkg), price: Math.round(parseFloat(val || 0) * 100), type: 'required', max_quantity: 1, sort_order: i, is_phd: false };
                     setSessionPkgList(list);
                   }} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
+                <button
+                  onClick={() => setSessionPkgList((sessionPkgList.length ? sessionPkgList : [{ name: 'General Admission', price: 0 }]).filter((_, idx) => idx !== i).map((item, idx) => ({ ...item, type: 'required', max_quantity: 1, sort_order: idx, is_phd: false })))}
+                  disabled={(sessionPkgList.length || 1) <= 1}
+                  className="px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 disabled:opacity-30"
+                >
+                  Remove
+                </button>
               </div>
             ))}
+            </div>
+            <button
+              onClick={() => setSessionPkgList([...(sessionPkgList.length ? sessionPkgList : [{ name: 'General Admission', price: 0 }]), { name: '', price: 0, type: 'required', max_quantity: 1, sort_order: sessionPkgList.length || 1, is_phd: false, description: '' }])}
+              className="mt-3 text-xs text-brand-blue hover:underline font-medium"
+            >
+              Add Ticket Type
+            </button>
             <div className="flex gap-3 pt-5">
               <button onClick={handleSaveSessionPkgs} className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90">
-                Save Price
+                Save Ticket Types
               </button>
               <button onClick={() => { setEditingSessionPkgs(null); setSessionPkgList([]); }} className="text-gray-500 px-4 py-2 rounded-lg text-sm hover:bg-gray-100">
                 Cancel

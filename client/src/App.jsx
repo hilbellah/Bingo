@@ -50,7 +50,7 @@ function generateHolderId() {
   return id;
 }
 
-const emptyAttendee = () => ({ firstName: '', lastName: '', addons: [] });
+const emptyAttendee = () => ({ firstName: '', lastName: '', ticketPackageId: '', addons: [] });
 
 function getSessionType(session) {
   return session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
@@ -340,6 +340,7 @@ export default function App() {
     setAttendees(Array.from({ length: size }, (_, index) => ({
       firstName: attendees[index]?.firstName || '',
       lastName: attendees[index]?.lastName || '',
+      ticketPackageId: attendees[index]?.ticketPackageId || '',
       addons: attendees[index]?.addons || []
     })));
 
@@ -389,6 +390,7 @@ export default function App() {
       firstName: attendee.firstName,
       lastName: attendee.lastName,
       seatId: submitSelectedSeats[index],
+      ticketPackageId: isSelectedEvent ? (attendee.ticketPackageId || requiredPkgs[0]?.id || '') : undefined,
       addons: (attendee.addons || []).filter(addon => addon.quantity > 0)
     }));
     const checkoutSummary = {
@@ -414,7 +416,10 @@ export default function App() {
           name: [attendee.firstName, attendee.lastName].filter(Boolean).join(' ').trim(),
           seat: isSelectedEvent ? 'General admission' : seat ? `Table ${seat.table_number}, Chair ${seat.chair_number}` : '',
           packages: [
-            ...requiredPkgs.map(pkg => ({
+            ...(isSelectedEvent
+              ? [requiredPkgs.find(pkg => pkg.id === (attendee.ticketPackageId || requiredPkgs[0]?.id)) || requiredPkgs[0]].filter(Boolean)
+              : requiredPkgs
+            ).map(pkg => ({
               id: pkg.id,
               name: pkg.name,
               quantity: 1,
@@ -571,12 +576,16 @@ export default function App() {
   };
 
   const requiredTotal = requiredPkgs.reduce((sum, pkg) => sum + (pkg?.price || 0), 0);
-  const orderSubtotal = partySize * requiredTotal + attendees.reduce((sum, attendee) => {
+  const orderSubtotal = attendees.reduce((sum, attendee) => {
+    if (isSelectedEvent) {
+      const eventPkg = requiredPkgs.find(pkg => pkg.id === (attendee.ticketPackageId || requiredPkgs[0]?.id));
+      return sum + (eventPkg?.price || 0);
+    }
     return sum + (attendee.addons || []).reduce((addonSum, addon) => {
       const pkg = optionalPkgs.find(item => item.id === addon.packageId);
       return pkg ? addonSum + pkg.price * addon.quantity : addonSum;
     }, 0);
-  }, 0);
+  }, isSelectedEvent ? 0 : partySize * requiredTotal);
   const serviceFeeUnitAmount = (isSelectedSpecialBingo || isSelectedEvent) ? 0 : bookingConfig.serviceFeePerPersonAmount;
   const serviceFeeAmount = partySize > 0 ? serviceFeeUnitAmount * partySize : 0;
   const salesTaxAmount = isSelectedEvent ? Math.round(orderSubtotal * EVENT_HST_RATE) : 0;

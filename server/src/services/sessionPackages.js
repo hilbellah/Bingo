@@ -175,8 +175,12 @@ export function validateEventPackageDrafts(pkgs = []) {
   const required = normalized.filter(pkg => pkg.type === 'required');
   const optional = normalized.filter(pkg => pkg.type === 'optional');
 
-  if (required.length !== 1) {
-    return { ok: false, error: 'Live Event / Venue requires exactly one per-person admission package with a price.' };
+  if (required.length < 1) {
+    return { ok: false, error: 'Live Event / Venue requires at least one ticket type with a price.' };
+  }
+
+  if (required.some(pkg => pkg.is_phd)) {
+    return { ok: false, error: 'Live Event / Venue ticket types cannot be PHD packages.' };
   }
 
   if (optional.length > 0) {

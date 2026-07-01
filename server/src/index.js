@@ -328,10 +328,19 @@ async function logAudit(action, entityType, entityId, details) {
 
 function validateAttendeeAddons(attendees, optionalPkgs, { requiredPkgs = [], sessionType = 'regular_bingo' } = {}) {
   const optionalById = new Map(optionalPkgs.map(pkg => [pkg.id, pkg]));
+  const requiredById = new Map(requiredPkgs.map(pkg => [pkg.id, pkg]));
   const requiredPhdIncluded = sessionType === 'regular_bingo' && requiredPkgs.some(pkg => pkg?.is_phd);
   const normalizedAttendees = [];
 
   for (const attendee of attendees) {
+    let ticketPackageId = null;
+    if (sessionType === 'event') {
+      ticketPackageId = String(attendee?.ticketPackageId || requiredPkgs[0]?.id || '').trim();
+      if (!ticketPackageId || !requiredById.has(ticketPackageId)) {
+        return { ok: false, statusCode: 400, error: 'Select a valid live event ticket type for each attendee.' };
+      }
+    }
+
     const addonTotals = new Map();
     for (const addon of attendee.addons || []) {
       const packageId = String(addon?.packageId || '').trim();
@@ -359,7 +368,7 @@ function validateAttendeeAddons(attendees, optionalPkgs, { requiredPkgs = [], se
       normalizedAddons.push({ packageId, quantity });
     }
 
-    normalizedAttendees.push({ ...attendee, addons: normalizedAddons });
+    normalizedAttendees.push({ ...attendee, ticketPackageId, addons: normalizedAddons });
   }
 
   return { ok: true, attendees: normalizedAttendees };
@@ -528,7 +537,9 @@ async function insertBookingRecord({
     const itemId = uuid();
     const itemRef = generateRef();
     itemRefs.push(itemRef);
-    const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg];
+    const includedRequiredPkgs = sessionType === 'event'
+      ? [requiredPkgs.find(pkg => pkg.id === att.ticketPackageId) || requiredPkg].filter(Boolean)
+      : (requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg]);
     const primaryRequiredPkg = includedRequiredPkgs[0];
     ticketSubtotal += primaryRequiredPkg.price;
     totalAmount += primaryRequiredPkg.price;
@@ -631,12 +642,16 @@ async function calculateRequestedTicketSubtotal({
   requiredPkgs = [requiredPkg].filter(Boolean),
   sessionPkgs,
   useSessionPkgs,
+  sessionType = 'regular_bingo',
 }) {
   let ticketSubtotal = 0;
   const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg].filter(Boolean);
 
   for (const att of attendees || []) {
-    for (const pkg of includedRequiredPkgs) {
+    const attendeeRequiredPkgs = sessionType === 'event'
+      ? [includedRequiredPkgs.find(pkg => pkg.id === att.ticketPackageId) || includedRequiredPkgs[0]].filter(Boolean)
+      : includedRequiredPkgs;
+    for (const pkg of attendeeRequiredPkgs) {
       const pkgPrice = Number(pkg.price || 0);
       ticketSubtotal += pkgPrice;
     }
@@ -669,6 +684,7 @@ async function calculateRequestedBookingTotal({
     requiredPkgs,
     sessionPkgs,
     useSessionPkgs,
+    sessionType,
   });
   return ticketSubtotal
     + getCheckoutServiceFeeCents(attendees, sessionType)
@@ -1690,6 +1706,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           requiredPkgs,
           sessionPkgs,
           useSessionPkgs,
+          sessionType,
         });
         const refreshedSalesTaxAmount = getTicketSalesTaxCents(refreshedTicketSubtotal, sessionType);
 

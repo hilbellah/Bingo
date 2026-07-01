@@ -53,8 +53,14 @@ async function createEventSession({ sessionId, seatId, holderId, withPackage, sa
     await run(
       `INSERT INTO session_packages
         (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description)
-       VALUES (?, ?, 'Live Event Admission', 2500, 'required', 1, 0, 0, 'Admission ticket')`,
+       VALUES (?, ?, 'General Admission', 2500, 'required', 1, 0, 0, 'Admission ticket')`,
       [`${sessionId}-ticket`, sessionId]
+    );
+    await run(
+      `INSERT INTO session_packages
+        (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description)
+       VALUES (?, ?, 'VIP Admission', 4000, 'required', 1, 1, 0, 'VIP ticket')`,
+      [`${sessionId}-vip-ticket`, sessionId]
     );
   }
 }
@@ -142,6 +148,12 @@ await run(
   ['event-general-admission-item', 'event-general-admission-booking', 'event-with-ticket-seat', 'event-with-ticket-ticket', 'BNG-EVENT-TICKET']
 );
 await run(
+  `INSERT INTO seats
+    (id, session_id, table_number, chair_number, status, held_by, held_until)
+   VALUES (?, 'event-with-ticket', 1, 2, 'held', 'event-vip-holder', ?)`,
+  ['event-with-ticket-vip-seat', holdUntil]
+);
+await run(
   `UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`,
   ['event-with-ticket-seat']
 );
@@ -172,7 +184,7 @@ async function postJson(pathname, body, headers = {}) {
 try {
   const configuredPackages = await getJson('/api/sessions/event-with-ticket/packages');
   assert.equal(configuredPackages.response.status, 200);
-  assert.deepEqual(configuredPackages.data.map(pkg => pkg.name), ['Live Event Admission']);
+  assert.deepEqual(configuredPackages.data.map(pkg => pkg.name), ['General Admission', 'VIP Admission']);
   assert(configuredPackages.data.every(pkg => !pkg.is_phd), 'configured event packages should not include PHD');
 
   const unconfiguredPackages = await getJson('/api/sessions/event-without-ticket/packages');
@@ -202,9 +214,30 @@ try {
   assert.equal(eventTickets.data.sessionType, 'event');
   assert.equal(eventTickets.data.printLayout, 'event_6up');
   assert.equal(eventTickets.data.tickets.length, 1);
-  assert.equal(eventTickets.data.tickets[0].packageName, 'Live Event Admission');
+  assert.equal(eventTickets.data.tickets[0].packageName, 'General Admission');
   assert.equal(eventTickets.data.tickets[0].tableNumber, null);
   assert.equal(eventTickets.data.tickets[0].chairNumber, null);
+
+  const vipInitiate = await postJson('/api/bookings/initiate', {
+    sessionId: 'event-with-ticket',
+    holderId: 'event-vip-holder',
+    email: 'vip.event.tester@example.com',
+    customerFirstName: 'VIP',
+    customerLastName: 'Tester',
+    attendees: [
+      {
+        firstName: 'VIP',
+        lastName: 'Tester',
+        seatId: 'event-with-ticket-vip-seat',
+        ticketPackageId: 'event-with-ticket-vip-ticket',
+        addons: [],
+      },
+    ],
+  });
+  assert.equal(vipInitiate.response.status, 200);
+  assert.equal(vipInitiate.data.totalAmount, 4600);
+  assert.equal(vipInitiate.data.salesTaxAmount, 600);
+  assert.equal(vipInitiate.data.serviceFeeAmount, 0);
 
   const sessions = await getJson('/api/sessions');
   const sameDaySessions = sessions.data

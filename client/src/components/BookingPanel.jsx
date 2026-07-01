@@ -65,6 +65,12 @@ export default function BookingPanel({
     onAttendees(updated);
   };
 
+  const updateTicketPackage = (index, packageId) => {
+    const updated = [...attendees];
+    updated[index] = { ...updated[index], ticketPackageId: packageId };
+    onAttendees(updated);
+  };
+
   // Calculate PHD devices currently selected across all attendees.
   const requiredPackageList = requiredPkgs?.length ? requiredPkgs : (requiredPkg ? [requiredPkg] : []);
   const sessionType = session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
@@ -76,6 +82,9 @@ export default function BookingPanel({
     if (pkg?.type === 'required' && pkg?.is_phd) return '';
     return description.replace(/^Additional\s+/i, '');
   };
+  const getAttendeeTicketPackage = (attendee) => (
+    requiredPackageList.find(pkg => pkg.id === attendee?.ticketPackageId) || requiredPackageList[0] || null
+  );
   const requiredPhdIncluded = isRegularBingo && requiredPackageList.some(pkg => pkg?.is_phd);
   const isPhdCreditPackage = (pkg) => pkg?.id === PHD_CREDIT_PACKAGE_ID;
   const getIncludedPhdTotal = () => requiredPhdIncluded ? attendees.length : 0;
@@ -412,7 +421,7 @@ export default function BookingPanel({
                         <span className="font-semibold text-brand-blue">{att.firstName} {att.lastName}</span>
                         {isEvent ? (
                           <span className="ml-auto text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">
-                            General admission
+                            {getAttendeeTicketPackage(att)?.name || 'Ticket'}
                           </span>
                         ) : seatInfo && (
                           <span className="ml-auto text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">
@@ -422,15 +431,33 @@ export default function BookingPanel({
                       </div>
 
                       {/* Required package */}
-                      {requiredPackageList.map(pkg => (
-                        <div key={pkg.id} className="bg-blue-50 rounded-lg px-3 py-2 mb-2 text-sm">
-                          <div className="flex justify-between gap-3">
-                            <span className="font-medium text-brand-blue">{pkg.name} <span className="text-xs text-gray-400">(required)</span></span>
-                            <span className="font-bold">{formatPrice(pkg.price)}</span>
-                          </div>
-                          {getCheckoutDescription(pkg) ? <p className="mt-1 text-xs text-blue-700/70">{getCheckoutDescription(pkg)}</p> : null}
+                      {isEvent ? (
+                        <div className="bg-blue-50 rounded-lg px-3 py-2 mb-2 text-sm">
+                          <label className="block text-xs font-semibold text-brand-blue mb-1">Ticket Type</label>
+                          <select
+                            value={att.ticketPackageId || requiredPackageList[0]?.id || ''}
+                            onChange={e => updateTicketPackage(i, e.target.value)}
+                            className="w-full px-3 py-2 border border-blue-100 rounded-lg bg-white text-sm focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none"
+                          >
+                            {requiredPackageList.map(pkg => (
+                              <option key={pkg.id} value={pkg.id}>{pkg.name} - {formatPrice(pkg.price)}</option>
+                            ))}
+                          </select>
+                          {getCheckoutDescription(getAttendeeTicketPackage(att)) ? (
+                            <p className="mt-1 text-xs text-blue-700/70">{getCheckoutDescription(getAttendeeTicketPackage(att))}</p>
+                          ) : null}
                         </div>
-                      ))}
+                      ) : (
+                        requiredPackageList.map(pkg => (
+                          <div key={pkg.id} className="bg-blue-50 rounded-lg px-3 py-2 mb-2 text-sm">
+                            <div className="flex justify-between gap-3">
+                              <span className="font-medium text-brand-blue">{pkg.name} <span className="text-xs text-gray-400">(required)</span></span>
+                              <span className="font-bold">{formatPrice(pkg.price)}</span>
+                            </div>
+                            {getCheckoutDescription(pkg) ? <p className="mt-1 text-xs text-blue-700/70">{getCheckoutDescription(pkg)}</p> : null}
+                          </div>
+                        ))
+                      )}
 
                       {/* Add-ons dropdown */}
                       {optionalPkgs.length > 0 && (
@@ -539,7 +566,9 @@ export default function BookingPanel({
           {/* ========== STEP 2: Review & Pay ========== */}
           {step === 2 && (() => {
             const requiredTotal = requiredPackageList.reduce((sum, pkg) => sum + (pkg?.price || 0), 0);
-            const subtotal = partySize * requiredTotal;
+            const subtotal = isEvent
+              ? attendees.reduce((sum, att) => sum + (getAttendeeTicketPackage(att)?.price || 0), 0)
+              : partySize * requiredTotal;
             const addonsTotal = attendees.reduce((sum, att) => {
               return sum + (att.addons || []).reduce((aSum, addon) => {
                 const pkg = optionalPkgs.find(p => p.id === addon.packageId);
@@ -569,7 +598,7 @@ export default function BookingPanel({
                           <span className="font-semibold text-brand-blue text-sm">{att.firstName} {att.lastName}</span>
                           {isEvent ? (
                             <span className="ml-auto text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
-                              General admission
+                              {getAttendeeTicketPackage(att)?.name || 'Ticket'}
                             </span>
                           ) : info && (
                             <span className="ml-auto text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
@@ -579,12 +608,12 @@ export default function BookingPanel({
                         </div>
 
                         {/* Required package line */}
-                        {requiredPackageList.map(pkg => (
-                          <div key={pkg.id} className="flex justify-between text-sm ml-8 py-1">
-                            <span className="text-gray-600">{pkg.name}</span>
-                            <span className="font-medium text-gray-800">{formatPrice(pkg.price)}</span>
-                          </div>
-                        ))}
+                        {(isEvent ? [getAttendeeTicketPackage(att)].filter(Boolean) : requiredPackageList).map(pkg => (
+                            <div key={pkg.id} className="flex justify-between text-sm ml-8 py-1">
+                              <span className="text-gray-600">{pkg.name}</span>
+                              <span className="font-medium text-gray-800">{formatPrice(pkg.price)}</span>
+                            </div>
+                          ))}
 
                         {/* Add-on lines */}
                         {playerAddons.map(addon => {
