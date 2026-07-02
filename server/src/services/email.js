@@ -23,7 +23,8 @@
 //   --- Postmark path (production) ---
 //   POSTMARK_SERVER_TOKEN     Server API Token from the "Wolastoq Bingo"
 //                             Postmark server. Looks like a UUID, e.g.
-//                             "9f5f2838-7eb8-454d-a510-cf46c8680e57".
+//                             "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".
+//                             NEVER put the real token in this file — env only.
 //                             Works as both the API token AND as SMTP
 //                             username/password if the relay path is used.
 //   POSTMARK_MESSAGE_STREAM   Message Stream to send through. Default is

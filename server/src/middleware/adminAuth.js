@@ -1,5 +1,15 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { get } from '../database.js';
+
+// Constant-time string comparison. Hashing both sides first means
+// timingSafeEqual always gets equal-length buffers, so neither content
+// nor length differences leak through timing.
+export function safeCompare(a, b) {
+  const ha = crypto.createHash('sha256').update(String(a ?? '')).digest();
+  const hb = crypto.createHash('sha256').update(String(b ?? '')).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
 
 function getSuperUserEmails() {
   return (process.env.SUPER_ADMIN_EMAILS || '')
@@ -41,8 +51,10 @@ export async function authenticateAdminToken(auth) {
   const pass = decoded.slice(separatorIndex + 1);
 
   if (
-    user.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() &&
-    pass === process.env.ADMIN_PASSWORD
+    process.env.ADMIN_USERNAME &&
+    process.env.ADMIN_PASSWORD &&
+    user.toLowerCase() === process.env.ADMIN_USERNAME.toLowerCase() &&
+    safeCompare(pass, process.env.ADMIN_PASSWORD)
   ) {
     return { email: user, source: 'env', isSuperUser: true, role: 'super_user' };
   }

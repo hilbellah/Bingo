@@ -15,10 +15,10 @@
 // `const rows = await all(...);`. The sqlite adapter wraps the synchronous
 // sql.js calls in an async signature so the interface is uniform.
 //
-// Backward compatibility: defaulting to sqlite means the runtime behaviour
-// is unchanged unless DB_DRIVER is explicitly set. The render.yaml
-// production config does NOT set DB_DRIVER, so production stays on SQLite
-// until the cutover commit lands.
+// PRODUCTION runs DB_DRIVER=postgres (set in render.yaml and the Render
+// dashboard) since the 2026-05-25 cutover. The sqlite default only applies
+// to local dev environments that haven't set DB_DRIVER; the SQLite file on
+// Render's persistent disk is a frozen rollback copy, not live data.
 
 import sqliteAdapter from './db/sqlite.js';
 import postgresAdapter from './db/postgres.js';

@@ -2,8 +2,10 @@ services:
   - type: web
     name: wolastoq-bingo
     runtime: node
-    # Persistent disks require a paid Render web service. This keeps the SQLite
-    # database under /var/data across deploys, restarts, and idle spin-downs.
+    # LEGACY: the persistent disk holds the pre-cutover SQLite file
+    # (/var/data/bingo.db) kept only as a rollback path. Production has run
+    # on Render Postgres (wolastoq-bingo-db) since 2026-05-25. The disk can
+    # be detached once the SQLite rollback window is formally closed.
     plan: starter
     disk:
       name: bingo-data
@@ -13,8 +15,7 @@ services:
     # Render persistent disks are mounted at runtime, not during build.
     # Seeds do not run on deploy because seed.js drops tables.
     buildCommand: "cd client && npm install --include=dev && npm run build && cd ../server && npm install"
-    # server/src/index.js runs idempotent migrations on startup. database.js
-    # waits for and verifies the /var/data disk mount before writing SQLite.
+    # server/src/index.js runs idempotent migrations on startup.
     startCommand: "cd server && node src/index.js"
     envVars:
       - key: NODE_ENV
@@ -25,6 +26,18 @@ services:
         generateValue: true
       - key: ADMIN_PASSWORD
         generateValue: true
+      # === Database (PostgreSQL — production since 2026-05-25) ===
+      # Production runs on Render Postgres "wolastoq-bingo-db" over the
+      # internal network. DB_DRIVER selects the driver in database.js.
+      - key: DB_DRIVER
+        value: postgres
+      # Secret - internal Postgres connection URL pasted in Render
+      # dashboard, NOT committed here.
+      - key: DATABASE_URL_POSTGRES
+        sync: false
+      # LEGACY rollback path: the old SQLite file on the persistent disk.
+      # Only used if DB_DRIVER is flipped back to "sqlite". Data is frozen
+      # at the 2026-05-25 cutover — do NOT roll back without re-syncing.
       - key: DATABASE_URL
         value: /var/data/bingo.db
       - key: SESSION_HOLD_MINUTES

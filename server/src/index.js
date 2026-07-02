@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,7 +15,7 @@ import { migratePostgres } from './migratePostgres.js';
 import { logger } from './logger.js';
 import { v4 as uuid } from 'uuid';
 import bcrypt from 'bcryptjs';
-import { adminAuth, authenticateAdminToken, requireSuperUser, isSuperUser } from './middleware/adminAuth.js';
+import { adminAuth, authenticateAdminToken, requireSuperUser, isSuperUser, safeCompare } from './middleware/adminAuth.js';
 import { archivePastSessions } from './services/sessionArchive.js';
 import {
   hasPriorPaidBooking,
@@ -216,6 +217,10 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false,
 }));
+// Gzip responses (JSON APIs like the ~57KB seat map compress ~10x; Render's
+// proxy does not compress for us). Runs before routes; skips tiny payloads
+// and already-compressed content types by default.
+app.use(compression());
 app.use(cors(corsOptions));
 app.use('/api/webhooks/authorize-net', express.raw({
   type: '*/*',
@@ -2363,7 +2368,12 @@ app.post('/api/admin/login', adminLoginLimiter, async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
     // Check env-var admin
-    if (username.toLowerCase() === (process.env.ADMIN_USERNAME || '').toLowerCase() && password === process.env.ADMIN_PASSWORD) {
+    if (
+      process.env.ADMIN_USERNAME &&
+      process.env.ADMIN_PASSWORD &&
+      username.toLowerCase() === process.env.ADMIN_USERNAME.toLowerCase() &&
+      safeCompare(password, process.env.ADMIN_PASSWORD)
+    ) {
       const token = Buffer.from(`${username}:${password}`).toString('base64');
       return res.json({ token, displayName: 'Admin', isSuperUser: true, role: 'super_user' });
     }
