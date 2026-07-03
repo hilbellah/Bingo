@@ -146,6 +146,42 @@ function formatTime12h(timeStr) {
   return `${h12}:${String(mm).padStart(2, '0')} ${period}`;
 }
 
+function normalizeTimePhrase(value) {
+  const match = String(value || '').match(/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?/i);
+  if (!match) return String(value || '').trim();
+  const hour = Number(match[1]);
+  const minute = match[2] || '00';
+  const period = match[3].toUpperCase() === 'A' ? 'AM' : 'PM';
+  if (!Number.isFinite(hour) || hour < 1 || hour > 12) return String(value || '').trim();
+  return `${hour}:${minute.padStart(2, '0')} ${period}`;
+}
+
+function getDoorsOpenTime(session) {
+  const description = String(session?.event_description || '');
+  const match = description.match(/doors?\s+open(?:s)?\s*(?:at)?\s*([0-9]{1,2}(?::[0-9]{2})?\s*(?:a\.?m\.?|p\.?m\.?))/i);
+  return match ? normalizeTimePhrase(match[1]) : '';
+}
+
+export function getBookingReminderText(session) {
+  const sessionType = normalizeSessionType(session?.session_type, session?.is_special_event);
+  if (sessionType === 'regular_bingo') {
+    return 'Please arrive by 4:30 PM. Doors open one hour before the session starts. Bring this booking reference with you.';
+  }
+
+  const startTime = formatTime12h(session?.time);
+  const doorsOpenTime = getDoorsOpenTime(session);
+  const noun = sessionType === 'event' ? 'event' : 'session';
+  const parts = [];
+  if (startTime) parts.push(`This ${noun} begins at ${startTime}.`);
+  if (doorsOpenTime) {
+    parts.push(`Doors open at ${doorsOpenTime}.`);
+  } else if (sessionType === 'event') {
+    parts.push('Doors open one hour before the event starts.');
+  }
+  parts.push(sessionType === 'event' ? 'Bring this event ticket reference with you.' : 'Bring this booking reference with you.');
+  return parts.join(' ');
+}
+
 function buildTicketUrl(siteUrl, referenceNumber, accessToken) {
   const url = `${siteUrl}/tickets/${encodeURIComponent(referenceNumber)}`;
   return accessToken ? `${url}?t=${encodeURIComponent(accessToken)}` : url;
@@ -226,6 +262,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
   const thankYouMessage = 'Thank you for booking with us. We look forward to seeing you there!';
   const presentation = getBookingPresentation(session);
   const charges = getBookingChargeBreakdown(booking, session, attendees, pkgById);
+  const reminderText = getBookingReminderText(session);
 
   const attendeeBlocks = attendees.map((att, idx) => {
     const seat = seatById.get(att.seatId) || {};
@@ -332,7 +369,7 @@ function renderBookingHtml({ booking, session, attendees, seats, packages, siteU
         <!-- Reminder -->
         <tr><td style="padding:8px 32px 16px;">
           <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 14px;font-size:13px;color:#1e40af;line-height:1.5;">
-            Please arrive by <strong>4:30 PM</strong>. Doors open one hour before the session starts. Bring this booking reference with you.
+            ${escapeHtml(reminderText)}
           </div>
         </td></tr>
 
@@ -398,7 +435,7 @@ function renderBookingText({ booking, session, attendees, seats, packages, siteU
     }
   });
   lines.push('');
-  lines.push('Please arrive by 4:30 PM. Doors open one hour before the session.');
+  lines.push(getBookingReminderText(session));
   lines.push(`${presentation.ctaLabel}: ${buildTicketUrl(siteUrl, booking.referenceNumber, booking.ticketAccessToken)}`);
   lines.push(presentation.proofText);
   lines.push('If you found this email in spam or junk, mark it as not spam so future booking emails are easier to find.');

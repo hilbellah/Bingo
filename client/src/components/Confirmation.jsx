@@ -3,6 +3,41 @@ import { formatDateLong, formatTime, formatPrice } from '../utils/formatters';
 
 const BOOKING_THANK_YOU_MESSAGE = 'Thank you for booking with us. We look forward to seeing you there!';
 
+function normalizeTimePhrase(value) {
+  const match = String(value || '').match(/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?/i);
+  if (!match) return String(value || '').trim();
+  const hour = Number(match[1]);
+  const minute = match[2] || '00';
+  const period = match[3].toUpperCase() === 'A' ? 'AM' : 'PM';
+  if (!Number.isFinite(hour) || hour < 1 || hour > 12) return String(value || '').trim();
+  return `${hour}:${minute.padStart(2, '0')} ${period}`;
+}
+
+function getDoorsOpenTime(session) {
+  const description = String(session?.event_description || '');
+  const match = description.match(/doors?\s+open(?:s)?\s*(?:at)?\s*([0-9]{1,2}(?::[0-9]{2})?\s*(?:a\.?m\.?|p\.?m\.?))/i);
+  return match ? normalizeTimePhrase(match[1]) : '';
+}
+
+function getBookingReminderText(session, sessionType) {
+  if (sessionType === 'regular_bingo') {
+    return 'Please arrive by 4:30 PM. Doors open one hour before the session starts. Bring this reference number with you.';
+  }
+
+  const startTime = formatTime(session?.time);
+  const doorsOpenTime = getDoorsOpenTime(session);
+  const noun = sessionType === 'event' ? 'event' : 'session';
+  const parts = [];
+  if (startTime) parts.push(`This ${noun} begins at ${startTime}.`);
+  if (doorsOpenTime) {
+    parts.push(`Doors open at ${doorsOpenTime}.`);
+  } else if (sessionType === 'event') {
+    parts.push('Doors open one hour before the event starts.');
+  }
+  parts.push('Bring this reference number with you.');
+  return parts.join(' ');
+}
+
 export default function Confirmation({ booking, session, attendees, seats, selectedSeats, requiredPkg, requiredPkgs, optionalPkgs = [] }) {
   const requiredPackageList = requiredPkgs?.length ? requiredPkgs : (requiredPkg ? [requiredPkg] : []);
   const sessionType = session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
@@ -11,6 +46,7 @@ export default function Confirmation({ booking, session, attendees, seats, selec
   const subtitle = isEvent ? 'Your live event tickets are confirmed' : 'Your bingo seats are confirmed';
   const ticketHeading = isEvent ? 'Your Event Tickets' : 'Your Tickets';
   const emailTicketLabel = isEvent ? 'live event tickets' : 'tickets';
+  const reminderText = getBookingReminderText(session, sessionType);
 
   const getSeatInfo = (seatId) => {
     const seat = seats.find(s => s.id === seatId);
@@ -140,8 +176,7 @@ export default function Confirmation({ booking, session, attendees, seats, selec
         {/* Reminder */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 mb-6">
           <p className="text-sm text-blue-700 font-medium">
-            {isEvent ? 'Doors open 1 hour before the event starts.' : <>Please arrive by <strong>4:30 PM</strong> - Doors open 1 hour before the session starts.</>}
-            Bring this reference number with you.
+            {reminderText}
           </p>
         </div>
 
