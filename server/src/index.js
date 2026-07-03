@@ -1259,7 +1259,7 @@ async function markBookingItemRefunded({
 
 // Loads a booking + related rows and fires the confirmation email.
 // Used by markBookingPaid; safe to call standalone for resends.
-async function sendBookingConfirmationEmail(bookingId) {
+async function sendBookingConfirmationEmail(bookingId, { toOverride = null } = {}) {
   const booking = await get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return;
   const session = await get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
@@ -1294,7 +1294,7 @@ async function sendBookingConfirmationEmail(bookingId) {
   }
 
   return sendBookingConfirmation({
-    to: booking.email,
+    to: toOverride || booking.email,
     booking: {
       referenceNumber: booking.reference_number,
       itemReferences: items.map(it => it.reference_number),
@@ -2637,6 +2637,7 @@ registerAdminBookingRoutes(app, {
   markBookingItemRefunded,
   markBookingRefunded,
   markBookingVoided,
+  sendBookingConfirmationEmail,
 });
 
 registerAnnouncementRoutes(app, { io, upload, saveUploadedImage });

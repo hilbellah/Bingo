@@ -34,4 +34,24 @@ assert.equal(
   'This event begins at 7:00 PM. Doors open one hour before the event starts. Bring this event ticket reference with you.'
 );
 
+assert.equal(
+  getBookingReminderText({
+    session_type: 'special_bingo',
+    is_special_event: 1,
+    time: '14:30',
+    event_description: '',
+  }),
+  'This session begins at 2:30 PM. Bring this booking reference with you.'
+);
+
+assert.ok(
+  !getBookingReminderText({
+    session_type: 'special_bingo',
+    is_special_event: 1,
+    time: '14:30',
+    event_description: '',
+  }).includes('4:30 PM'),
+  'Special bingo reminders must not use the regular bingo 4:30 PM arrival copy.'
+);
+
 console.log('Booking reminder copy check passed.');

@@ -107,6 +107,7 @@ export function registerAdminBookingRoutes(app, {
   markBookingItemRefunded,
   markBookingRefunded,
   markBookingVoided,
+  sendBookingConfirmationEmail,
 }) {
   app.get('/api/admin/bookings', adminAuth, async (req, res) => {
     try {
@@ -128,6 +129,123 @@ export function registerAdminBookingRoutes(app, {
       res.json(bookings[0]);
     } catch (err) {
       console.error('GET /api/admin/bookings/:id/receipt failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/admin/sessions/:sessionId/resend-confirmations', adminAuth, async (req, res) => {
+    try {
+      if (typeof sendBookingConfirmationEmail !== 'function') {
+        return res.status(500).json({ error: 'Confirmation resend is not configured.' });
+      }
+
+      const session = await get('SELECT * FROM sessions WHERE id = ?', [req.params.sessionId]);
+      if (!session) return res.status(404).json({ error: 'Session not found' });
+
+      const rows = await all(`
+        SELECT id, reference_number, email, customer_first_name, customer_last_name, payment_status, created_at
+        FROM bookings
+        WHERE session_id = ?
+          AND payment_status = 'paid'
+        ORDER BY created_at ASC, id ASC
+      `, [req.params.sessionId]);
+
+      const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+      const eligible = rows
+        .map(row => ({ ...row, email: String(row.email || '').trim() }))
+        .filter(row => validEmail(row.email));
+      const skipped = rows.length - eligible.length;
+
+      const sampleEmail = String(req.body?.sampleEmail || '').trim();
+      if (sampleEmail) {
+        if (!validEmail(sampleEmail)) return res.status(400).json({ error: 'Invalid sample email address' });
+        if (eligible.length === 0) {
+          return res.status(400).json({ error: 'No paid bookings with valid customer emails found for this session.' });
+        }
+        const sampleBooking = eligible.find(row => row.id === req.body?.bookingId || row.reference_number === req.body?.bookingId) || eligible[0];
+        const result = await sendBookingConfirmationEmail(sampleBooking.id, { toOverride: sampleEmail });
+        await logAudit('booking_confirmation_sample_sent', 'session', session.id, {
+          sessionDate: session.date,
+          sessionTime: session.time,
+          eventTitle: session.event_title || null,
+          sampleEmail,
+          sourceBookingId: sampleBooking.id,
+          sourceReference: sampleBooking.reference_number,
+          ok: Boolean(result?.ok),
+        });
+        return res.json({
+          success: Boolean(result?.ok),
+          mode: 'sample',
+          sentTo: sampleEmail,
+          sourceReference: sampleBooking.reference_number,
+          providerStatus: result?.status || 0,
+          error: result?.error || null,
+          eligibleBookings: eligible.length,
+          skippedBookings: skipped,
+        });
+      }
+
+      if (req.body?.dryRun !== false) {
+        return res.json({
+          success: true,
+          mode: 'dryRun',
+          session: {
+            id: session.id,
+            date: session.date,
+            time: session.time,
+            title: session.event_title || null,
+            sessionType: session.session_type,
+          },
+          paidBookings: rows.length,
+          eligibleBookings: eligible.length,
+          skippedBookings: skipped,
+          references: eligible.map(row => row.reference_number),
+        });
+      }
+
+      if (req.body?.confirm !== 'RESEND CORRECTED CONFIRMATIONS') {
+        return res.status(400).json({
+          error: 'confirmation_required',
+          message: 'Set confirm to RESEND CORRECTED CONFIRMATIONS to email customers.',
+        });
+      }
+
+      const sent = [];
+      const failed = [];
+      for (const booking of eligible) {
+        const result = await sendBookingConfirmationEmail(booking.id);
+        if (result?.ok) {
+          sent.push({ id: booking.id, referenceNumber: booking.reference_number, email: booking.email });
+        } else {
+          failed.push({
+            id: booking.id,
+            referenceNumber: booking.reference_number,
+            email: booking.email,
+            status: result?.status || 0,
+            error: result?.error || 'send_failed',
+          });
+        }
+      }
+
+      await logAudit('booking_confirmations_resent', 'session', session.id, {
+        sessionDate: session.date,
+        sessionTime: session.time,
+        eventTitle: session.event_title || null,
+        sent: sent.length,
+        failed: failed.length,
+        skipped,
+      });
+
+      res.json({
+        success: failed.length === 0,
+        mode: 'sent',
+        sent: sent.length,
+        failed: failed.length,
+        skippedBookings: skipped,
+        failedReferences: failed.map(row => row.referenceNumber),
+      });
+    } catch (err) {
+      console.error('POST /api/admin/sessions/:sessionId/resend-confirmations failed:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   });
