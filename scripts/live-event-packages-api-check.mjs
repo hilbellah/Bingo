@@ -265,6 +265,7 @@ try {
     date: futureDate,
     time: '19:30',
     cutoff_time: '12:00',
+    doors_open_time: '17:15',
     is_available: true,
     session_type: 'special_bingo',
     is_special_event: true,
@@ -276,6 +277,16 @@ try {
     sameHourSpecial.data.error || 'admin should allow special bingo in same hour as a live event'
   );
   assert.equal(sameHourSpecial.data.session_type, 'special_bingo');
+  assert.equal(sameHourSpecial.data.doors_open_time, '17:15');
+  const updateDoorsResponse = await fetch(`${baseUrl}/api/admin/sessions/${sameHourSpecial.data.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Basic ${auth}` },
+    body: JSON.stringify({ doors_open_time: '17:30' }),
+  });
+  const updateDoors = { response: updateDoorsResponse, data: await updateDoorsResponse.json() };
+  assert.equal(updateDoors.response.status, 200);
+  const updatedSpecial = (await getJson('/api/sessions')).data.find(session => session.id === sameHourSpecial.data.id);
+  assert.equal(updatedSpecial.doors_open_time, '17:30');
   const sameHourSpecialPackages = await getJson(`/api/sessions/${sameHourSpecial.data.id}/packages`);
   assert.equal(sameHourSpecialPackages.response.status, 200);
   assert.deepEqual(

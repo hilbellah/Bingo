@@ -11,6 +11,17 @@ assert.equal(
     session_type: 'special_bingo',
     is_special_event: 1,
     time: '14:30',
+    doors_open_time: '12:15',
+    event_description: 'Doors open 12:00 pm - MP Eary Birds start 2:30 pm',
+  }),
+  'This session begins at 2:30 PM. Doors open at 12:15 PM. Bring this booking reference with you.'
+);
+
+assert.equal(
+  getBookingReminderText({
+    session_type: 'special_bingo',
+    is_special_event: 1,
+    time: '14:30',
     event_description: 'Doors open 12:00 pm - MP Eary Birds start 2:30 pm',
   }),
   'This session begins at 2:30 PM. Doors open at 12:00 PM. Bring this booking reference with you.'

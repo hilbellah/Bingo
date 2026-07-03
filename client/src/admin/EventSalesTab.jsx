@@ -90,7 +90,7 @@ export default function EventSalesTab() {
         <p className="text-sm text-gray-500 mb-4">
           Concerts and shows can use multiple ticket types, no add-ons, advance sales, and 6-up template printing.
         </p>
-        <div className="grid md:grid-cols-5 gap-3">
+        <div className="grid md:grid-cols-6 gap-3">
           <div>
             <label className="block text-xs text-gray-400 mb-1">Live Event / Venue Name</label>
             <input
@@ -115,6 +115,15 @@ export default function EventSalesTab() {
               type="time"
               value={newEvent.time}
               onChange={e => setNewEvent({ ...newEvent, time: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Doors Open</label>
+            <input
+              type="time"
+              value={newEvent.doors_open_time || ''}
+              onChange={e => setNewEvent({ ...newEvent, doors_open_time: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg text-sm"
             />
           </div>
@@ -236,6 +245,7 @@ export default function EventSalesTab() {
                     <th className="pb-2">Live Event / Venue</th>
                     <th className="pb-2">Date</th>
                     <th className="pb-2">Time</th>
+                    <th className="pb-2">Doors</th>
                     <th className="pb-2">Status</th>
                     <th className="pb-2">Actions</th>
                   </tr>
@@ -246,6 +256,7 @@ export default function EventSalesTab() {
                       <td className="py-2 font-medium text-gray-800">{session.event_title || 'Live Event / Venue'}</td>
                       <td className="py-2">{session.date}</td>
                       <td className="py-2">{session.time}</td>
+                      <td className="py-2 text-xs text-gray-500">{session.doors_open_time || '-'}</td>
                       <td className="py-2">
                         <span className={`px-2 py-0.5 rounded-full text-xs ${session.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                           {session.is_available ? 'Active' : 'Disabled'}
@@ -324,7 +335,7 @@ export default function EventSalesTab() {
                   className="w-full px-3 py-2 border rounded-lg text-sm"
                 />
               </div>
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-5 gap-3">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Date</label>
                   <input type="date" value={editForm.date} onChange={e => setEditForm({ ...editForm, date: e.target.value })}
@@ -333,6 +344,11 @@ export default function EventSalesTab() {
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Time</label>
                   <input type="time" value={editForm.time} onChange={e => setEditForm({ ...editForm, time: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Doors Open</label>
+                  <input type="time" value={editForm.doors_open_time || ''} onChange={e => setEditForm({ ...editForm, doors_open_time: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div>

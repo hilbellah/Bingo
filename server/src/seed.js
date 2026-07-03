@@ -66,6 +66,7 @@ async function seed() {
       is_special_event INTEGER DEFAULT 0,
       event_title TEXT,
       event_description TEXT,
+      doors_open_time TEXT,
       deleted_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );

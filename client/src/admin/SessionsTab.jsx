@@ -106,6 +106,13 @@ export default function SessionsTab() {
                 </div>
                 {newSession.is_special_event && (
                   <div>
+                    <label className="block text-xs text-gray-400 mb-1">Doors Open</label>
+                    <input type="time" value={newSession.doors_open_time || ''} onChange={e => setNewSession({...newSession, doors_open_time: e.target.value})}
+                      className="px-3 py-2 border rounded-lg text-sm" />
+                  </div>
+                )}
+                {newSession.is_special_event && (
+                  <div>
                     <label className="block text-xs text-gray-400 mb-1">Cutoff Date</label>
                     <input type="date" value={newSession.sales_cutoff_date || newSession.date} onChange={e => setNewSession({...newSession, sales_cutoff_date: e.target.value})}
                       className="px-3 py-2 border rounded-lg text-sm" />
@@ -272,8 +279,11 @@ export default function SessionsTab() {
                         </td>
                         <td className="py-2">
                           <span className={`px-2 py-0.5 rounded-full text-xs ${s.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {s.is_available ? 'Active' : 'Disabled'}
+                          {s.is_available ? 'Active' : 'Disabled'}
                           </span>
+                          {s.is_special_event && s.doors_open_time && (
+                            <div className="text-[11px] text-gray-500 mt-1">Doors {s.doors_open_time}</div>
+                          )}
                         </td>
                         <td className="py-2 flex gap-2">
                           <button onClick={() => handleStartEdit(s)}
@@ -315,7 +325,7 @@ export default function SessionsTab() {
                     Change the date or time here to move this session. Existing bookings, seats, and ticket references stay attached.
                   </div>
                   <div className="space-y-3">
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-5 gap-3">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Date</label>
                         <div className="flex gap-1">
@@ -363,6 +373,13 @@ export default function SessionsTab() {
                         <input type="time" value={editForm.time} onChange={e => setEditForm({...editForm, time: e.target.value})}
                           className="w-full px-3 py-2 border rounded-lg text-sm" />
                       </div>
+                      {editForm.is_special_event && (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Doors Open</label>
+                          <input type="time" value={editForm.doors_open_time || ''} onChange={e => setEditForm({...editForm, doors_open_time: e.target.value})}
+                            className="w-full px-3 py-2 border rounded-lg text-sm" />
+                        </div>
+                      )}
                       {editForm.is_special_event && (
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">Cutoff Date</label>

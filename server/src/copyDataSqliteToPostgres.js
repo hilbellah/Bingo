@@ -50,7 +50,7 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 // FK-safe order. Postgres TRUNCATEs in REVERSE order to clear children first.
 const TABLES = [
-  { name: 'sessions',             cols: ['id', 'date', 'time', 'cutoff_time', 'sales_cutoff_at', 'is_available', 'created_at', 'is_special_event', 'event_title', 'event_description', 'event_image_url', 'session_type', 'deleted_at'] },
+  { name: 'sessions',             cols: ['id', 'date', 'time', 'cutoff_time', 'sales_cutoff_at', 'doors_open_time', 'is_available', 'created_at', 'is_special_event', 'event_title', 'event_description', 'event_image_url', 'session_type', 'deleted_at'] },
   { name: 'packages',             cols: ['id', 'name', 'price', 'type', 'max_quantity', 'is_active', 'sort_order', 'is_phd', 'description'] },
   { name: 'bookings',             cols: ['id', 'session_id', 'reference_number', 'total_amount', 'payment_status', 'created_at', 'email', 'customer_first_name', 'customer_last_name', 'email_verified_at', 'payment_provider', 'transaction_id', 'auth_code', 'payment_attempted_at', 'payment_completed_at', 'payment_failure_reason', 'hosted_token', 'ticket_access_token', 'booking_source', 'admin_note'] },
   { name: 'seats',                cols: ['id', 'session_id', 'table_number', 'chair_number', 'status', 'held_by', 'held_until', 'is_disabled'] },

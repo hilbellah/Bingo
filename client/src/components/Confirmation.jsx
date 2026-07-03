@@ -14,6 +14,8 @@ function normalizeTimePhrase(value) {
 }
 
 function getDoorsOpenTime(session) {
+  const explicitTime = formatTime(session?.doors_open_time);
+  if (explicitTime) return explicitTime;
   const description = String(session?.event_description || '');
   const match = description.match(/doors?\s+open(?:s)?\s*(?:at)?\s*([0-9]{1,2}(?::[0-9]{2})?\s*(?:a\.?m\.?|p\.?m\.?))/i);
   return match ? normalizeTimePhrase(match[1]) : '';

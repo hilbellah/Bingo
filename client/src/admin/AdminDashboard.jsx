@@ -117,8 +117,8 @@ export default function AdminDashboard() {
   const [specialBingoConfig, setSpecialBingoConfig] = useState(DEFAULT_SPECIAL_BINGO_CONFIG);
   const [bookingConfig, setBookingConfig] = useState(DEFAULT_BOOKING_CONFIG);
   const [bookingConfigSaved, setBookingConfigSaved] = useState(false);
-  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages() });
-  const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
+  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages() });
+  const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
   const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false, description: '' });
@@ -126,7 +126,7 @@ export default function AdminDashboard() {
   const [editingSessionPkgs, setEditingSessionPkgs] = useState(null); // session id being edited
   const [sessionPkgList, setSessionPkgList] = useState([]);
   const [editingSession, setEditingSession] = useState(null); // session object being edited
-  const [editForm, setEditForm] = useState({ date: '', time: '', cutoff_time: '', is_special_event: false, event_title: '', event_description: '', event_image_url: '' });
+  const [editForm, setEditForm] = useState({ date: '', time: '', cutoff_time: '', doors_open_time: '', is_special_event: false, event_title: '', event_description: '', event_image_url: '' });
   const [bulkDateFrom, setBulkDateFrom] = useState('');
   const [bulkDateTo, setBulkDateTo] = useState('');
   const [bulkDepartment, setBulkDepartment] = useState('all');
@@ -416,6 +416,7 @@ export default function AdminDashboard() {
         payload.is_special_event ? `Title: ${payload.event_title || 'Special Bingo'}` : 'Type: Regular Bingo',
         `Date: ${formatDateShort(payload.date)}`,
         `Time: ${formatTime(payload.time)}`,
+        payload.is_special_event && payload.doors_open_time ? `Doors open: ${formatTime(payload.doors_open_time)}` : '',
         `Sales cutoff: ${payload.session_type === 'special_bingo' ? formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time) : formatTime(payload.cutoff_time)}`,
         payload.is_special_event ? `Packages: ${packageSummary(payload.packages) || 'No packages configured'}` : '',
       ],
@@ -426,6 +427,7 @@ export default function AdminDashboard() {
       delete payload.event_title;
       delete payload.event_description;
       delete payload.event_image_url;
+      delete payload.doors_open_time;
       delete payload.packages;
     }
     try {
@@ -433,7 +435,7 @@ export default function AdminDashboard() {
         payload.event_image_url = await resolveEventImageUrl(payload.event_image_url, sessionImageFile);
       }
       await createAdminSession(token, payload);
-      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages(specialBingoConfig) });
+      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages(specialBingoConfig) });
       setSessionImageFile(null);
       setSessionImagePreview(null);
       loadSessions();
@@ -580,6 +582,7 @@ export default function AdminDashboard() {
       session_type: session.session_type || (session.is_special_event ? 'special_bingo' : 'regular_bingo'),
       event_title: session.event_title || '',
       event_description: session.event_description || '',
+      doors_open_time: session.doors_open_time || '',
       event_image_url: session.event_image_url || '',
     });
     setEditImageFile(null);
@@ -598,6 +601,7 @@ export default function AdminDashboard() {
       payload.event_title = '';
       payload.event_description = '';
       payload.event_image_url = '';
+      payload.doors_open_time = '';
       payload.sales_cutoff_at = null;
     }
     if (!confirmAdminAction({
@@ -605,6 +609,7 @@ export default function AdminDashboard() {
       details: [
         `Date: ${formatDateShort(payload.date)}`,
         `Time: ${formatTime(payload.time)}`,
+        (payload.session_type === 'event' || payload.session_type === 'special_bingo') && payload.doors_open_time ? `Doors open: ${formatTime(payload.doors_open_time)}` : '',
         `Sales cutoff: ${payload.session_type === 'event' || payload.session_type === 'special_bingo' ? formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time) : formatTime(payload.cutoff_time)}`,
         payload.event_title ? `Title: ${payload.event_title}` : '',
       ],
@@ -802,6 +807,7 @@ export default function AdminDashboard() {
         `Live Event / Venue: ${payload.event_title}`,
         `Date: ${formatDateShort(payload.date)}`,
         `Time: ${formatTime(payload.time)}`,
+        payload.doors_open_time ? `Doors open: ${formatTime(payload.doors_open_time)}` : '',
         `Sales cutoff: ${formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time)}`,
         `Ticket: ${packageSummary(payload.packages) || 'No ticket price configured'}`,
       ],
@@ -812,7 +818,7 @@ export default function AdminDashboard() {
     try {
       payload.event_image_url = await resolveEventImageUrl(payload.event_image_url, eventImageFile);
       await createAdminSession(token, payload);
-      setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
+      setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
       setEventImageFile(null);
       setEventImagePreview(null);
       loadSessions();
