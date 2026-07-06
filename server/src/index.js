@@ -493,6 +493,62 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
   };
 }
 
+async function buildBookingLineItems({
+  bookingId,
+  attendees,
+  requiredPkg,
+  requiredPkgs = [requiredPkg].filter(Boolean),
+  sessionPkgs,
+  useSessionPkgs,
+  sessionType = 'regular_bingo',
+  itemReferenceBySeat = new Map(),
+}) {
+  let ticketSubtotal = 0;
+  let totalAmount = getCheckoutServiceFeeCents(attendees, sessionType);
+  const itemRefs = [];
+  const itemRows = [];
+  const addonRows = [];
+
+  for (const att of attendees) {
+    const itemId = uuid();
+    const seatKey = String(att.seatId || '').trim();
+    const itemRef = itemReferenceBySeat.get(seatKey) || generateRef();
+    itemRefs.push(itemRef);
+    const includedRequiredPkgs = sessionType === 'event'
+      ? [requiredPkgs.find(pkg => pkg.id === att.ticketPackageId) || requiredPkg].filter(Boolean)
+      : (requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg]);
+    const primaryRequiredPkg = includedRequiredPkgs[0];
+    ticketSubtotal += primaryRequiredPkg.price;
+    totalAmount += primaryRequiredPkg.price;
+    itemRows.push([itemId, bookingId, att.firstName, att.lastName, att.seatId, primaryRequiredPkg.id, primaryRequiredPkg.price, itemRef]);
+
+    for (const requiredAddonPkg of includedRequiredPkgs.slice(1)) {
+      ticketSubtotal += requiredAddonPkg.price;
+      totalAmount += requiredAddonPkg.price;
+      addonRows.push([uuid(), itemId, requiredAddonPkg.id, 1, requiredAddonPkg.price]);
+    }
+
+    if (att.addons) {
+      for (const addon of att.addons) {
+        const pkg = useSessionPkgs
+          ? sessionPkgs.find(p => p.id === addon.packageId)
+          : await get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
+        if (pkg) {
+          const addonPrice = pkg.price * addon.quantity;
+          ticketSubtotal += addonPrice;
+          totalAmount += addonPrice;
+          addonRows.push([uuid(), itemId, addon.packageId, addon.quantity, addonPrice]);
+        }
+      }
+    }
+  }
+
+  const salesTaxAmount = getTicketSalesTaxCents(ticketSubtotal, sessionType);
+  totalAmount += salesTaxAmount;
+
+  return { totalAmount, itemRefs, itemRows, addonRows, salesTaxAmount, ticketSubtotal };
+}
+
 // Insert a booking + its items + addons. Always 'pending' status.
 // Does NOT flip seats and does NOT emit any sockets — that happens in markBookingPaid.
 // Returns { bookingId, refNumber, totalAmount, itemRefs }. Throws on DB error.
@@ -529,50 +585,18 @@ async function insertBookingRecord({
     }
   }
 
-  let ticketSubtotal = 0;
-  let totalAmount = getCheckoutServiceFeeCents(attendees, sessionType);
   const bookingId = uuid();
   const refNumber = generateRef();
   const ticketAccessToken = generateTicketAccessToken();
-  const itemRefs = [];
-  const itemRows = [];
-  const addonRows = [];
-
-  for (const att of attendees) {
-    const itemId = uuid();
-    const itemRef = generateRef();
-    itemRefs.push(itemRef);
-    const includedRequiredPkgs = sessionType === 'event'
-      ? [requiredPkgs.find(pkg => pkg.id === att.ticketPackageId) || requiredPkg].filter(Boolean)
-      : (requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg]);
-    const primaryRequiredPkg = includedRequiredPkgs[0];
-    ticketSubtotal += primaryRequiredPkg.price;
-    totalAmount += primaryRequiredPkg.price;
-    itemRows.push([itemId, bookingId, att.firstName, att.lastName, att.seatId, primaryRequiredPkg.id, primaryRequiredPkg.price, itemRef]);
-
-    for (const requiredAddonPkg of includedRequiredPkgs.slice(1)) {
-      ticketSubtotal += requiredAddonPkg.price;
-      totalAmount += requiredAddonPkg.price;
-      addonRows.push([uuid(), itemId, requiredAddonPkg.id, 1, requiredAddonPkg.price]);
-    }
-
-    if (att.addons) {
-      for (const addon of att.addons) {
-        const pkg = useSessionPkgs
-          ? sessionPkgs.find(p => p.id === addon.packageId)
-          : await get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
-        if (pkg) {
-          const addonPrice = pkg.price * addon.quantity;
-          ticketSubtotal += addonPrice;
-          totalAmount += addonPrice;
-          addonRows.push([uuid(), itemId, addon.packageId, addon.quantity, addonPrice]);
-        }
-      }
-    }
-  }
-
-  const salesTaxAmount = getTicketSalesTaxCents(ticketSubtotal, sessionType);
-  totalAmount += salesTaxAmount;
+  const { totalAmount, itemRefs, itemRows, addonRows, salesTaxAmount } = await buildBookingLineItems({
+    bookingId,
+    attendees,
+    requiredPkg,
+    requiredPkgs,
+    sessionPkgs,
+    useSessionPkgs,
+    sessionType,
+  });
 
   let bookingInserted = false;
   try {
@@ -639,61 +663,6 @@ function sortedSeatIds(attendees) {
 function sameSeatSet(left, right) {
   if (left.length !== right.length) return false;
   return left.every((seatId, index) => seatId === right[index]);
-}
-
-async function calculateRequestedTicketSubtotal({
-  attendees,
-  requiredPkg,
-  requiredPkgs = [requiredPkg].filter(Boolean),
-  sessionPkgs,
-  useSessionPkgs,
-  sessionType = 'regular_bingo',
-}) {
-  let ticketSubtotal = 0;
-  const includedRequiredPkgs = requiredPkgs.length > 0 ? requiredPkgs : [requiredPkg].filter(Boolean);
-
-  for (const att of attendees || []) {
-    const attendeeRequiredPkgs = sessionType === 'event'
-      ? [includedRequiredPkgs.find(pkg => pkg.id === att.ticketPackageId) || includedRequiredPkgs[0]].filter(Boolean)
-      : includedRequiredPkgs;
-    for (const pkg of attendeeRequiredPkgs) {
-      const pkgPrice = Number(pkg.price || 0);
-      ticketSubtotal += pkgPrice;
-    }
-
-    for (const addon of att.addons || []) {
-      const pkg = useSessionPkgs
-        ? sessionPkgs.find(p => p.id === addon.packageId)
-        : await get('SELECT * FROM packages WHERE id = ? AND is_active = 1', [addon.packageId]);
-      if (pkg) {
-        const addonPrice = Number(pkg.price || 0) * Number(addon.quantity || 0);
-        ticketSubtotal += addonPrice;
-      }
-    }
-  }
-
-  return ticketSubtotal;
-}
-
-async function calculateRequestedBookingTotal({
-  attendees,
-  requiredPkg,
-  requiredPkgs = [requiredPkg].filter(Boolean),
-  sessionPkgs,
-  useSessionPkgs,
-  sessionType = 'regular_bingo',
-}) {
-  const ticketSubtotal = await calculateRequestedTicketSubtotal({
-    attendees,
-    requiredPkg,
-    requiredPkgs,
-    sessionPkgs,
-    useSessionPkgs,
-    sessionType,
-  });
-  return ticketSubtotal
-    + getCheckoutServiceFeeCents(attendees, sessionType)
-    + getTicketSalesTaxCents(ticketSubtotal, sessionType);
 }
 
 function buildInitiateResponse({
@@ -776,6 +745,7 @@ async function findReusablePendingBooking({ sessionId, holderId, attendees, emai
       refNumber: booking.reference_number,
       totalAmount: booking.total_amount,
       itemRefs: itemRows.map(row => row.reference_number).filter(Boolean),
+      itemReferenceBySeat: new Map(itemRows.map(row => [String(row.seat_id || '').trim(), row.reference_number]).filter(([seatId, ref]) => seatId && ref)),
       ticketAccessToken: booking.ticket_access_token,
       email: booking.email,
       customerFirstName: booking.customer_first_name,
@@ -1697,27 +1667,20 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
         for (const att of attendees) {
           await run('UPDATE seats SET held_until = ? WHERE id = ?', [refreshedHoldUntil, att.seatId]);
         }
-        const refreshedTotalAmount = await calculateRequestedBookingTotal({
+        const rebuiltBooking = await buildBookingLineItems({
+          bookingId: reusable.bookingId,
           attendees,
           requiredPkg,
           requiredPkgs,
           sessionPkgs,
           useSessionPkgs,
           sessionType,
+          itemReferenceBySeat: reusable.itemReferenceBySeat,
         });
-        const refreshedTicketSubtotal = await calculateRequestedTicketSubtotal({
-          attendees,
-          requiredPkg,
-          requiredPkgs,
-          sessionPkgs,
-          useSessionPkgs,
-          sessionType,
-        });
-        const refreshedSalesTaxAmount = getTicketSalesTaxCents(refreshedTicketSubtotal, sessionType);
 
         const result = await createHostedPaymentPage({
           bookingId: reusable.bookingId,
-          amountCents: refreshedTotalAmount,
+          amountCents: rebuiltBooking.totalAmount,
           email: trimmedEmail,
           firstName: customerFirstName,
           lastName: customerLastName,
@@ -1731,14 +1694,26 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
         }
 
         await run(
+          `DELETE FROM booking_addons
+           WHERE booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?)`,
+          [reusable.bookingId]
+        );
+        await run('DELETE FROM booking_items WHERE booking_id = ?', [reusable.bookingId]);
+        for (const itemRow of rebuiltBooking.itemRows) {
+          await run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', itemRow);
+        }
+        for (const addonRow of rebuiltBooking.addonRows) {
+          await run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)', addonRow);
+        }
+        await run(
           `UPDATE bookings
            SET hosted_token = ?, payment_attempted_at = ?, customer_first_name = ?, customer_last_name = ?, total_amount = ?
            WHERE id = ?`,
-          [result.token, new Date().toISOString(), customerFirstName, customerLastName, refreshedTotalAmount, reusable.bookingId]
+          [result.token, new Date().toISOString(), customerFirstName, customerLastName, rebuiltBooking.totalAmount, reusable.bookingId]
         );
         await saveDb();
         await logPaymentEvent(reusable.bookingId, 'initiated', 'server', {
-          totalAmount: refreshedTotalAmount,
+          totalAmount: rebuiltBooking.totalAmount,
           refNumber: reusable.refNumber,
           refreshed: true,
         });
@@ -1747,13 +1722,14 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           statusCode: 200,
           body: buildInitiateResponse({
             ...reusable,
-            totalAmount: refreshedTotalAmount,
+            totalAmount: rebuiltBooking.totalAmount,
+            itemRefs: rebuiltBooking.itemRefs,
             customerFirstName,
             customerLastName,
             token: result.token,
             serviceFeeAmount: getCheckoutServiceFeeCents(attendees, sessionType),
             serviceFeeQuantity: attendees.length,
-            salesTaxAmount: refreshedSalesTaxAmount,
+            salesTaxAmount: rebuiltBooking.salesTaxAmount,
             duplicate: true,
           }),
         };

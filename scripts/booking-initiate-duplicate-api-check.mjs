@@ -47,9 +47,11 @@ const holdUntil = new Date(Date.now() + 20 * 60 * 1000).toISOString();
 const createdAt = new Date().toISOString();
 const requiredPkg = await get("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC LIMIT 1");
 const requiredPkgs = await all("SELECT * FROM packages WHERE type = 'required' AND is_active = 1 ORDER BY sort_order ASC");
+const optionalPkg = await get("SELECT * FROM packages WHERE type = 'optional' AND is_active = 1 AND is_phd = 0 ORDER BY sort_order ASC LIMIT 1");
 const checkoutServiceFee = 200;
 const attendeeCount = 2;
-const expectedTotalAmount = requiredPkgs.reduce((sum, pkg) => sum + pkg.price * attendeeCount, checkoutServiceFee * attendeeCount);
+const expectedTicketSubtotal = requiredPkgs.reduce((sum, pkg) => sum + pkg.price * attendeeCount, optionalPkg.price);
+const expectedTotalAmount = expectedTicketSubtotal + checkoutServiceFee * attendeeCount;
 
 await run(
   `INSERT INTO sessions
@@ -130,7 +132,7 @@ try {
         firstName: customerFirstName,
         lastName: customerLastName,
         seatId,
-        addons: [],
+        addons: [{ packageId: optionalPkg.id, quantity: 1 }],
       },
       {
         firstName: 'Second',
@@ -158,6 +160,20 @@ try {
   const refreshedBooking = await get('SELECT hosted_token, total_amount FROM bookings WHERE id = ?', [bookingId]);
   assert.equal(refreshedBooking.hosted_token, result.data.token);
   assert.equal(refreshedBooking.total_amount, expectedTotalAmount);
+  const subtotalRow = await get(`
+    SELECT COALESCE(SUM(bi.price + COALESCE(addons.addon_total, 0)), 0) as item_subtotal
+    FROM booking_items bi
+    LEFT JOIN (
+      SELECT booking_item_id, SUM(price) as addon_total
+      FROM booking_addons
+      GROUP BY booking_item_id
+    ) addons ON addons.booking_item_id = bi.id
+    WHERE bi.booking_id = ?
+  `, [bookingId]);
+  assert.equal(subtotalRow.item_subtotal, expectedTicketSubtotal);
+  const addonRow = await get('SELECT COUNT(*) as count, COALESCE(SUM(price), 0) as total FROM booking_addons WHERE booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?)', [bookingId]);
+  assert.equal(addonRow.count, requiredPkgs.length > 1 ? 3 : 1);
+  assert.equal(addonRow.total, expectedTicketSubtotal - (requiredPkg.price * attendeeCount));
 
   console.log('Booking initiate duplicate API check passed.');
 } finally {
