@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { markAdminBulkTicketsPrinted, saveSettings } from '../api';
 import { printBulkBookingReceipts } from './adminPrintUtils';
 import { useAdminDashboard } from './AdminDashboardContext';
@@ -300,6 +300,13 @@ export default function BulkPrintTab() {
   const [printSort, setPrintSort] = useState('seat');
   const [markingPrinted, setMarkingPrinted] = useState(false);
   const [receiptSettingsSaving, setReceiptSettingsSaving] = useState(false);
+  const bulkPrintTopRef = useRef(null);
+  const scrollAfterBulkLoadRef = useRef(false);
+  const previousTabRef = useRef(tab);
+
+  const scrollBulkPrintControlsIntoView = () => {
+    bulkPrintTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const selectedDepartments = useMemo(() => {
     if (!bulkDepartment || bulkDepartment === 'all') return DEPARTMENT_OPTIONS.map(option => option.value);
@@ -434,6 +441,19 @@ export default function BulkPrintTab() {
     setPrintFilter('all');
   }, [allTickets]);
 
+  useEffect(() => {
+    if (tab === 'bulkprint' && previousTabRef.current !== 'bulkprint') {
+      setTimeout(scrollBulkPrintControlsIntoView, 0);
+    }
+    previousTabRef.current = tab;
+  }, [tab]);
+
+  useEffect(() => {
+    if (!scrollAfterBulkLoadRef.current || bulkLoading) return;
+    scrollAfterBulkLoadRef.current = false;
+    setTimeout(scrollBulkPrintControlsIntoView, 0);
+  }, [bulkLoading, bulkData]);
+
   const toggleTicket = (ticketId) => {
     setSelectedTicketIds(prev => {
       const next = new Set(prev);
@@ -496,6 +516,11 @@ export default function BulkPrintTab() {
     printBulkBookingReceipts(selectedReceiptBookings, receiptConfig);
   };
 
+  const handleLoadBulkTicketsAndScroll = async () => {
+    scrollAfterBulkLoadRef.current = true;
+    await handleLoadBulkTickets();
+  };
+
   const handlePrintSpecialPaper = () => {
     if (!bulkData?.sessions || !hasPrintableSelectedTickets) return;
     const body = buildSpecialPaperPrintBody(bulkData.sessions, selectedTicketsForPrint, printParts);
@@ -525,7 +550,7 @@ export default function BulkPrintTab() {
         {/* BULK PRINT TAB */}
         {tab === 'bulkprint' && (
           <div>
-            <div className="bg-white rounded-xl p-5 shadow-sm mb-4 no-print">
+            <div ref={bulkPrintTopRef} className="bg-white rounded-xl p-5 shadow-sm mb-4 no-print scroll-mt-4">
               <h3 className="font-semibold text-brand-blue mb-3">Bulk Print Tickets</h3>
               <p className="text-sm text-gray-500 mb-4">
                 Select a date or date range to load paid tickets. Regular and special bingo print 3 per sheet; live events / venues print 6 per sheet.
@@ -556,7 +581,7 @@ export default function BulkPrintTab() {
                   <input type="date" value={bulkDateTo} onChange={e => setBulkDateTo(e.target.value)}
                     className="px-3 py-2 border rounded-lg text-sm" />
                 </div>
-                <button onClick={handleLoadBulkTickets} disabled={!bulkDateFrom || bulkLoading}
+                <button onClick={handleLoadBulkTicketsAndScroll} disabled={!bulkDateFrom || bulkLoading}
                   className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90 disabled:opacity-40">
                   {bulkLoading ? 'Loading...' : 'Load Tickets'}
                 </button>
