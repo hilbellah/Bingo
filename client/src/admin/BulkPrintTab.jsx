@@ -33,6 +33,7 @@ export default function BulkPrintTab() {
   const [printFilter, setPrintFilter] = useState('all');
   const [selectedTicketIds, setSelectedTicketIds] = useState(new Set());
   const [printParts, setPrintParts] = useState({ nameCopy: true, seatCopy: true });
+  const [printSort, setPrintSort] = useState('seat');
   const [markingPrinted, setMarkingPrinted] = useState(false);
   const [receiptSettingsSaving, setReceiptSettingsSaving] = useState(false);
 
@@ -71,6 +72,19 @@ export default function BulkPrintTab() {
     () => visibleTickets.filter(ticket => selectedTicketIds.has(ticket.id)),
     [visibleTickets, selectedTicketIds]
   );
+  const selectedTicketsForPrint = useMemo(() => {
+    const tickets = [...selectedTickets];
+    if (printSort !== 'name') return tickets;
+    return tickets.sort((a, b) => {
+      const last = String(a.lastName || '').localeCompare(String(b.lastName || ''), undefined, { sensitivity: 'base' });
+      if (last !== 0) return last;
+      const first = String(a.firstName || '').localeCompare(String(b.firstName || ''), undefined, { sensitivity: 'base' });
+      if (first !== 0) return first;
+      const session = String(a.sessionDate || '').localeCompare(String(b.sessionDate || ''));
+      if (session !== 0) return session;
+      return String(a.referenceNumber || '').localeCompare(String(b.referenceNumber || ''), undefined, { sensitivity: 'base' });
+    });
+  }, [selectedTickets, printSort]);
   const hasPrintableSelectedTickets = selectedTickets.some(ticket =>
     ticket.sessionType === 'event' || printParts.nameCopy || printParts.seatCopy
   );
@@ -347,7 +361,7 @@ export default function BulkPrintTab() {
 
                 <div className="bg-white rounded-xl p-4 shadow-sm mb-4 no-print">
                   <p className="text-sm font-semibold text-brand-blue mb-2">Special Paper Print</p>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap gap-4 items-end">
                     <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                       <input
                         type="checkbox"
@@ -363,6 +377,17 @@ export default function BulkPrintTab() {
                         onChange={() => togglePrintPart('seatCopy')}
                       />
                       Seat copy
+                    </label>
+                    <label className="text-sm text-gray-700">
+                      <span className="block text-xs text-gray-400 mb-1">Print Order</span>
+                      <select
+                        value={printSort}
+                        onChange={e => setPrintSort(e.target.value)}
+                        className="px-3 py-2 border rounded-lg text-sm"
+                      >
+                        <option value="seat">Table / seat order</option>
+                        <option value="name">Alphabetical by name</option>
+                      </select>
                     </label>
                   </div>
                 </div>
@@ -498,7 +523,7 @@ export default function BulkPrintTab() {
 
                 {/* Printable ticket pages */}
                 {bulkData.sessions.map(session => {
-                  const sessionTickets = selectedTickets.filter(ticket => ticket.sessionId === session.sessionId);
+                  const sessionTickets = selectedTicketsForPrint.filter(ticket => ticket.sessionId === session.sessionId);
                   if (sessionTickets.length === 0) return null;
 
                   const isEventSession = session.sessionType === 'event';
@@ -566,7 +591,7 @@ export default function BulkPrintTab() {
                                   </div>
                                   <h2 className="ticket-title">{displayTitle}</h2>
                                   <div className="ticket-logo">
-                                    <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
+                                    <img src="/wolastoq-logo-thermal.png" alt="Wolastoq Casino" className="ticket-logo-img" />
                                   </div>
                                   <div className="ticket-half-row">
                                     <div className="ticket-detail-compact">
@@ -594,7 +619,7 @@ export default function BulkPrintTab() {
                                 <div className="ticket-half ticket-half-right">
                                   <h2 className="ticket-title">{displayTitle}</h2>
                                   <div className="ticket-logo">
-                                    <img src="/logo.png" alt="SMEC" className="ticket-logo-img" />
+                                    <img src="/wolastoq-logo-thermal.png" alt="Wolastoq Casino" className="ticket-logo-img" />
                                   </div>
                                   <div className="ticket-half-row">
                                     <div className="ticket-detail">
@@ -636,20 +661,61 @@ export default function BulkPrintTab() {
               @media print {
                 .no-print, header, .bg-white.border-b { display: none !important; }
                 body { margin: 0; padding: 0; color: #000; background: #fff; }
-                *, *::before, *::after {
-                  color: #000 !important;
-                  background: #fff !important;
-                  border-color: #000 !important;
-                  box-shadow: none !important;
-                  text-shadow: none !important;
+                .bulk-ticket-page,
+                .bulk-ticket-page *,
+                .bulk-ticket-page *::before,
+                .bulk-ticket-page *::after,
+                .event-ticket-page,
+                .event-ticket-page *,
+                .event-ticket-page *::before,
+                .event-ticket-page *::after {
+                  print-color-adjust: exact;
+                  -webkit-print-color-adjust: exact;
                 }
-                img {
-                  filter: grayscale(1) brightness(0) !important;
-                  -webkit-filter: grayscale(1) brightness(0) !important;
+                .bulk-ticket-page img,
+                .event-ticket-page img {
+                  filter: none !important;
+                  -webkit-filter: none !important;
                 }
-                @page { size: letter; margin: 0.25in; }
+                @page { size: letter; margin: 0.2in; }
                 .max-w-6xl { max-width: none !important; padding: 0 !important; }
                 .min-h-screen { min-height: auto !important; }
+                .bulk-ticket-page,
+                .event-ticket-page {
+                  background: #fff !important;
+                  margin: 0 auto !important;
+                  overflow: hidden !important;
+                }
+                .bulk-ticket-page .ticket-card {
+                  background: linear-gradient(135deg, #fdf6e3 0%, #fcecd6 50%, #f8e0c0 100%) !important;
+                  border-color: #c5a55a !important;
+                }
+                .event-ticket-card {
+                  background: #fffdf8 !important;
+                  border-color: #1a3a5c !important;
+                }
+                .bulk-ticket-page .ticket-title,
+                .bulk-ticket-page .ticket-name-prominent,
+                .bulk-ticket-page .ticket-name-secondary,
+                .bulk-ticket-page .ticket-value,
+                .bulk-ticket-page .ticket-value-md,
+                .bulk-ticket-page .ticket-ref-value,
+                .event-ticket-title,
+                .event-ticket-name,
+                .event-ticket-ref {
+                  color: #1a3a5c !important;
+                }
+                .bulk-ticket-page .ticket-price,
+                .bulk-ticket-page .ticket-price-sm {
+                  color: #c5a55a !important;
+                }
+                .bulk-ticket-page .ticket-pkg,
+                .bulk-ticket-page .ticket-label,
+                .bulk-ticket-page .ticket-label-sm,
+                .bulk-ticket-page .ticket-meta-text,
+                .event-ticket-meta {
+                  color: #555 !important;
+                }
               }
 
               @media screen {
@@ -667,8 +733,8 @@ export default function BulkPrintTab() {
                 grid-template-columns: repeat(2, 1fr);
                 grid-template-rows: repeat(3, 1fr);
                 gap: 0.12in;
-                width: 8in;
-                height: 10.5in;
+                width: 7.6in;
+                height: 10in;
                 page-break-after: always;
               }
 
@@ -730,15 +796,15 @@ export default function BulkPrintTab() {
               .bulk-ticket-page {
                 display: flex;
                 flex-direction: column;
-                width: 8in;
-                height: 10.5in;
+                width: 7.6in;
+                height: 10in;
                 page-break-after: always;
                 justify-content: space-between;
               }
 
               .bulk-ticket-page .ticket-card {
                 width: 100%;
-                height: 3.4in;
+                height: 3.2in;
                 border: 1.5px dashed #c5a55a;
                 border-radius: 8px;
                 box-sizing: border-box;
@@ -781,13 +847,13 @@ export default function BulkPrintTab() {
                 color: #1a3a5c; margin: 0 0 4px 0; line-height: 1.2;
               }
               .bulk-ticket-page .ticket-logo {
-                width: 50px; height: 35px;
+                width: 0.95in; height: 0.3in;
                 display: flex; align-items: center; justify-content: center;
                 margin-bottom: 4px;
               }
               .bulk-ticket-page .ticket-logo-img {
                 max-width: 100%; max-height: 100%;
-                object-fit: contain; opacity: 0.7;
+                object-fit: contain; opacity: 1;
               }
               .bulk-ticket-page .ticket-name-prominent {
                 font-size: 22px; font-weight: 700;

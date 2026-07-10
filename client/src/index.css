@@ -400,6 +400,22 @@ html {
     filter: grayscale(1) brightness(0) !important;
     -webkit-filter: grayscale(1) brightness(0) !important;
   }
+  .bulk-ticket-page,
+  .bulk-ticket-page *,
+  .bulk-ticket-page *::before,
+  .bulk-ticket-page *::after,
+  .event-ticket-page,
+  .event-ticket-page *,
+  .event-ticket-page *::before,
+  .event-ticket-page *::after {
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+  .bulk-ticket-page img,
+  .event-ticket-page img {
+    filter: none !important;
+    -webkit-filter: none !important;
+  }
   .no-print { display: none; }
 }
 
