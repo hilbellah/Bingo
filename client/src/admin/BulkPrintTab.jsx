@@ -22,7 +22,7 @@ function escapePrintHtml(value) {
 function formatPrintDate(sessionDate) {
   const d = new Date(`${sessionDate}T12:00:00`);
   if (Number.isNaN(d.getTime())) return sessionDate || '';
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
@@ -36,7 +36,7 @@ function formatPrintTime(sessionTime = '') {
 
 function getSpecialPaperPrintStyle() {
   return `
-@page { size: letter; margin: 0.2in; }
+@page { size: letter; margin: 0; }
 html, body { margin: 0; padding: 0; background: #fff; color: #000; }
 * { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 img { filter: none !important; -webkit-filter: none !important; }
@@ -47,7 +47,7 @@ img { filter: none !important; -webkit-filter: none !important; }
   gap: 0.12in;
   width: 7.6in;
   height: 10in;
-  margin: 0 auto;
+  margin: 0.2in auto 0;
   break-after: page;
   page-break-after: always;
   overflow: hidden;
@@ -78,47 +78,38 @@ img { filter: none !important; -webkit-filter: none !important; }
 .bulk-ticket-page {
   display: flex;
   flex-direction: column;
-  width: 7.6in;
-  height: 10in;
+  width: 8.5in;
+  height: 11in;
   margin: 0 auto;
   break-after: page;
   page-break-after: always;
-  justify-content: space-between;
   overflow: hidden;
   background: #fff;
+  font-family: 'Times New Roman', Georgia, serif;
 }
 .bulk-ticket-page .ticket-card {
   width: 100%;
-  height: 3.2in;
-  border: 1.5px dashed #c5a55a;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #fdf6e3 0%, #fcecd6 50%, #f8e0c0 100%);
+  height: 3.6666in;
+  border: 0;
+  border-radius: 0;
+  background: none;
   position: relative;
   overflow: hidden;
+  display: flex;
 }
-.bulk-ticket-page .ticket-inner { display: flex; height: 100%; padding: 0.25in 0.3in; gap: 0; }
-.bulk-ticket-page .ticket-half { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 0.2in; gap: 2px; }
-.bulk-ticket-page .ticket-half-left { border-right: 2px dashed #c5a55a; }
-.bulk-ticket-page .ticket-card-single .ticket-inner { justify-content: center; }
-.bulk-ticket-page .ticket-card-single .ticket-half { flex: 0 1 50%; border-right: 0; }
-.bulk-ticket-page .ticket-half-row { display: flex; gap: 16px; justify-content: center; align-items: center; }
-.bulk-ticket-page .ticket-title { font-family: Georgia, serif; font-size: 16px; font-weight: bold; color: #1a3a5c; margin: 0 0 4px; line-height: 1.2; }
-.bulk-ticket-page .ticket-logo { width: 0.95in; height: 0.3in; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
-.bulk-ticket-page .ticket-logo-img { max-width: 100%; max-height: 100%; object-fit: contain; opacity: 1; }
-.bulk-ticket-page .ticket-name-prominent { font-size: 22px; font-weight: 700; color: #1a3a5c; margin: 0 0 2px; line-height: 1.2; overflow-wrap: anywhere; max-width: 100%; }
-.bulk-ticket-page .ticket-name-secondary { font-size: 16px; font-weight: 700; color: #1a3a5c; line-height: 1.2; overflow-wrap: anywhere; margin: 2px 0; }
-.bulk-ticket-page .ticket-price { font-family: Georgia, serif; font-size: 20px; font-weight: bold; color: #c5a55a; margin: 2px 0 0; }
-.bulk-ticket-page .ticket-price-sm { font-size: 12px; font-weight: 600; color: #c5a55a; margin: 2px 0; }
-.bulk-ticket-page .ticket-pkg { font-size: 11px; color: #555; margin: 0; }
-.bulk-ticket-page .ticket-detail-compact, .bulk-ticket-page .ticket-detail { text-align: center; }
-.bulk-ticket-page .ticket-value-md { display: block; font-size: 22px; font-weight: bold; color: #1a3a5c; line-height: 1.1; }
-.bulk-ticket-page .ticket-label { display: block; font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1px; }
-.bulk-ticket-page .ticket-value { display: block; font-size: 36px; font-weight: bold; color: #1a3a5c; line-height: 1.1; }
-.bulk-ticket-page .ticket-label-sm { display: block; font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
-.bulk-ticket-page .ticket-meta { margin-top: 2px; }
-.bulk-ticket-page .ticket-meta-text { font-size: 11px; font-weight: 600; color: #555; }
-.bulk-ticket-page .ticket-ref-block { margin-top: 2px; text-align: center; }
-.bulk-ticket-page .ticket-ref-value { display: block; font-size: 13px; font-weight: 700; color: #1a3a5c; font-family: monospace; letter-spacing: 0.5px; }`;
+.bulk-ticket-page .ticket-inner { display: flex; width: 100%; height: 100%; padding: 0.5in 0.3in 0.55in; gap: 0; }
+.bulk-ticket-page .ticket-half { flex: 0 0 50%; display: flex; flex-direction: column; align-items: center; justify-content: space-between; text-align: center; padding: 0 0.25in; color: #000; }
+.bulk-ticket-page .ticket-half-spacer { flex: 0 0 50%; }
+.bulk-ticket-page .ticket-block { max-width: 100%; }
+.bulk-ticket-page .ticket-name-prominent { font-size: 28px; font-weight: 700; color: #000; margin: 0; line-height: 1.15; overflow-wrap: anywhere; max-width: 100%; }
+.bulk-ticket-page .ticket-title-sub { font-size: 17px; font-weight: 700; color: #000; margin: 1px 0 0; line-height: 1.2; }
+.bulk-ticket-page .ticket-title-main { font-size: 30px; font-weight: 700; color: #000; margin: 0; line-height: 1.15; }
+.bulk-ticket-page .ticket-tableseat { font-size: 26px; font-weight: 700; color: #000; margin: 0; line-height: 1.2; }
+.bulk-ticket-page .ticket-stub-label { font-size: 14px; font-weight: 700; color: #000; margin: 0 0 2px; }
+.bulk-ticket-page .ticket-stub-label-u { text-decoration: underline; }
+.bulk-ticket-page .ticket-stub-main { font-size: 19px; font-weight: 700; color: #000; margin: 0 0 2px; line-height: 1.2; overflow-wrap: anywhere; }
+.bulk-ticket-page .ticket-dateref { font-size: 12px; font-weight: 700; color: #000; margin: 0; white-space: nowrap; }
+.bulk-ticket-page .ticket-dateref u { text-decoration: underline; }`;
 }
 
 function writeSpecialPaperPrintDocument(body) {
@@ -240,38 +231,37 @@ function buildBingoTicketHtml(session, ticket, printParts) {
   const time = escapePrintHtml(formatPrintTime(session.sessionTime));
   const reference = escapePrintHtml(ticket.referenceNumber);
   const packageName = escapePrintHtml(ticket.packageName);
-  const price = escapePrintHtml(`CA$${(Number(ticket.packagePrice || 0) / 100).toFixed(2)}`);
-  const cardClass = printParts.nameCopy && printParts.seatCopy ? 'ticket-card' : 'ticket-card ticket-card-single';
-  const logo = '<div class="ticket-logo"><img src="/wolastoq-logo-thermal.png" alt="Wolastoq Casino" class="ticket-logo-img"></div>';
+  const priceCents = Number(ticket.packagePrice || 0);
+  const price = escapePrintHtml(`$${priceCents % 100 === 0 ? (priceCents / 100).toFixed(0) : (priceCents / 100).toFixed(2)}`);
+  const dateRef = `${date} – ${time} - <u>${reference}</u>`;
 
   const nameCopy = printParts.nameCopy ? `<div class="ticket-half ticket-half-left">
-    <div class="ticket-name-prominent">${name}</div>
-    <h2 class="ticket-title">${displayTitle}</h2>
-    ${logo}
-    <div class="ticket-half-row">
-      <div class="ticket-detail-compact"><span class="ticket-label-sm">Table</span><span class="ticket-value-md">${tableNumber}</span></div>
-      <div class="ticket-detail-compact"><span class="ticket-label-sm">Seat</span><span class="ticket-value-md">${chairNumber}</span></div>
+    <div class="ticket-block">
+      <div class="ticket-name-prominent">${name}</div>
+      <div class="ticket-title-sub">${displayTitle}</div>
     </div>
-    <p class="ticket-price">${price}</p>
-    <p class="ticket-pkg">${packageName}</p>
-    <div class="ticket-half-row ticket-meta"><span class="ticket-meta-text">${date}</span><span class="ticket-meta-text">${time}</span></div>
-    <div class="ticket-ref-block"><span class="ticket-ref-value">${reference}</span></div>
-  </div>` : '';
+    <div class="ticket-block">
+      <div class="ticket-stub-label">Redeem this Ticket for:</div>
+      <div class="ticket-stub-main">${price} ${packageName}</div>
+      <div class="ticket-dateref">${dateRef}</div>
+    </div>
+  </div>` : '<div class="ticket-half-spacer"></div>';
 
   const seatCopy = printParts.seatCopy ? `<div class="ticket-half ticket-half-right">
-    <h2 class="ticket-title">${displayTitle}</h2>
-    ${logo}
-    <div class="ticket-half-row">
-      <div class="ticket-detail"><span class="ticket-label">Table</span><span class="ticket-value">${tableNumber}</span></div>
-      <div class="ticket-detail"><span class="ticket-label">Seat</span><span class="ticket-value">${chairNumber}</span></div>
+    <div class="ticket-block">
+      <div class="ticket-title-main">${displayTitle}</div>
     </div>
-    <div class="ticket-name-secondary">${name}</div>
-    <p class="ticket-price-sm">${price} - ${packageName}</p>
-    <div class="ticket-half-row ticket-meta"><span class="ticket-meta-text">${date}</span><span class="ticket-meta-text">${time}</span></div>
-    <div class="ticket-ref-block"><span class="ticket-ref-value">${reference}</span></div>
-  </div>` : '';
+    <div class="ticket-block">
+      <div class="ticket-tableseat">Table ${tableNumber} – Seat ${chairNumber}</div>
+    </div>
+    <div class="ticket-block">
+      <div class="ticket-stub-label ticket-stub-label-u">Keep this Ticket</div>
+      <div class="ticket-stub-main">${name}</div>
+      <div class="ticket-dateref">${dateRef}</div>
+    </div>
+  </div>` : '<div class="ticket-half-spacer"></div>';
 
-  return `<div class="${cardClass}"><div class="ticket-inner">${nameCopy}${seatCopy}</div></div>`;
+  return `<div class="ticket-card"><div class="ticket-inner">${nameCopy}${seatCopy}</div></div>`;
 }
 
 export default function BulkPrintTab() {
