@@ -10,6 +10,270 @@ const DEPARTMENT_OPTIONS = [
   { value: 'event', label: 'Live Event / Venue' },
 ];
 
+function escapePrintHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatPrintDate(sessionDate) {
+  const d = new Date(`${sessionDate}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return sessionDate || '';
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+function formatPrintTime(sessionTime = '') {
+  const [rawHour, rawMinute] = String(sessionTime || '').split(':').map(Number);
+  if (!Number.isFinite(rawHour) || !Number.isFinite(rawMinute)) return sessionTime || '';
+  const ampm = rawHour >= 12 ? 'PM' : 'AM';
+  const hour = rawHour > 12 ? rawHour - 12 : rawHour === 0 ? 12 : rawHour;
+  return `${hour}:${String(rawMinute).padStart(2, '0')} ${ampm}`;
+}
+
+function getSpecialPaperPrintStyle() {
+  return `
+@page { size: letter; margin: 0.2in; }
+html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+* { box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+img { filter: none !important; -webkit-filter: none !important; }
+.event-ticket-page {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0.12in;
+  width: 7.6in;
+  height: 10in;
+  margin: 0 auto;
+  break-after: page;
+  page-break-after: always;
+  overflow: hidden;
+}
+.event-ticket-page:last-child,
+.bulk-ticket-page:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+.event-ticket-card {
+  border: 1.5px dashed #1a3a5c;
+  border-radius: 6px;
+  padding: 0.18in;
+  background: #fffdf8;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  color: #1a3a5c;
+  overflow: hidden;
+}
+.event-ticket-title { font-family: Georgia, serif; font-size: 18px; font-weight: 700; line-height: 1.15; margin-bottom: 0.12in; color: #1a3a5c; }
+.event-ticket-name { font-size: 20px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; max-width: 100%; margin-bottom: 0.1in; color: #1a3a5c; }
+.event-ticket-row { display: flex; gap: 0.18in; justify-content: center; font-size: 16px; font-weight: 700; margin-bottom: 0.08in; }
+.event-ticket-meta { font-size: 12px; color: #555; font-weight: 600; margin-bottom: 0.08in; }
+.event-ticket-ref { font-family: monospace; font-size: 13px; font-weight: 700; color: #0f2d48; }
+.bulk-ticket-page {
+  display: flex;
+  flex-direction: column;
+  width: 7.6in;
+  height: 10in;
+  margin: 0 auto;
+  break-after: page;
+  page-break-after: always;
+  justify-content: space-between;
+  overflow: hidden;
+  background: #fff;
+}
+.bulk-ticket-page .ticket-card {
+  width: 100%;
+  height: 3.2in;
+  border: 1.5px dashed #c5a55a;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #fdf6e3 0%, #fcecd6 50%, #f8e0c0 100%);
+  position: relative;
+  overflow: hidden;
+}
+.bulk-ticket-page .ticket-inner { display: flex; height: 100%; padding: 0.25in 0.3in; gap: 0; }
+.bulk-ticket-page .ticket-half { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 0.2in; gap: 2px; }
+.bulk-ticket-page .ticket-half-left { border-right: 2px dashed #c5a55a; }
+.bulk-ticket-page .ticket-card-single .ticket-inner { justify-content: center; }
+.bulk-ticket-page .ticket-card-single .ticket-half { flex: 0 1 50%; border-right: 0; }
+.bulk-ticket-page .ticket-half-row { display: flex; gap: 16px; justify-content: center; align-items: center; }
+.bulk-ticket-page .ticket-title { font-family: Georgia, serif; font-size: 16px; font-weight: bold; color: #1a3a5c; margin: 0 0 4px; line-height: 1.2; }
+.bulk-ticket-page .ticket-logo { width: 0.95in; height: 0.3in; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+.bulk-ticket-page .ticket-logo-img { max-width: 100%; max-height: 100%; object-fit: contain; opacity: 1; }
+.bulk-ticket-page .ticket-name-prominent { font-size: 22px; font-weight: 700; color: #1a3a5c; margin: 0 0 2px; line-height: 1.2; overflow-wrap: anywhere; max-width: 100%; }
+.bulk-ticket-page .ticket-name-secondary { font-size: 16px; font-weight: 700; color: #1a3a5c; line-height: 1.2; overflow-wrap: anywhere; margin: 2px 0; }
+.bulk-ticket-page .ticket-price { font-family: Georgia, serif; font-size: 20px; font-weight: bold; color: #c5a55a; margin: 2px 0 0; }
+.bulk-ticket-page .ticket-price-sm { font-size: 12px; font-weight: 600; color: #c5a55a; margin: 2px 0; }
+.bulk-ticket-page .ticket-pkg { font-size: 11px; color: #555; margin: 0; }
+.bulk-ticket-page .ticket-detail-compact, .bulk-ticket-page .ticket-detail { text-align: center; }
+.bulk-ticket-page .ticket-value-md { display: block; font-size: 22px; font-weight: bold; color: #1a3a5c; line-height: 1.1; }
+.bulk-ticket-page .ticket-label { display: block; font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1px; }
+.bulk-ticket-page .ticket-value { display: block; font-size: 36px; font-weight: bold; color: #1a3a5c; line-height: 1.1; }
+.bulk-ticket-page .ticket-label-sm { display: block; font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+.bulk-ticket-page .ticket-meta { margin-top: 2px; }
+.bulk-ticket-page .ticket-meta-text { font-size: 11px; font-weight: 600; color: #555; }
+.bulk-ticket-page .ticket-ref-block { margin-top: 2px; text-align: center; }
+.bulk-ticket-page .ticket-ref-value { display: block; font-size: 13px; font-weight: 700; color: #1a3a5c; font-family: monospace; letter-spacing: 0.5px; }`;
+}
+
+function writeSpecialPaperPrintDocument(body) {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.position = 'fixed';
+  frame.style.left = '-10000px';
+  frame.style.top = '0';
+  frame.style.width = '1px';
+  frame.style.height = '1px';
+  frame.style.border = '0';
+  frame.style.opacity = '0';
+
+  let printed = false;
+  const cleanup = () => {
+    setTimeout(() => {
+      if (frame.parentNode) frame.parentNode.removeChild(frame);
+    }, 1000);
+  };
+  const doPrint = () => {
+    if (printed) return;
+    printed = true;
+    const win = frame.contentWindow;
+    if (!win) {
+      cleanup();
+      return;
+    }
+    win.focus();
+    win.print();
+    if ('onafterprint' in win) win.onafterprint = cleanup;
+    else cleanup();
+  };
+  const printWhenImagesReady = () => {
+    const images = Array.from(frame.contentWindow?.document?.images || []);
+    if (images.length === 0) {
+      setTimeout(doPrint, 100);
+      return;
+    }
+    Promise.all(images.map(image => {
+      if (image.complete) return Promise.resolve();
+      return new Promise(resolve => {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+      });
+    })).then(() => setTimeout(doPrint, 100));
+  };
+
+  document.body.appendChild(frame);
+  const doc = frame.contentWindow?.document;
+  if (!doc) {
+    cleanup();
+    return;
+  }
+  frame.onload = printWhenImagesReady;
+  doc.open();
+  doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>Bulk Tickets</title><style>${getSpecialPaperPrintStyle()}</style></head><body>${body}</body></html>`);
+  doc.close();
+  setTimeout(printWhenImagesReady, 500);
+}
+
+function buildSpecialPaperPrintBody(sessions = [], selectedTicketsForPrint = [], printParts = {}) {
+  const selectedBySession = new Map();
+  for (const ticket of selectedTicketsForPrint) {
+    if (!selectedBySession.has(ticket.sessionId)) selectedBySession.set(ticket.sessionId, []);
+    selectedBySession.get(ticket.sessionId).push(ticket);
+  }
+
+  return sessions.map(session => {
+    const sessionTickets = selectedBySession.get(session.sessionId) || [];
+    if (sessionTickets.length === 0) return '';
+
+    const isEventSession = session.sessionType === 'event';
+    if (!isEventSession && !printParts.nameCopy && !printParts.seatCopy) return '';
+    const ticketsPerPage = isEventSession ? 6 : 3;
+    const pages = [];
+    for (let i = 0; i < sessionTickets.length; i += ticketsPerPage) {
+      pages.push(sessionTickets.slice(i, i + ticketsPerPage));
+    }
+
+    return pages.map(pageTickets => {
+      const cards = pageTickets.map(ticket =>
+        isEventSession
+          ? buildEventTicketHtml(session, ticket)
+          : buildBingoTicketHtml(session, ticket, printParts)
+      ).join('');
+      return `<section class="${isEventSession ? 'event-ticket-page' : 'bulk-ticket-page'}">${cards}</section>`;
+    }).join('');
+  }).join('');
+}
+
+function getTicketDisplayTitle(session) {
+  if (session.eventTitle) return session.eventTitle;
+  return session.sessionType === 'regular_bingo' ? 'Regular Bingo' : 'Mega Bucks Bingo';
+}
+
+function buildEventTicketHtml(session, ticket) {
+  const displayTitle = escapePrintHtml(getTicketDisplayTitle(session));
+  const name = escapePrintHtml(`${ticket.firstName || ''} ${ticket.lastName || ''}`.trim());
+  const tableNumber = escapePrintHtml(ticket.tableNumber);
+  const chairNumber = escapePrintHtml(ticket.chairNumber);
+  const meta = escapePrintHtml(`${formatPrintDate(session.sessionDate)} - ${formatPrintTime(session.sessionTime)}`);
+  const reference = escapePrintHtml(ticket.referenceNumber);
+
+  return `<div class="event-ticket-card">
+    <div class="event-ticket-title">${displayTitle}</div>
+    <div class="event-ticket-name">${name}</div>
+    <div class="event-ticket-row"><span>Table ${tableNumber}</span><span>Seat ${chairNumber}</span></div>
+    <div class="event-ticket-meta">${meta}</div>
+    <div class="event-ticket-ref">${reference}</div>
+  </div>`;
+}
+
+function buildBingoTicketHtml(session, ticket, printParts) {
+  const displayTitle = escapePrintHtml(getTicketDisplayTitle(session));
+  const name = escapePrintHtml(`${ticket.firstName || ''} ${ticket.lastName || ''}`.trim());
+  const tableNumber = escapePrintHtml(ticket.tableNumber);
+  const chairNumber = escapePrintHtml(ticket.chairNumber);
+  const date = escapePrintHtml(formatPrintDate(session.sessionDate));
+  const time = escapePrintHtml(formatPrintTime(session.sessionTime));
+  const reference = escapePrintHtml(ticket.referenceNumber);
+  const packageName = escapePrintHtml(ticket.packageName);
+  const price = escapePrintHtml(`CA$${(Number(ticket.packagePrice || 0) / 100).toFixed(2)}`);
+  const cardClass = printParts.nameCopy && printParts.seatCopy ? 'ticket-card' : 'ticket-card ticket-card-single';
+  const logo = '<div class="ticket-logo"><img src="/wolastoq-logo-thermal.png" alt="Wolastoq Casino" class="ticket-logo-img"></div>';
+
+  const nameCopy = printParts.nameCopy ? `<div class="ticket-half ticket-half-left">
+    <div class="ticket-name-prominent">${name}</div>
+    <h2 class="ticket-title">${displayTitle}</h2>
+    ${logo}
+    <div class="ticket-half-row">
+      <div class="ticket-detail-compact"><span class="ticket-label-sm">Table</span><span class="ticket-value-md">${tableNumber}</span></div>
+      <div class="ticket-detail-compact"><span class="ticket-label-sm">Seat</span><span class="ticket-value-md">${chairNumber}</span></div>
+    </div>
+    <p class="ticket-price">${price}</p>
+    <p class="ticket-pkg">${packageName}</p>
+    <div class="ticket-half-row ticket-meta"><span class="ticket-meta-text">${date}</span><span class="ticket-meta-text">${time}</span></div>
+    <div class="ticket-ref-block"><span class="ticket-ref-value">${reference}</span></div>
+  </div>` : '';
+
+  const seatCopy = printParts.seatCopy ? `<div class="ticket-half ticket-half-right">
+    <h2 class="ticket-title">${displayTitle}</h2>
+    ${logo}
+    <div class="ticket-half-row">
+      <div class="ticket-detail"><span class="ticket-label">Table</span><span class="ticket-value">${tableNumber}</span></div>
+      <div class="ticket-detail"><span class="ticket-label">Seat</span><span class="ticket-value">${chairNumber}</span></div>
+    </div>
+    <div class="ticket-name-secondary">${name}</div>
+    <p class="ticket-price-sm">${price} - ${packageName}</p>
+    <div class="ticket-half-row ticket-meta"><span class="ticket-meta-text">${date}</span><span class="ticket-meta-text">${time}</span></div>
+    <div class="ticket-ref-block"><span class="ticket-ref-value">${reference}</span></div>
+  </div>` : '';
+
+  return `<div class="${cardClass}"><div class="ticket-inner">${nameCopy}${seatCopy}</div></div>`;
+}
+
 export default function BulkPrintTab() {
   const {
     tab,
@@ -232,6 +496,13 @@ export default function BulkPrintTab() {
     printBulkBookingReceipts(selectedReceiptBookings, receiptConfig);
   };
 
+  const handlePrintSpecialPaper = () => {
+    if (!bulkData?.sessions || !hasPrintableSelectedTickets) return;
+    const body = buildSpecialPaperPrintBody(bulkData.sessions, selectedTicketsForPrint, printParts);
+    if (!body) return;
+    writeSpecialPaperPrintDocument(body);
+  };
+
   const handleMarkPrinted = async () => {
     if (selectedTickets.length === 0) return;
     if (!confirmAdminAction({
@@ -290,7 +561,7 @@ export default function BulkPrintTab() {
                   {bulkLoading ? 'Loading...' : 'Load Tickets'}
                 </button>
                 {bulkData && bulkData.totalTickets > 0 && (
-                  <button onClick={() => window.print()}
+                  <button onClick={handlePrintSpecialPaper}
                     disabled={!hasPrintableSelectedTickets}
                     className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-blue/90">
                     Print Special Paper ({selectedTickets.length})
@@ -521,139 +792,6 @@ export default function BulkPrintTab() {
                   </table>
                 </div>
 
-                {/* Printable ticket pages */}
-                {bulkData.sessions.map(session => {
-                  const sessionTickets = selectedTicketsForPrint.filter(ticket => ticket.sessionId === session.sessionId);
-                  if (sessionTickets.length === 0) return null;
-
-                  const isEventSession = session.sessionType === 'event';
-                  if (!isEventSession && !printParts.nameCopy && !printParts.seatCopy) return null;
-                  const ticketsPerPage = isEventSession ? 6 : 3;
-                  const pages = [];
-                  for (let i = 0; i < sessionTickets.length; i += ticketsPerPage) {
-                    pages.push(sessionTickets.slice(i, i + ticketsPerPage));
-                  }
-
-                  return (
-                    <div key={session.sessionId}>
-                      <div className="no-print bg-gray-100 rounded-lg px-4 py-2 mb-2">
-                        <p className="text-sm font-semibold text-brand-blue">
-                          {session.sessionDate} at {session.sessionTime}
-                          {session.isSpecialEvent && session.eventTitle && (
-                            <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">
-                              {session.eventTitle}
-                            </span>
-                          )}
-                          <span className="ml-2 text-gray-400 font-normal">({sessionTickets.length} selected)</span>
-                        </p>
-                      </div>
-
-                      {pages.map((pageTickets, pageIdx) => (
-                        <div className={isEventSession ? 'event-ticket-page' : 'bulk-ticket-page'} key={`${session.sessionId}-${pageIdx}`}>
-                          {pageTickets.map((ticket, i) => {
-                            const displayTitle = session.eventTitle
-                              ? session.eventTitle
-                              : session.sessionType === 'regular_bingo'
-                                ? 'Regular Bingo'
-                                : 'Mega Bucks Bingo';
-                            const fmtDate = (() => {
-                              const d = new Date(session.sessionDate + 'T12:00:00');
-                              const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                              const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                              return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-                            })();
-                            const fmtTime = (() => {
-                              const [h, m] = session.sessionTime.split(':').map(Number);
-                              const ampm = h >= 12 ? 'PM' : 'AM';
-                              const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
-                              return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-                            })();
-                            return (
-                            isEventSession ? (
-                            <div className="event-ticket-card" key={i}>
-                              <div className="event-ticket-title">{displayTitle}</div>
-                              <div className="event-ticket-name">{ticket.firstName} {ticket.lastName}</div>
-                              <div className="event-ticket-row">
-                                <span>Table {ticket.tableNumber}</span>
-                                <span>Seat {ticket.chairNumber}</span>
-                              </div>
-                              <div className="event-ticket-meta">{fmtDate} - {fmtTime}</div>
-                              <div className="event-ticket-ref">{ticket.referenceNumber}</div>
-                            </div>
-                            ) : (
-                            <div className={`ticket-card ${printParts.nameCopy && printParts.seatCopy ? '' : 'ticket-card-single'}`} key={i}>
-                              <div className="ticket-inner">
-                                {/* Left half: Client copy — name prominent */}
-                                {printParts.nameCopy && (
-                                <div className="ticket-half ticket-half-left">
-                                  <div className="ticket-name-prominent">
-                                    {ticket.firstName} {ticket.lastName}
-                                  </div>
-                                  <h2 className="ticket-title">{displayTitle}</h2>
-                                  <div className="ticket-logo">
-                                    <img src="/wolastoq-logo-thermal.png" alt="Wolastoq Casino" className="ticket-logo-img" />
-                                  </div>
-                                  <div className="ticket-half-row">
-                                    <div className="ticket-detail-compact">
-                                      <span className="ticket-label-sm">Table</span>
-                                      <span className="ticket-value-md">{ticket.tableNumber}</span>
-                                    </div>
-                                    <div className="ticket-detail-compact">
-                                      <span className="ticket-label-sm">Seat</span>
-                                      <span className="ticket-value-md">{ticket.chairNumber}</span>
-                                    </div>
-                                  </div>
-                                  <p className="ticket-price">CA${(ticket.packagePrice / 100).toFixed(2)}</p>
-                                  <p className="ticket-pkg">{ticket.packageName}</p>
-                                  <div className="ticket-half-row ticket-meta">
-                                    <span className="ticket-meta-text">{fmtDate}</span>
-                                    <span className="ticket-meta-text">{fmtTime}</span>
-                                  </div>
-                                  <div className="ticket-ref-block">
-                                    <span className="ticket-ref-value">{ticket.referenceNumber}</span>
-                                  </div>
-                                </div>
-                                )}
-                                {/* Right half: Customer copy — table/seat prominent */}
-                                {printParts.seatCopy && (
-                                <div className="ticket-half ticket-half-right">
-                                  <h2 className="ticket-title">{displayTitle}</h2>
-                                  <div className="ticket-logo">
-                                    <img src="/wolastoq-logo-thermal.png" alt="Wolastoq Casino" className="ticket-logo-img" />
-                                  </div>
-                                  <div className="ticket-half-row">
-                                    <div className="ticket-detail">
-                                      <span className="ticket-label">Table</span>
-                                      <span className="ticket-value">{ticket.tableNumber}</span>
-                                    </div>
-                                    <div className="ticket-detail">
-                                      <span className="ticket-label">Seat</span>
-                                      <span className="ticket-value">{ticket.chairNumber}</span>
-                                    </div>
-                                  </div>
-                                  <div className="ticket-name-secondary">
-                                    {ticket.firstName} {ticket.lastName}
-                                  </div>
-                                  <p className="ticket-price-sm">CA${(ticket.packagePrice / 100).toFixed(2)} — {ticket.packageName}</p>
-                                  <div className="ticket-half-row ticket-meta">
-                                    <span className="ticket-meta-text">{fmtDate}</span>
-                                    <span className="ticket-meta-text">{fmtTime}</span>
-                                  </div>
-                                  <div className="ticket-ref-block">
-                                    <span className="ticket-ref-value">{ticket.referenceNumber}</span>
-                                  </div>
-                                </div>
-                                )}
-                              </div>
-                            </div>
-                            )
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
               </div>
             )}
 
