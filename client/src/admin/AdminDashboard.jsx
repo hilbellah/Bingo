@@ -271,6 +271,7 @@ export default function AdminDashboard() {
     if (tab === 'archive') { loadDeletedSessions(); loadAuditLogs(); }
     if (tab === 'inventory') { fetchAdminPhdInventory(token).then(data => { setPhdInventory(data); setPhdEditForm({ totalStock: data.totalStock, perPlayerLimit: data.perPlayerLimit }); }); }
     if (tab === 'chairs') loadSessions();
+    if (tab === 'bulkprint') loadSessions();
     if (tab === 'users' && !isSuperUser) setTab('dashboard');
   }, [tab]);
 
