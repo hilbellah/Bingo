@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 
 function SalesPanel({ title, description, children }) {
@@ -41,8 +41,21 @@ export default function BookingsTab() {
     handleResetSalesReporting,
   } = useAdminDashboard();
   const [activeBoard, setActiveBoard] = useState('dailySales');
+  const [transactionSort, setTransactionSort] = useState('newest');
   const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
   const transactionRows = transactions?.items || [];
+  const sortedTransactionRows = useMemo(() => {
+    const rows = [...transactionRows];
+    if (transactionSort === 'name-asc' || transactionSort === 'name-desc') {
+      const direction = transactionSort === 'name-asc' ? 1 : -1;
+      return rows.sort((a, b) => {
+        const lastName = String(a.customerLastName || '').localeCompare(String(b.customerLastName || ''), undefined, { sensitivity: 'base' });
+        if (lastName !== 0) return lastName * direction;
+        return String(a.customerFirstName || '').localeCompare(String(b.customerFirstName || ''), undefined, { sensitivity: 'base' }) * direction;
+      });
+    }
+    return rows.sort((a, b) => String(b.transactionAt || '').localeCompare(String(a.transactionAt || '')));
+  }, [transactionRows, transactionSort]);
   const transactionSummary = transactions?.summary || {};
   const dailySubtotalWithoutServiceCharges = dailySales?.subtotalWithoutServiceChargesFormatted || dailySales?.grandTotalFormatted || 'CA$0.00';
   const dailyServiceChargeSubtotal = dailySales?.serviceChargeSubtotalFormatted || 'CA$0.00';
@@ -300,6 +313,16 @@ export default function BookingsTab() {
                     <option value="failed">Failed</option>
                     <option value="cancelled">Cancelled</option>
                   </select>
+                  <select
+                    value={transactionSort}
+                    onChange={e => setTransactionSort(e.target.value)}
+                    className="px-3 py-1.5 border rounded-lg text-sm"
+                    aria-label="Sort transactions"
+                  >
+                    <option value="newest">Sort: Newest first</option>
+                    <option value="name-asc">Sort: Name A–Z</option>
+                    <option value="name-desc">Sort: Name Z–A</option>
+                  </select>
                   <button
                     type="button"
                     onClick={resetTransactionFilters}
@@ -367,7 +390,7 @@ export default function BookingsTab() {
                       </tr>
                     </thead>
                     <tbody>
-                      {transactionRows.map(item => (
+                      {sortedTransactionRows.map(item => (
                         <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                           <td className="py-2.5 pl-2 text-gray-500 text-xs whitespace-nowrap">{formatTransactionDate(item.transactionAt)}</td>
                           <td className="py-2.5 font-mono text-sm font-medium text-brand-blue">{item.referenceNumber}</td>

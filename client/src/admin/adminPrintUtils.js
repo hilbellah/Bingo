@@ -11,7 +11,7 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function writePrintDocument(title, body, style) {
+function writePrintDocument(title, body, style, onAfterPrint) {
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${style}</style></head><body>${body}</body></html>`;
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
@@ -24,10 +24,20 @@ function writePrintDocument(title, body, style) {
   frame.style.opacity = '0';
 
   let printed = false;
+  let finished = false;
   const cleanup = () => {
     setTimeout(() => {
       if (frame.parentNode) frame.parentNode.removeChild(frame);
     }, 1000);
+  };
+  const finishPrint = () => {
+    if (finished) return;
+    finished = true;
+    try {
+      onAfterPrint?.();
+    } finally {
+      cleanup();
+    }
   };
   const doPrint = () => {
     if (printed) return;
@@ -38,9 +48,11 @@ function writePrintDocument(title, body, style) {
       return;
     }
     win.focus();
+    win.onafterprint = finishPrint;
     win.print();
-    if ('onafterprint' in win) win.onafterprint = cleanup;
-    else cleanup();
+    // Some browsers do not dispatch afterprint for a hidden iframe. Since
+    // print() blocks until its dialog closes, this is a safe fallback.
+    setTimeout(finishPrint, 250);
   };
   const printWhenImagesReady = () => {
     const images = Array.from(frame.contentWindow?.document?.images || []);
@@ -313,10 +325,10 @@ export function buildAutoBookingReceiptBody(booking, cfg = {}) {
   return { body, paperWidth, cutPercent };
 }
 
-export function printBulkBookingReceipts(bookings, cfg) {
+export function printBulkBookingReceipts(bookings, cfg, onAfterPrint) {
   if (!Array.isArray(bookings) || bookings.length === 0) return;
   const { body, paperWidth } = buildBulkBookingReceiptsBody(bookings, cfg);
-  writePrintDocument('Bulk Receipts', body, getAutoBookingReceiptStyle(paperWidth));
+  writePrintDocument('Bulk Receipts', body, getAutoBookingReceiptStyle(paperWidth), onAfterPrint);
 }
 
 export function buildBulkBookingReceiptsBody(bookings, cfg = {}) {

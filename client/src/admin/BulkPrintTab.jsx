@@ -113,7 +113,7 @@ img { filter: none !important; -webkit-filter: none !important; }
 .bulk-ticket-page .ticket-dateref u { text-decoration: underline; }`;
 }
 
-function writeSpecialPaperPrintDocument(body) {
+function writeSpecialPaperPrintDocument(body, onAfterPrint) {
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
   frame.style.position = 'fixed';
@@ -125,10 +125,20 @@ function writeSpecialPaperPrintDocument(body) {
   frame.style.opacity = '0';
 
   let printed = false;
+  let finished = false;
   const cleanup = () => {
     setTimeout(() => {
       if (frame.parentNode) frame.parentNode.removeChild(frame);
     }, 1000);
+  };
+  const finishPrint = () => {
+    if (finished) return;
+    finished = true;
+    try {
+      onAfterPrint?.();
+    } finally {
+      cleanup();
+    }
   };
   const doPrint = () => {
     if (printed) return;
@@ -139,9 +149,11 @@ function writeSpecialPaperPrintDocument(body) {
       return;
     }
     win.focus();
+    win.onafterprint = finishPrint;
     win.print();
-    if ('onafterprint' in win) win.onafterprint = cleanup;
-    else cleanup();
+    // Some browsers omit afterprint for hidden iframes. print() returns only
+    // after the dialog closes, so this fallback still records the print job.
+    setTimeout(finishPrint, 250);
   };
   const printWhenImagesReady = () => {
     const images = Array.from(frame.contentWindow?.document?.images || []);
@@ -296,11 +308,12 @@ export default function BulkPrintTab() {
     token,
   } = useAdminDashboard();
 
-  const [printFilter, setPrintFilter] = useState('all');
+  const [printFilter, setPrintFilter] = useState('unprinted');
   const [selectedTicketIds, setSelectedTicketIds] = useState(new Set());
   const [printParts, setPrintParts] = useState({ nameCopy: true, seatCopy: true });
   const [printSort, setPrintSort] = useState('seat');
   const [markingPrinted, setMarkingPrinted] = useState(false);
+  const [printStatusMessage, setPrintStatusMessage] = useState('');
   const [receiptSettingsSaving, setReceiptSettingsSaving] = useState(false);
   const [walkInSessionId, setWalkInSessionId] = useState('');
   const [walkInSeats, setWalkInSeats] = useState([]);
@@ -443,8 +456,8 @@ export default function BulkPrintTab() {
       .join(', ');
 
   useEffect(() => {
-    setSelectedTicketIds(new Set(allTickets.map(ticket => ticket.id)));
-    setPrintFilter('all');
+    setSelectedTicketIds(new Set(allTickets.filter(ticket => !ticket.printedAt).map(ticket => ticket.id)));
+    setPrintFilter('unprinted');
   }, [allTickets]);
 
   useEffect(() => {
@@ -517,9 +530,25 @@ export default function BulkPrintTab() {
     setReceiptSettingsSaving(false);
   };
 
+  const recordPrintedTickets = async (ticketIds) => {
+    const uniqueTicketIds = [...new Set(ticketIds)];
+    if (uniqueTicketIds.length === 0) return;
+    setMarkingPrinted(true);
+    setPrintStatusMessage(`Recording ${uniqueTicketIds.length} printed ticket(s)...`);
+    const result = await markAdminBulkTicketsPrinted(token, uniqueTicketIds);
+    setMarkingPrinted(false);
+    if (!result.ok) {
+      setPrintStatusMessage('Print opened, but its printed status could not be saved. Use “Mark Selected Printed” to retry.');
+      return;
+    }
+    setPrintStatusMessage(`${uniqueTicketIds.length} ticket(s) recorded as printed.`);
+    await handleLoadBulkTickets();
+  };
+
   const handlePrintThermalReceipts = () => {
     if (selectedReceiptBookings.length === 0) return;
-    printBulkBookingReceipts(selectedReceiptBookings, receiptConfig);
+    const printedTicketIds = selectedTickets.map(ticket => ticket.id);
+    printBulkBookingReceipts(selectedReceiptBookings, receiptConfig, () => recordPrintedTickets(printedTicketIds));
   };
 
   const handleLoadBulkTicketsAndScroll = async () => {
@@ -531,7 +560,8 @@ export default function BulkPrintTab() {
     if (!bulkData?.sessions || !hasPrintableSelectedTickets) return;
     const body = buildSpecialPaperPrintBody(bulkData.sessions, selectedTicketsForPrint, printParts);
     if (!body) return;
-    writeSpecialPaperPrintDocument(body);
+    const printedTicketIds = selectedTicketsForPrint.map(ticket => ticket.id);
+    writeSpecialPaperPrintDocument(body, () => recordPrintedTickets(printedTicketIds));
   };
 
   const walkInSessions = useMemo(() => (
@@ -789,6 +819,11 @@ export default function BulkPrintTab() {
                       <p className="text-xs text-gray-500 mt-1">
                         {departmentLabel}. {unprintedCount} unprinted / {printedCount} printed. Selected: {selectedTickets.length}.
                       </p>
+                      {printStatusMessage && (
+                        <p className={`text-xs mt-1 ${printStatusMessage.includes('could not') ? 'text-red-600' : 'text-green-700'}`}>
+                          {printStatusMessage}
+                        </p>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-2 items-center">
                       <select
@@ -1242,5 +1277,4 @@ export default function BulkPrintTab() {
     </>
   );
 }
-
 
