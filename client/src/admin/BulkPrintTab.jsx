@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { markAdminBulkTicketsPrinted, saveSettings, fetchAdminSeats } from '../api';
+import { markAdminBulkTicketsPrinted, saveSettings, fetchAdminSeats, fetchSessionPackages } from '../api';
 import { printBulkBookingReceipts } from './adminPrintUtils';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { confirmAdminAction } from './adminConfirm';
@@ -101,6 +101,7 @@ img { filter: none !important; -webkit-filter: none !important; }
 .bulk-ticket-page .ticket-inner { display: flex; width: 100%; height: 100%; padding: 0.5in 0.3in 0.55in; gap: 0; }
 .bulk-ticket-page .ticket-half { flex: 0 0 50%; display: flex; flex-direction: column; align-items: center; justify-content: space-between; text-align: center; padding: 0 0.25in; color: #000; }
 .bulk-ticket-page .ticket-half-spacer { flex: 0 0 50%; }
+.bulk-ticket-page .ticket-half-single { flex: 0 0 100%; padding: 0 0.55in; }
 .bulk-ticket-page .ticket-block { max-width: 100%; }
 .bulk-ticket-page .ticket-name-prominent { font-size: 28px; font-weight: 700; color: #000; margin: 0; line-height: 1.15; overflow-wrap: anywhere; max-width: 100%; }
 .bulk-ticket-page .ticket-title-sub { font-size: 17px; font-weight: 700; color: #000; margin: 1px 0 0; line-height: 1.2; }
@@ -110,7 +111,21 @@ img { filter: none !important; -webkit-filter: none !important; }
 .bulk-ticket-page .ticket-stub-label-u { text-decoration: underline; }
 .bulk-ticket-page .ticket-stub-main { font-size: 19px; font-weight: 700; color: #000; margin: 0 0 2px; line-height: 1.2; overflow-wrap: anywhere; }
 .bulk-ticket-page .ticket-dateref { font-size: 12px; font-weight: 700; color: #000; margin: 0; white-space: nowrap; }
-.bulk-ticket-page .ticket-dateref u { text-decoration: underline; }`;
+.bulk-ticket-page .ticket-dateref u { text-decoration: underline; }
+.bulk-ticket-page-single {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+}
+.bulk-ticket-page-single .ticket-card { width: 100%; height: 2.75in; }
+.bulk-ticket-page-single .ticket-inner { padding: 0.28in 0.22in 0.3in; }
+.bulk-ticket-page-single .ticket-half-single { flex: 0 0 100%; padding: 0 0.12in; }
+.bulk-ticket-page-single .ticket-half-single .ticket-title-main { font-size: 24px; }
+.bulk-ticket-page-single .ticket-half-single .ticket-tableseat { font-size: 29px; }
+.bulk-ticket-page-single .ticket-half-single .ticket-stub-label { font-size: 15px; }
+.bulk-ticket-page-single .ticket-half-single .ticket-stub-main { font-size: 24px; }
+.bulk-ticket-page-single .ticket-half-single .ticket-dateref { font-size: 10px; }
+`;
 }
 
 function writeSpecialPaperPrintDocument(body, onAfterPrint) {
@@ -195,8 +210,9 @@ function buildSpecialPaperPrintBody(sessions = [], selectedTicketsForPrint = [],
     if (sessionTickets.length === 0) return '';
 
     const isEventSession = session.sessionType === 'event';
-    if (!isEventSession && !printParts.nameCopy && !printParts.seatCopy) return '';
-    const ticketsPerPage = isEventSession ? 6 : 3;
+    const isSingleCopy = !isEventSession && printParts.singleCopy;
+    if (!isEventSession && !printParts.nameCopy && !printParts.seatCopy && !printParts.singleCopy) return '';
+    const ticketsPerPage = isEventSession ? 6 : isSingleCopy ? 8 : 3;
     const pages = [];
     for (let i = 0; i < sessionTickets.length; i += ticketsPerPage) {
       pages.push(sessionTickets.slice(i, i + ticketsPerPage));
@@ -208,7 +224,10 @@ function buildSpecialPaperPrintBody(sessions = [], selectedTicketsForPrint = [],
           ? buildEventTicketHtml(session, ticket)
           : buildBingoTicketHtml(session, ticket, printParts)
       ).join('');
-      return `<section class="${isEventSession ? 'event-ticket-page' : 'bulk-ticket-page'}">${cards}</section>`;
+      const pageClass = isEventSession
+        ? 'event-ticket-page'
+        : `bulk-ticket-page${isSingleCopy ? ' bulk-ticket-page-single' : ''}`;
+      return `<section class="${pageClass}">${cards}</section>`;
     }).join('');
   }).join('');
 }
@@ -256,8 +275,26 @@ function buildBingoTicketHtml(session, ticket, printParts) {
   const packageName = escapePrintHtml(ticket.packageName);
   const priceCents = Number(ticket.packagePrice || 0);
   const price = escapePrintHtml(`$${priceCents % 100 === 0 ? (priceCents / 100).toFixed(0) : (priceCents / 100).toFixed(2)}`);
-  const redeemMain = isWalkIn ? '<span class="ticket-blank-line"></span>' : `${price} ${packageName}`;
+  const redeemMain = `${price} ${packageName}`;
   const dateRef = `${date} – ${time} - <u>${reference}</u>`;
+
+  if (printParts.singleCopy) {
+    return `<div class="ticket-card ticket-card-single"><div class="ticket-inner">
+      <div class="ticket-half ticket-half-single">
+        <div class="ticket-block">
+          <div class="ticket-title-main">${displayTitle}</div>
+        </div>
+        <div class="ticket-block">
+          <div class="ticket-tableseat">Table ${tableNumber} – Seat ${chairNumber}</div>
+        </div>
+        <div class="ticket-block">
+          <div class="ticket-stub-label ticket-stub-label-u">Keep this Ticket</div>
+          <div class="ticket-stub-main">${name}</div>
+          <div class="ticket-dateref">${dateRef}</div>
+        </div>
+      </div>
+    </div></div>`;
+  }
 
   const nameCopy = printParts.nameCopy ? `<div class="ticket-half ticket-half-left">
     <div class="ticket-block">
@@ -310,13 +347,14 @@ export default function BulkPrintTab() {
 
   const [printFilter, setPrintFilter] = useState('unprinted');
   const [selectedTicketIds, setSelectedTicketIds] = useState(new Set());
-  const [printParts, setPrintParts] = useState({ nameCopy: true, seatCopy: true });
+  const [printParts, setPrintParts] = useState({ nameCopy: true, seatCopy: true, singleCopy: false });
   const [printSort, setPrintSort] = useState('seat');
   const [markingPrinted, setMarkingPrinted] = useState(false);
   const [printStatusMessage, setPrintStatusMessage] = useState('');
   const [receiptSettingsSaving, setReceiptSettingsSaving] = useState(false);
   const [walkInSessionId, setWalkInSessionId] = useState('');
   const [walkInSeats, setWalkInSeats] = useState([]);
+  const [walkInPackage, setWalkInPackage] = useState(null);
   const [walkInLoading, setWalkInLoading] = useState(false);
   const [walkInSelectedTables, setWalkInSelectedTables] = useState(new Set());
   const bulkPrintTopRef = useRef(null);
@@ -376,7 +414,7 @@ export default function BulkPrintTab() {
     });
   }, [selectedTickets, printSort]);
   const hasPrintableSelectedTickets = selectedTickets.some(ticket =>
-    ticket.sessionType === 'event' || printParts.nameCopy || printParts.seatCopy
+    ticket.sessionType === 'event' || printParts.nameCopy || printParts.seatCopy || printParts.singleCopy
   );
   const selectedReceiptBookings = useMemo(() => {
     if (!bulkData?.sessions || selectedTicketIds.size === 0) return [];
@@ -502,8 +540,14 @@ export default function BulkPrintTab() {
     setBulkData(null);
   };
 
-  const togglePrintPart = (part) => {
-    setPrintParts(prev => ({ ...prev, [part]: !prev[part] }));
+  const printCopyMode = printParts.singleCopy ? 'single' : 'both';
+
+  const updatePrintCopyMode = (mode) => {
+    setPrintParts({
+      nameCopy: mode === 'both',
+      seatCopy: mode === 'both',
+      singleCopy: mode === 'single',
+    });
   };
 
   const updateReceiptConfig = (patch) => {
@@ -599,18 +643,26 @@ export default function BulkPrintTab() {
   const handleSelectWalkInSession = async (sessionId) => {
     setWalkInSessionId(sessionId);
     setWalkInSeats([]);
+    setWalkInPackage(null);
     setWalkInSelectedTables(new Set());
     if (!sessionId) return;
     setWalkInLoading(true);
     try {
-      const seats = await fetchAdminSeats(token, sessionId);
+      const [seats, packages] = await Promise.all([
+        fetchAdminSeats(token, sessionId),
+        fetchSessionPackages(sessionId),
+      ]);
       const seatList = Array.isArray(seats) ? seats : [];
+      const packageList = Array.isArray(packages) ? packages : [];
+      const entryPackage = packageList.find(pkg => pkg.type === 'required') || packageList[0] || null;
       setWalkInSeats(seatList);
+      setWalkInPackage(entryPackage);
       setWalkInSelectedTables(new Set(
         seatList.filter(seat => seat.status === 'vacant' && !seat.is_disabled).map(seat => seat.table_number)
       ));
     } catch {
       setWalkInSeats([]);
+      setWalkInPackage(null);
     } finally {
       setWalkInLoading(false);
     }
@@ -642,8 +694,8 @@ export default function BulkPrintTab() {
       lastName: '',
       tableNumber: seat.table_number,
       chairNumber: seat.chair_number,
-      packageName: '',
-      packagePrice: 0,
+      packageName: walkInPackage?.name || 'Entry Package',
+      packagePrice: Number(walkInPackage?.price || 0),
       referenceNumber: '',
     }));
     const body = buildSpecialPaperPrintBody([printSession], walkInTickets, { nameCopy: true, seatCopy: true });
@@ -728,8 +780,8 @@ export default function BulkPrintTab() {
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4 no-print">
               <h3 className="font-semibold text-brand-blue mb-1">Walk-in Tickets (blank)</h3>
               <p className="text-sm text-gray-500 mb-3">
-                Print fill-in tickets for a session&apos;s remaining unsold seats. The name and package lines print blank for staff
-                to write in, with the real table and seat number on each ticket. Print-only: no bookings are created and these
+                Print fill-in tickets for a session&apos;s remaining unsold seats. The name line prints blank for staff to write in;
+                the ticket uses that session&apos;s required entry package, with the real table and seat number. Print-only: no bookings are created and these
                 never count toward seat sale totals.
               </p>
               <div className="flex flex-wrap gap-3 items-end">
@@ -756,6 +808,13 @@ export default function BulkPrintTab() {
                   {walkInLoading ? 'Loading seats...' : `Print Walk-in Tickets (${walkInSeatsToPrint.length})`}
                 </button>
               </div>
+              {walkInSessionId && !walkInLoading && walkInPackage && (
+                <p className="text-xs text-gray-600 mt-3">
+                  Walk-in ticket package: <span className="font-semibold text-brand-blue">
+                    ${(Number(walkInPackage.price || 0) / 100).toFixed(2)} {walkInPackage.name}
+                  </span>
+                </p>
+              )}
               {walkInSessionId && !walkInLoading && walkInAvailableSeats.length === 0 && (
                 <p className="text-sm text-gray-400 mt-3">No unsold seats left for this session.</p>
               )}
@@ -855,21 +914,16 @@ export default function BulkPrintTab() {
                 <div className="bg-white rounded-xl p-4 shadow-sm mb-4 no-print">
                   <p className="text-sm font-semibold text-brand-blue mb-2">Special Paper Print</p>
                   <div className="flex flex-wrap gap-4 items-end">
-                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={printParts.nameCopy}
-                        onChange={() => togglePrintPart('nameCopy')}
-                      />
-                      Name copy
-                    </label>
-                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={printParts.seatCopy}
-                        onChange={() => togglePrintPart('seatCopy')}
-                      />
-                      Seat copy
+                    <label className="text-sm text-gray-700">
+                      <span className="block text-xs text-gray-400 mb-1">Copies per Ticket</span>
+                      <select
+                        value={printCopyMode}
+                        onChange={e => updatePrintCopyMode(e.target.value)}
+                        className="px-3 py-2 border rounded-lg text-sm"
+                      >
+                        <option value="both">2 copies — Name + Seat (usual)</option>
+                        <option value="single">1 copy — Complete ticket (large print)</option>
+                      </select>
                     </label>
                     <label className="text-sm text-gray-700">
                       <span className="block text-xs text-gray-400 mb-1">Print Order</span>
@@ -1277,4 +1331,3 @@ export default function BulkPrintTab() {
     </>
   );
 }
-
