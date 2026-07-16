@@ -13,6 +13,7 @@ import {
 } from '../services/sessionPackages.js';
 import { sendSessionRescheduleNotification } from '../services/email.js';
 import { formatCurrency } from '../utils/format.js';
+import { getLiveEventCapacity, normalizeTicketLimit } from '../services/liveEventCapacity.js';
 
 const LOCAL_DATE_TIME_REGEX = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/;
 const TIME_REGEX = /^\d{2}:\d{2}$/;
@@ -57,6 +58,8 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
     try {
       const { date, time, cutoff_time, is_available, is_special_event, event_title, event_description, event_image_url, packages: pkgs } = req.body;
       const sessionType = normalizeSessionType(req.body.session_type, is_special_event);
+      const ticketLimit = sessionType === 'event' ? normalizeTicketLimit(req.body.ticket_limit) : null;
+      if (Number.isNaN(ticketLimit)) return res.status(400).json({ error: 'ticket_limit must be a positive whole number or blank' });
       const isSpecialType = sessionType === 'special_bingo' || sessionType === 'event';
       const doorsOpen = isSpecialType ? normalizeDoorsOpenTime(req.body.doors_open_time) : { value: null };
       if (doorsOpen.error) return res.status(400).json({ error: doorsOpen.error });
@@ -86,8 +89,8 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       }
 
       const id = uuid();
-      await run('INSERT INTO sessions (id, date, time, cutoff_time, sales_cutoff_at, doors_open_time, is_available, is_special_event, event_title, event_description, event_image_url, session_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, date, time, cutoff_time || '12:00', salesCutoff.value, doorsOpen.value, is_available !== false ? 1 : 0, isSpecialType ? 1 : 0, event_title || null, event_description || null, event_image_url || null, sessionType]);
+      await run('INSERT INTO sessions (id, date, time, cutoff_time, sales_cutoff_at, doors_open_time, ticket_limit, is_available, is_special_event, event_title, event_description, event_image_url, session_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, date, time, cutoff_time || '12:00', salesCutoff.value, doorsOpen.value, ticketLimit, is_available !== false ? 1 : 0, isSpecialType ? 1 : 0, event_title || null, event_description || null, event_image_url || null, sessionType]);
 
       let chairCount = 0;
       for (let tableNumber = 1; tableNumber <= 75; tableNumber++) {
@@ -105,10 +108,10 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         }
       }
 
-      await logAudit('session_created', 'session', id, { date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, doors_open_time: doorsOpen.value, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url });
+      await logAudit('session_created', 'session', id, { date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, doors_open_time: doorsOpen.value, ticket_limit: ticketLimit, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url });
       await saveDb();
 
-      res.json({ id, date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, doors_open_time: doorsOpen.value, is_available, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url: event_image_url || null, totalChairs: chairCount });
+      res.json({ id, date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, doors_open_time: doorsOpen.value, ticket_limit: ticketLimit, is_available, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url: event_image_url || null, totalChairs: chairCount });
     } catch (err) {
       console.error('POST /api/admin/sessions failed:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -162,6 +165,20 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       } else if (nextSessionType && nextSessionType !== 'event' && nextSessionType !== 'special_bingo') {
         updates.push('sales_cutoff_at = ?');
         values.push(null);
+      }
+      if (req.body.ticket_limit !== undefined || (nextSessionType && nextSessionType !== 'event')) {
+        const ticketLimit = effectiveSessionType === 'event' ? normalizeTicketLimit(req.body.ticket_limit) : null;
+        if (Number.isNaN(ticketLimit)) return res.status(400).json({ error: 'ticket_limit must be a positive whole number or blank' });
+        if (ticketLimit !== null) {
+          const capacity = await getLiveEventCapacity({ ...currentSession, ticket_limit: ticketLimit, session_type: effectiveSessionType });
+          if (capacity && capacity.reserved > ticketLimit) {
+            return res.status(409).json({
+              error: `Ticket limit cannot be lower than the ${capacity.reserved} ticket${capacity.reserved === 1 ? '' : 's'} already sold or on hold.`,
+            });
+          }
+        }
+        updates.push('ticket_limit = ?');
+        values.push(ticketLimit);
       }
       if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
 

@@ -36,12 +36,12 @@ const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().
 const pastCutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const holdUntil = new Date(Date.now() + 20 * 60 * 1000).toISOString();
 
-async function createEventSession({ sessionId, seatId, holderId, withPackage, salesCutoffAt = null }) {
+async function createEventSession({ sessionId, seatId, holderId, withPackage, salesCutoffAt = null, ticketLimit = null }) {
   await run(
     `INSERT INTO sessions
-      (id, date, time, cutoff_time, sales_cutoff_at, is_available, session_type, is_special_event, event_title)
-     VALUES (?, ?, '19:00', '18:00', ?, 1, 'event', 1, ?)`,
-    [sessionId, futureDate, salesCutoffAt, sessionId]
+      (id, date, time, cutoff_time, sales_cutoff_at, ticket_limit, is_available, session_type, is_special_event, event_title)
+     VALUES (?, ?, '19:00', '18:00', ?, ?, 1, 'event', 1, ?)`,
+    [sessionId, futureDate, salesCutoffAt, ticketLimit, sessionId]
   );
   await run(
     `INSERT INTO seats
@@ -97,6 +97,7 @@ await createEventSession({
   seatId: 'event-with-ticket-seat',
   holderId: 'event-with-ticket-holder',
   withPackage: true,
+  ticketLimit: 2,
 });
 await createEventSession({
   sessionId: 'event-without-ticket',
@@ -152,6 +153,11 @@ await run(
     (id, session_id, table_number, chair_number, status, held_by, held_until)
    VALUES (?, 'event-with-ticket', 1, 2, 'held', 'event-vip-holder', ?)`,
   ['event-with-ticket-vip-seat', holdUntil]
+);
+await run(
+  `INSERT INTO seats
+    (id, session_id, table_number, chair_number, status)
+   VALUES ('event-with-ticket-extra-seat', 'event-with-ticket', 1, 3, 'vacant')`
 );
 await run(
   `UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`,
@@ -239,7 +245,18 @@ try {
   assert.equal(vipInitiate.data.salesTaxAmount, 600);
   assert.equal(vipInitiate.data.serviceFeeAmount, 0);
 
+  const overLimitLock = await postJson('/api/seats/event-with-ticket-extra-seat/lock', {
+    holderId: 'event-over-limit-holder',
+  });
+  assert.equal(overLimitLock.response.status, 409);
+  assert.match(overLimitLock.data.error, /ticket limit/i);
+
   const sessions = await getJson('/api/sessions');
+  const limitedEvent = sessions.data.find(session => session.id === 'event-with-ticket');
+  assert.equal(limitedEvent.ticket_limit, 2);
+  assert.equal(limitedEvent.ticket_limit_remaining, 0);
+  assert.equal(limitedEvent.available_seats, 0);
+  assert.equal(limitedEvent.booking_closed_reason, 'sold_out');
   const sameDaySessions = sessions.data
     .filter(session => session.date === futureDate)
     .map(session => [session.id, session.session_type])
@@ -261,6 +278,28 @@ try {
   assert.equal(specialPackages.data[1].max_quantity, 1, 'special bingo PHD add-on should be capped at one');
 
   const auth = Buffer.from(`${process.env.ADMIN_USERNAME}:${process.env.ADMIN_PASSWORD}`).toString('base64');
+  const lowerLimitResponse = await fetch(`${baseUrl}/api/admin/sessions/event-with-ticket`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Basic ${auth}` },
+    body: JSON.stringify({ ticket_limit: 1 }),
+  });
+  const lowerLimit = { response: lowerLimitResponse, data: await lowerLimitResponse.json() };
+  assert.equal(lowerLimit.response.status, 409);
+  assert.match(lowerLimit.data.error, /already sold or on hold/i);
+
+  const raiseLimitResponse = await fetch(`${baseUrl}/api/admin/sessions/event-with-ticket`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Basic ${auth}` },
+    body: JSON.stringify({ ticket_limit: 3 }),
+  });
+  const raiseLimit = { response: raiseLimitResponse, data: await raiseLimitResponse.json() };
+  assert.equal(raiseLimit.response.status, 200, raiseLimit.data.error || 'active event ticket limit should remain editable');
+
+  const lockAfterRaise = await postJson('/api/seats/event-with-ticket-extra-seat/lock', {
+    holderId: 'event-after-limit-raise-holder',
+  });
+  assert.equal(lockAfterRaise.response.status, 200, lockAfterRaise.data.error || 'raised limit should take effect immediately');
+
   const sameHourSpecial = await postJson('/api/admin/sessions', {
     date: futureDate,
     time: '19:30',

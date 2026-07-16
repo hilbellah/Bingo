@@ -3,6 +3,7 @@ import { all, get, run, saveDb } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { refundTransaction, verifyTransaction, voidTransaction } from '../services/payments.js';
 import { formatCurrency, generateRef } from '../utils/format.js';
+import { getLiveEventCapacity, withSessionCapacityLock } from '../services/liveEventCapacity.js';
 
 function csvCell(value) {
   let text = String(value ?? '');
@@ -656,8 +657,13 @@ export function registerAdminBookingRoutes(app, {
         return res.status(400).json({ error: 'A valid table and chair are required.' });
       }
 
-      const session = await get('SELECT id, date, time, event_title FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
+      const session = await get('SELECT id, date, time, event_title, session_type, is_special_event, ticket_limit FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
       if (!session) return res.status(404).json({ error: 'Session not found.' });
+
+      const capacity = await withSessionCapacityLock(sessionId, () => getLiveEventCapacity(session));
+      if (capacity && capacity.remaining < 1) {
+        return res.status(409).json({ error: 'This live event has reached its ticket limit.' });
+      }
 
       const seat = await get(
         'SELECT * FROM seats WHERE session_id = ? AND table_number = ? AND chair_number = ?',

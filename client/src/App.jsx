@@ -542,7 +542,14 @@ export default function App() {
   const soldCount = seats.filter(seat => seat.status === 'sold').length;
   const heldCount = seats.filter(seat => seat.status === 'held').length;
   const sellableSeatCount = seats.filter(seat => !seat.is_disabled).length;
-  const soldOut = sellableSeatCount > 0 && seats.every(seat => seat.is_disabled || seat.status === 'sold');
+  const configuredTicketLimit = Number(selectedSession?.ticket_limit || 0);
+  const capacityRemaining = configuredTicketLimit > 0
+    ? Math.max(0, configuredTicketLimit - soldCount - heldCount)
+    : vacantCount;
+  const eventAvailableTickets = isSelectedEvent ? Math.min(vacantCount, capacityRemaining) : vacantCount;
+  const soldOut = isSelectedEvent && configuredTicketLimit > 0
+    ? capacityRemaining <= 0 && selectedSeats.length === 0
+    : sellableSeatCount > 0 && seats.every(seat => seat.is_disabled || seat.status === 'sold');
   const selectedBookingStatus = getClientBookingStatus(selectedSession, {
     soldOut,
     nowMs: nowTick,
@@ -725,7 +732,7 @@ export default function App() {
           <LiveEventBookingSurface
             event={selectedSession}
             packages={packages}
-            availableTickets={vacantCount}
+            availableTickets={eventAvailableTickets}
             soldTickets={soldCount}
             heldTickets={heldCount}
             bookingClosed={bookingClosed}

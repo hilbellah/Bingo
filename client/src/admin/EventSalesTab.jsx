@@ -146,6 +146,19 @@ export default function EventSalesTab() {
             />
           </div>
         </div>
+        <div className="mt-3 max-w-xs">
+          <label className="block text-xs text-gray-400 mb-1">Ticket Limit (optional)</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={newEvent.ticket_limit || ''}
+            onChange={e => setNewEvent({ ...newEvent, ticket_limit: e.target.value })}
+            className="w-full px-3 py-2 border rounded-lg text-sm"
+            placeholder="Unlimited"
+          />
+          <p className="mt-1 text-xs text-gray-400">Leave blank for no limit. Active customer holds reserve tickets until they expire.</p>
+        </div>
         <div className="mt-3">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-brand-blue">Ticket Types</h4>
@@ -246,6 +259,7 @@ export default function EventSalesTab() {
                     <th className="pb-2">Date</th>
                     <th className="pb-2">Time</th>
                     <th className="pb-2">Doors</th>
+                    <th className="pb-2">Ticket Limit</th>
                     <th className="pb-2">Status</th>
                     <th className="pb-2">Actions</th>
                   </tr>
@@ -257,6 +271,7 @@ export default function EventSalesTab() {
                       <td className="py-2">{session.date}</td>
                       <td className="py-2">{session.time}</td>
                       <td className="py-2 text-xs text-gray-500">{session.doors_open_time || '-'}</td>
+                      <td className="py-2 text-xs text-gray-600">{session.ticket_limit || 'Unlimited'}</td>
                       <td className="py-2">
                         <span className={`px-2 py-0.5 rounded-full text-xs ${session.is_available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                           {session.is_available ? 'Active' : 'Disabled'}
@@ -361,6 +376,19 @@ export default function EventSalesTab() {
                   <input type="time" value={editForm.cutoff_time} onChange={e => setEditForm({ ...editForm, cutoff_time: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Ticket Limit (optional)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={editForm.ticket_limit || ''}
+                  onChange={e => setEditForm({ ...editForm, ticket_limit: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  placeholder="Unlimited"
+                />
+                <p className="mt-1 text-xs text-gray-400">You can change this while sales are open. Leave blank for unlimited; it cannot be set below tickets already sold or on hold.</p>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Description</label>

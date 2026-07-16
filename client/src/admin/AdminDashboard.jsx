@@ -118,7 +118,7 @@ export default function AdminDashboard() {
   const [bookingConfig, setBookingConfig] = useState(DEFAULT_BOOKING_CONFIG);
   const [bookingConfigSaved, setBookingConfigSaved] = useState(false);
   const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages() });
-  const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
+  const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', ticket_limit: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
   const [newPackage, setNewPackage] = useState({ name: '', price: '', type: 'optional', max_quantity: 1, sort_order: 0, is_phd: false, description: '' });
@@ -584,6 +584,7 @@ export default function AdminDashboard() {
       event_title: session.event_title || '',
       event_description: session.event_description || '',
       doors_open_time: session.doors_open_time || '',
+      ticket_limit: session.ticket_limit || '',
       event_image_url: session.event_image_url || '',
     });
     setEditImageFile(null);
@@ -612,6 +613,7 @@ export default function AdminDashboard() {
         `Time: ${formatTime(payload.time)}`,
         (payload.session_type === 'event' || payload.session_type === 'special_bingo') && payload.doors_open_time ? `Doors open: ${formatTime(payload.doors_open_time)}` : '',
         `Sales cutoff: ${payload.session_type === 'event' || payload.session_type === 'special_bingo' ? formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time) : formatTime(payload.cutoff_time)}`,
+        payload.session_type === 'event' ? `Ticket limit: ${payload.ticket_limit || 'Unlimited'}` : '',
         payload.event_title ? `Title: ${payload.event_title}` : '',
       ],
       warning: payload.notify_reschedule === false
@@ -810,6 +812,7 @@ export default function AdminDashboard() {
         `Time: ${formatTime(payload.time)}`,
         payload.doors_open_time ? `Doors open: ${formatTime(payload.doors_open_time)}` : '',
         `Sales cutoff: ${formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time)}`,
+        `Ticket limit: ${payload.ticket_limit || 'Unlimited'}`,
         `Ticket: ${packageSummary(payload.packages) || 'No ticket price configured'}`,
       ],
       warning: 'This will make the live event / venue available for booking.',
@@ -819,7 +822,7 @@ export default function AdminDashboard() {
     try {
       payload.event_image_url = await resolveEventImageUrl(payload.event_image_url, eventImageFile);
       await createAdminSession(token, payload);
-      setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
+      setNewEvent({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', ticket_limit: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
       setEventImageFile(null);
       setEventImagePreview(null);
       loadSessions();

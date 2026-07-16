@@ -35,6 +35,7 @@ import {
   shortenRequestedSeatHolds,
 } from './services/holds.js';
 import { getSessionBookingStatus, withSessionBookingStatus } from './services/sessionBookingStatus.js';
+import { getLiveEventCapacity } from './services/liveEventCapacity.js';
 import {
   getNextPhdSessionId,
   getPhdInventoryForSession,
@@ -471,6 +472,11 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
     if (!seat || seat.status !== 'held' || seat.held_by !== holderId) {
       return { ok: false, statusCode: 409, error: 'Seat not held by you' };
     }
+  }
+
+  const eventCapacity = await getLiveEventCapacity(session);
+  if (eventCapacity && eventCapacity.reserved > eventCapacity.limit) {
+    return { ok: false, statusCode: 409, error: 'This live event has reached its ticket limit.' };
   }
 
   return {
@@ -1299,8 +1305,18 @@ app.get('/api/sessions', async (req, res) => {
       GROUP BY s.id
       ORDER BY s.date ASC, s.time ASC`, [today]
     );
-    res.json(sessions.map(session => withSessionBookingStatus(session, {
-      soldOut: Number(session.total_seats) > 0 && Number(session.sold_seats) >= Number(session.total_seats),
+    res.json(await Promise.all(sessions.map(async session => {
+      const capacity = await getLiveEventCapacity(session);
+      const physicalAvailable = Number(session.available_seats || 0);
+      const availableSeats = capacity ? Math.min(physicalAvailable, capacity.remaining) : physicalAvailable;
+      return withSessionBookingStatus({
+        ...session,
+        available_seats: availableSeats,
+        ticket_limit: capacity?.limit ?? session.ticket_limit ?? null,
+        ticket_limit_remaining: capacity?.remaining ?? null,
+      }, {
+        soldOut: capacity ? capacity.remaining <= 0 : Number(session.total_seats) > 0 && Number(session.sold_seats) >= Number(session.total_seats),
+      });
     })));
   } catch (err) {
     console.error('GET /api/sessions failed:', err);
@@ -1396,8 +1412,13 @@ app.get('/api/sessions/:id', async (req, res) => {
        WHERE session_id = ?`,
       [session.id]
     );
-    res.json(withSessionBookingStatus(session, {
-      soldOut: Number(seatRow?.total_seats || 0) > 0 && Number(seatRow?.sold_seats || 0) >= Number(seatRow?.total_seats || 0),
+    const capacity = await getLiveEventCapacity(session);
+    res.json(withSessionBookingStatus({
+      ...session,
+      ticket_limit: capacity?.limit ?? session.ticket_limit ?? null,
+      ticket_limit_remaining: capacity?.remaining ?? null,
+    }, {
+      soldOut: capacity ? capacity.remaining <= 0 : Number(seatRow?.total_seats || 0) > 0 && Number(seatRow?.sold_seats || 0) >= Number(seatRow?.total_seats || 0),
     }));
   } catch (err) {
     console.error('GET /api/sessions/:id failed:', err);
