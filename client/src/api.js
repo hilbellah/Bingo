@@ -378,6 +378,14 @@ export async function refundAdminBookingItem(token, id) {
   return { ok: res.ok, ...json };
 }
 
+export async function removeAdminAssignedTicket(token, id) {
+  const res = await fetch(`${API}/admin/booking-items/${id}/remove-assigned`, {
+    method: 'POST', headers: adminHeaders(token)
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
 export async function moveAdminBookingItemSeat(token, id, { tableNumber, chairNumber }) {
   const res = await fetch(`${API}/admin/booking-items/${id}/move-seat`, {
     method: 'POST',

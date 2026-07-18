@@ -757,6 +757,98 @@ export function registerAdminBookingRoutes(app, {
     }
   });
 
+  app.post('/api/admin/booking-items/:id/remove-assigned', adminAuth, async (req, res) => {
+    try {
+      const item = await get(`
+        SELECT bi.id, bi.booking_id, bi.seat_id, bi.reference_number,
+               bi.first_name, bi.last_name, bi.price, bi.refund_status,
+               b.reference_number as booking_reference, b.session_id,
+               b.booking_source, b.payment_provider, b.payment_status,
+               b.total_amount, b.transaction_id,
+               seats.table_number, seats.chair_number
+        FROM booking_items bi
+        JOIN bookings b ON b.id = bi.booking_id
+        JOIN seats ON seats.id = bi.seat_id
+        WHERE bi.id = ?
+      `, [req.params.id]);
+
+      if (!item) return res.status(404).json({ error: 'Assigned ticket not found.' });
+      if (!['promo', 'donation'].includes(String(item.booking_source || '').toLowerCase())) {
+        return res.status(400).json({ error: 'Only promo or donation assigned seats can be removed with this action.' });
+      }
+      if (item.payment_provider !== 'admin_assigned' || item.transaction_id || Number(item.total_amount) !== 0 || Number(item.price) !== 0) {
+        return res.status(409).json({ error: 'This ticket is linked to a payment or is not a $0 admin-assigned seat. Use the normal refund workflow.' });
+      }
+      if (item.refund_status === 'refunded') {
+        return res.status(409).json({ error: 'This assigned seat has already been removed.' });
+      }
+      if (!['paid', 'partially_refunded'].includes(item.payment_status)) {
+        return res.status(409).json({ error: `Cannot remove an assigned seat from booking status '${item.payment_status}'.` });
+      }
+
+      const now = new Date().toISOString();
+      await run(
+        `UPDATE booking_items
+         SET refund_status = 'refunded', refunded_at = ?, refund_amount = 0,
+             refund_transaction_id = NULL, refund_action = 'assigned_seat_removed'
+         WHERE id = ?`,
+        [now, item.id]
+      );
+      await run(
+        "UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?",
+        [item.seat_id]
+      );
+      const creditResult = await run(
+        "UPDATE customer_credits SET status = 'cancelled' WHERE booking_item_id = ? AND status = 'active'",
+        [item.id]
+      );
+      const creditsCancelled = Number(creditResult?.changes || 0);
+
+      const activeItems = await get(`
+        SELECT COUNT(*) as count
+        FROM booking_items
+        WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'
+      `, [item.booking_id]);
+      const bookingCancelled = Number(activeItems?.count || 0) === 0;
+      if (bookingCancelled) {
+        await run("UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?", [item.booking_id]);
+      }
+
+      await logAudit('assigned_ticket_removed', 'booking_item', item.id, {
+        bookingId: item.booking_id,
+        bookingReference: item.booking_reference,
+        ticketReference: item.reference_number,
+        sessionId: item.session_id,
+        type: item.booking_source,
+        attendee: `${item.first_name || ''} ${item.last_name || ''}`.trim(),
+        tableNumber: item.table_number,
+        chairNumber: item.chair_number,
+        bookingCancelled,
+        creditsCancelled,
+        removedBy: req.adminUser?.email || null,
+      });
+
+      io.to(`session:${item.session_id}`).emit('seats:refresh', { sessionId: item.session_id });
+      await saveDb();
+
+      res.json({
+        ok: true,
+        action: 'remove_assigned_seat',
+        type: item.booking_source,
+        seatsReleased: 1,
+        bookingCancelled,
+        creditsCancelled,
+        bookingId: item.booking_id,
+        bookingReference: item.booking_reference,
+        ticketReference: item.reference_number,
+        seat: { tableNumber: item.table_number, chairNumber: item.chair_number },
+      });
+    } catch (err) {
+      console.error('POST /api/admin/booking-items/:id/remove-assigned failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   app.post('/api/admin/booking-items/:id/move-seat', adminAuth, async (req, res) => {
     try {
       const tableNumber = Number(req.body?.tableNumber);

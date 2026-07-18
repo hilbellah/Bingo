@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
+  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -938,6 +938,35 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleRemoveAssignedTicket = async (item, booking) => {
+    const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
+    const seatLabel = `Table ${item.tableNumber}, Seat ${item.chairNumber}`;
+    const sourceLabel = booking?.bookingSource === 'donation' ? 'donation' : 'promo';
+    const proceed = confirmAdminAction({
+      action: `Remove ${sourceLabel} seat ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`,
+      warning: `${seatLabel} will become available again. No payment refund will be attempted because this is a $0 assigned seat. The removal will remain in the audit history.`,
+    });
+    if (!proceed) return;
+
+    const result = await removeAdminAssignedTicket(token, item.id);
+    if (result.ok) {
+      window.alert(`${sourceLabel === 'donation' ? 'Donation' : 'Promo'} seat removed. ${seatLabel} is now available.`);
+      loadBookings(reportSession);
+      loadTransactions(transactionFilters);
+      loadBookingSales();
+      loadDailySales(dailySalesDate, dailySalesSearch);
+      loadSessions();
+      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
+      if (soldModal?.session?.id) {
+        fetchAdminBookings(token, soldModal.session.id).then(data => {
+          setSoldModal({ session: soldModal.session, bookings: data });
+        });
+      }
+    } else {
+      window.alert('Assigned seat removal failed: ' + (result.error || 'Unknown error'));
+    }
+  };
+
   const handleIssueNoShowCredit = async (item, booking) => {
     if (item.credit?.code) {
       window.alert(`This ticket already has credit ${item.credit.code}.`);
@@ -1207,6 +1236,7 @@ export default function AdminDashboard() {
     handleResetSalesReporting,
     handleRefundBooking,
     handleRefundBookingItem,
+    handleRemoveAssignedTicket,
     handleIssueNoShowCredit,
     handleExport,
     bulkDateFrom,

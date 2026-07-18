@@ -1,11 +1,16 @@
 import React from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 
+function isAssignedBooking(booking) {
+  return ['promo', 'donation'].includes(String(booking?.bookingSource || '').toLowerCase());
+}
+
 export default function SoldTicketsModal() {
   const {
     handlePrintBookingReceipt,
     handleRefundBooking,
     handleRefundBookingItem,
+    handleRemoveAssignedTicket,
     handleIssueNoShowCredit,
     handleMoveBookingItemSeat,
     soldModal,
@@ -57,7 +62,7 @@ export default function SoldTicketsModal() {
                         >
                           Reprint Receipt
                         </button>
-                        {b.paymentStatus === 'paid' && b.items.every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
+                        {b.paymentStatus === 'paid' && !isAssignedBooking(b) && b.items.every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
                           <button
                             onClick={() => handleRefundBooking(b.id, b.referenceNumber)}
                             className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
@@ -96,11 +101,13 @@ export default function SoldTicketsModal() {
                             <td className="py-1 text-right">
                               {item.refundStatus === 'refunded' ? (
                                 <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
-                                  Refunded {item.refundAmountFormatted || ''}
+                                  {item.refundAction === 'assigned_seat_removed'
+                                    ? 'Removed'
+                                    : `Refunded ${item.refundAmountFormatted || ''}`}
                                 </span>
                               ) : ['paid', 'partially_refunded'].includes(b.paymentStatus) ? (
                                 <div className="flex flex-wrap justify-end gap-2">
-                                  {item.credit?.code ? (
+                                  {!isAssignedBooking(b) && (item.credit?.code ? (
                                     <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700" title={item.credit.note || 'No-show credit'}>
                                       Credit {item.credit.code}
                                     </span>
@@ -112,7 +119,7 @@ export default function SoldTicketsModal() {
                                     >
                                       No-Show Credit
                                     </button>
-                                  )}
+                                  ))}
                                   {handleMoveBookingItemSeat && (
                                     <button
                                       onClick={() => handleMoveBookingItemSeat(item, b)}
@@ -122,7 +129,15 @@ export default function SoldTicketsModal() {
                                       Move Seat
                                     </button>
                                   )}
-                                  {handleRefundBookingItem && (
+                                  {isAssignedBooking(b) && handleRemoveAssignedTicket ? (
+                                    <button
+                                      onClick={() => handleRemoveAssignedTicket(item, b)}
+                                      className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                      title="Release this $0 promo or donation seat without a payment refund"
+                                    >
+                                      Remove Assigned Seat
+                                    </button>
+                                  ) : handleRefundBookingItem && (
                                     <button
                                       onClick={() => handleRefundBookingItem(item, b)}
                                       className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"

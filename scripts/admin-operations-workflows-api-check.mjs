@@ -128,10 +128,48 @@ try {
   const assignedSeat = await get('SELECT status FROM seats WHERE id = ?', [assignedSeatId]);
   assert.equal(assignedSeat.status, 'sold');
 
+  const assignedCredit = await request(`/api/admin/booking-items/${assigned.data.bookingItemId}/no-show-credit`, {
+    method: 'POST',
+    body: { amountCents: 0, note: 'Regression assigned-seat credit' },
+  });
+  assert.equal(assignedCredit.response.status, 200);
+  assert.equal(assignedCredit.data.credit.amount, 0);
+
   const bulk = await request(`/api/admin/bookings/bulk-tickets?dateFrom=${futureDate}&dateTo=${futureDate}&department=regular_bingo`);
   assert.equal(bulk.response.status, 200);
   const allTickets = bulk.data.sessions.flatMap(session => session.bookings.flatMap(booking => booking.tickets));
   assert.equal(allTickets.some(ticket => ticket.firstName === 'Promo' && ticket.lastName === 'Guest' && ticket.packagePrice === 0), true);
+
+  const rejectPaidRemoval = await request(`/api/admin/booking-items/${itemId}/remove-assigned`, { method: 'POST' });
+  assert.equal(rejectPaidRemoval.response.status, 400);
+
+  const removedAssigned = await request(`/api/admin/booking-items/${assigned.data.bookingItemId}/remove-assigned`, { method: 'POST' });
+  assert.equal(removedAssigned.response.status, 200);
+  assert.equal(removedAssigned.data.ok, true);
+  assert.equal(removedAssigned.data.action, 'remove_assigned_seat');
+  assert.equal(removedAssigned.data.seatsReleased, 1);
+  assert.equal(removedAssigned.data.bookingCancelled, true);
+  assert.equal(removedAssigned.data.creditsCancelled, 1);
+
+  const removedBooking = await get('SELECT payment_status FROM bookings WHERE id = ?', [assigned.data.bookingId]);
+  assert.equal(removedBooking.payment_status, 'cancelled');
+  const removedItem = await get('SELECT refund_status, refund_amount, refund_action FROM booking_items WHERE id = ?', [assigned.data.bookingItemId]);
+  assert.equal(removedItem.refund_status, 'refunded');
+  assert.equal(removedItem.refund_amount, 0);
+  assert.equal(removedItem.refund_action, 'assigned_seat_removed');
+  const releasedAssignedSeat = await get('SELECT status FROM seats WHERE id = ?', [assignedSeatId]);
+  assert.equal(releasedAssignedSeat.status, 'vacant');
+  const cancelledAssignedCredit = await get('SELECT status FROM customer_credits WHERE booking_item_id = ?', [assigned.data.bookingItemId]);
+  assert.equal(cancelledAssignedCredit.status, 'cancelled');
+  const removalAudit = await get("SELECT * FROM audit_log WHERE action = 'assigned_ticket_removed' AND entity_id = ?", [assigned.data.bookingItemId]);
+  assert.ok(removalAudit);
+
+  const duplicateRemoval = await request(`/api/admin/booking-items/${assigned.data.bookingItemId}/remove-assigned`, { method: 'POST' });
+  assert.equal(duplicateRemoval.response.status, 409);
+
+  const bulkAfterRemoval = await request(`/api/admin/bookings/bulk-tickets?dateFrom=${futureDate}&dateTo=${futureDate}&department=regular_bingo`);
+  const ticketsAfterRemoval = bulkAfterRemoval.data.sessions.flatMap(session => session.bookings.flatMap(booking => booking.tickets));
+  assert.equal(ticketsAfterRemoval.some(ticket => ticket.firstName === 'Promo' && ticket.lastName === 'Guest'), false);
 
   const printStaffEmail = 'print.staff@example.com';
   const printStaffPassword = 'printpass123';
