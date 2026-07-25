@@ -56,6 +56,29 @@ function getSessionType(session) {
   return session?.session_type || (session?.is_special_event ? 'special_bingo' : 'regular_bingo');
 }
 
+function normalizeEventTitle(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function getRequestedSession(sessions, search = '') {
+  const params = new URLSearchParams(search);
+  const requestedId = String(params.get('sessionId') || '').trim();
+  const requestedDate = String(params.get('sessionDate') || '').trim();
+  const requestedTitle = normalizeEventTitle(params.get('eventTitle'));
+  const isRequested = !!(requestedId || requestedDate || requestedTitle);
+
+  if (!isRequested) return { isRequested: false, session: null };
+
+  const session = sessions.find(item => {
+    if (requestedId) return String(item.id) === requestedId;
+    if (requestedDate && String(item.date) !== requestedDate) return false;
+    if (requestedTitle && normalizeEventTitle(item.event_title) !== requestedTitle) return false;
+    return true;
+  }) || null;
+
+  return { isRequested: true, session };
+}
+
 function getCutoffClosedMessage(session) {
   if (getSessionType(session) === 'regular_bingo') {
     return "Online booking for today's regular bingo closed at 12:00 PM. Staff are now printing orders, assembling packages, and placing them on the booked seats.";
@@ -166,6 +189,23 @@ export default function App() {
   useEffect(() => {
     fetchSessions().then(data => {
       setSessions(data);
+      const requested = getRequestedSession(data, window.location.search);
+
+      if (requested.isRequested) {
+        if (!requested.session) {
+          setSelectedSession(null);
+          setError('That exact bingo session is not currently available for online booking. Please choose another listed session.');
+          return;
+        }
+
+        setSelectedSession(requested.session);
+        if (getSessionType(requested.session) === 'special_bingo') {
+          setPartySize(1);
+          setAttendees([emptyAttendee()]);
+        }
+        return;
+      }
+
       if (data.length > 0) {
         setSelectedSession(data.find(session => getSessionType(session) !== 'event') || data[0]);
       }
