@@ -318,12 +318,15 @@ export default function App() {
     if (!selectedSession) return false;
 
     const latestSeats = await fetchSeats(selectedSession.id, holderId);
+    const latestById = new Map(latestSeats.map(seat => [seat.id, seat]));
+    const trackedHeldSeats = selectedSeats.filter(seatId => latestById.get(seatId)?.status === 'held');
     const myHeldSeats = latestSeats
       .filter(seat => seat.status === 'held' && seat.isMyHold)
       .map(seat => seat.id);
-    const keptSeats = myHeldSeats.slice(0, size);
+    const heldSeatCandidates = [...new Set([...trackedHeldSeats, ...myHeldSeats])];
+    const keptSeats = heldSeatCandidates.slice(0, size);
     const keptSet = new Set(keptSeats);
-    const seatsToRelease = myHeldSeats.filter(seatId => !keptSet.has(seatId));
+    const seatsToRelease = heldSeatCandidates.filter(seatId => !keptSet.has(seatId));
 
     for (const seatId of seatsToRelease) {
       await unlockSeat(seatId, holderId);
