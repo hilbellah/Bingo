@@ -318,15 +318,12 @@ export default function App() {
     if (!selectedSession) return false;
 
     const latestSeats = await fetchSeats(selectedSession.id, holderId);
-    const latestById = new Map(latestSeats.map(seat => [seat.id, seat]));
-    const keptSeats = selectedSeats
-      .filter(seatId => {
-        const seat = latestById.get(seatId);
-        return seat && seat.status === 'held' && seat.isMyHold;
-      })
-      .slice(0, size);
+    const myHeldSeats = latestSeats
+      .filter(seat => seat.status === 'held' && seat.isMyHold)
+      .map(seat => seat.id);
+    const keptSeats = myHeldSeats.slice(0, size);
     const keptSet = new Set(keptSeats);
-    const seatsToRelease = selectedSeats.filter(seatId => !keptSet.has(seatId));
+    const seatsToRelease = myHeldSeats.filter(seatId => !keptSet.has(seatId));
 
     for (const seatId of seatsToRelease) {
       await unlockSeat(seatId, holderId);
@@ -403,7 +400,7 @@ export default function App() {
       };
     }));
 
-    if (size < selectedSeats.length) {
+    if (!isSelectedEvent && size < selectedSeats.length) {
       const toRelease = selectedSeats.slice(size);
       for (const seatId of toRelease) unlockSeat(seatId, holderId);
       setSelectedSeats(selectedSeats.slice(0, size));

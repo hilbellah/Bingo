@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import CountdownTimer from './CountdownTimer';
 import { formatDateShort, formatPrice, formatTime } from '../utils/formatters';
 
@@ -24,6 +24,7 @@ export default function EventCheckoutPanel({
   const [customerEmail, setCustomerEmail] = useState('');
   const [contactTouched, setContactTouched] = useState(false);
   const [updatingTickets, setUpdatingTickets] = useState(false);
+  const updatingTicketsRef = useRef(false);
 
   useEffect(() => {
     setCustomerEmail('');
@@ -55,7 +56,7 @@ export default function EventCheckoutPanel({
   const primaryAttendee = attendees[0];
 
   const changePackageQuantity = async (packageId, change) => {
-    if (updatingTickets) return;
+    if (updatingTicketsRef.current) return;
 
     const ticketPackageIds = attendees.map(attendee => attendee.ticketPackageId || requiredPkgs[0]?.id);
     if (change > 0) {
@@ -67,10 +68,12 @@ export default function EventCheckoutPanel({
       ticketPackageIds.splice(removeIndex, 1);
     }
 
+    updatingTicketsRef.current = true;
     setUpdatingTickets(true);
     try {
       await onTicketSelection(ticketPackageIds);
     } finally {
+      updatingTicketsRef.current = false;
       setUpdatingTickets(false);
     }
   };
