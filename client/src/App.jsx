@@ -17,6 +17,7 @@ import BookingProcessing from './components/BookingProcessing';
 import Confirmation from './components/Confirmation';
 import CountdownTimer from './components/CountdownTimer';
 import EmbeddedAuthorizeNetPayment from './components/EmbeddedAuthorizeNetPayment';
+import EventCheckoutPanel from './components/EventCheckoutPanel';
 import FloorPlan from './components/FloorPlan';
 import SessionWeekPicker from './components/SessionWeekPicker';
 import VenueClock from './components/VenueClock';
@@ -370,25 +371,44 @@ export default function App() {
     return nextSelectedSeats;
   };
 
-  const handlePartySize = async (size) => {
+  const handlePartySize = async (size, eventTicketPackageIds = []) => {
     if (isSelectedEvent) {
       const reserved = await reserveEventTickets(size);
-      if (!reserved) return;
+      if (!reserved) return false;
     }
 
+    const eventAttendeePools = isSelectedEvent
+      ? attendees.reduce((pools, attendee) => {
+          const packageId = attendee.ticketPackageId || requiredPkgs[0]?.id || '';
+          const packagePool = pools.get(packageId) || [];
+          packagePool.push(attendee);
+          pools.set(packageId, packagePool);
+          return pools;
+        }, new Map())
+      : null;
+
     setPartySize(size);
-    setAttendees(Array.from({ length: size }, (_, index) => ({
-      firstName: attendees[index]?.firstName || '',
-      lastName: attendees[index]?.lastName || '',
-      ticketPackageId: attendees[index]?.ticketPackageId || '',
-      addons: attendees[index]?.addons || []
-    })));
+    setAttendees(Array.from({ length: size }, (_, index) => {
+      const packageId = eventTicketPackageIds[index] || attendees[index]?.ticketPackageId || requiredPkgs[0]?.id || '';
+      const matchedEventAttendee = isSelectedEvent
+        ? eventAttendeePools.get(packageId)?.shift()
+        : null;
+      const previousAttendee = matchedEventAttendee || attendees[index];
+
+      return {
+        firstName: previousAttendee?.firstName || '',
+        lastName: previousAttendee?.lastName || '',
+        ticketPackageId: isSelectedEvent ? packageId : '',
+        addons: previousAttendee?.addons || []
+      };
+    }));
 
     if (size < selectedSeats.length) {
       const toRelease = selectedSeats.slice(size);
       for (const seatId of toRelease) unlockSeat(seatId, holderId);
       setSelectedSeats(selectedSeats.slice(0, size));
     }
+    return true;
   };
 
   const handleSelectSession = (session) => {
@@ -407,7 +427,7 @@ export default function App() {
     }
   };
 
-  const handleSubmit = async (customer) => {
+  const handleSubmit = async (customer, submittedAttendees = attendees) => {
     if (bookingClosed) {
       setError(selectedBookingStatus.message);
       setLoading(false);
@@ -426,7 +446,7 @@ export default function App() {
       submitSelectedSeats = reserved;
     }
 
-    const bookingAttendees = attendees.map((attendee, index) => ({
+    const bookingAttendees = submittedAttendees.map((attendee, index) => ({
       firstName: attendee.firstName,
       lastName: attendee.lastName,
       seatId: submitSelectedSeats[index],
@@ -434,8 +454,8 @@ export default function App() {
       addons: (attendee.addons || []).filter(addon => addon.quantity > 0)
     }));
     const checkoutSummary = {
-      customerName: [attendees[0]?.firstName, attendees[0]?.lastName].filter(Boolean).join(' ').trim(),
-      items: attendees.map((attendee, index) => {
+      customerName: [submittedAttendees[0]?.firstName, submittedAttendees[0]?.lastName].filter(Boolean).join(' ').trim(),
+      items: submittedAttendees.map((attendee, index) => {
         const seat = seats.find(item => item.id === submitSelectedSeats[index]);
         const addonItems = (attendee.addons || [])
           .filter(addon => addon.quantity > 0)
@@ -485,7 +505,7 @@ export default function App() {
     // Render Authorize.Net's hosted card-entry form inside our branded checkout page.
     // Authorize.Net still owns the card iframe, so we never see PAN/CVV.
     const serviceFeeAmount = result.serviceFeeAmount || 0;
-    const serviceFeeQuantity = result.serviceFeeQuantity || attendees.length || 1;
+    const serviceFeeQuantity = result.serviceFeeQuantity || submittedAttendees.length || 1;
     const serviceFeeUnitFormatted = result.serviceFeeUnitFormatted || formatPrice(result.serviceFeeUnitAmount || CHECKOUT_SERVICE_FEE_CENTS);
     const salesTaxAmount = result.salesTaxAmount || 0;
     setPaymentSession({
@@ -525,7 +545,7 @@ export default function App() {
         fetchSeats(selectedSession.id, holderId).then(setSeats).catch(() => {});
       }
       setPaymentSession(null);
-      setBookingStep(2);
+      setBookingStep(isSelectedEvent ? 0 : 2);
       setPanelOpen(true);
     } finally {
       setLoading(false);
@@ -722,23 +742,25 @@ export default function App() {
           selectedSession={selectedSession}
           onSelectSession={handleSelectSession}
         />
-        <section aria-label="Weekly bingo schedule">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-white/65">Weekly Bingo Schedule</h2>
-            <span className="text-xs text-white/40">{bingoSessions.length} available</span>
-          </div>
-          <SessionWeekPicker
-            sessions={bingoSessions}
-            selectedSession={selectedSession}
-            weekOffset={weekOffset}
-            onWeekOffsetChange={setWeekOffset}
-            onSelectSession={handleSelectSession}
-          />
-        </section>
+        {!isSelectedEvent && (
+          <section aria-label="Weekly bingo schedule">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-white/65">Weekly Bingo Schedule</h2>
+              <span className="text-xs text-white/40">{bingoSessions.length} available</span>
+            </div>
+            <SessionWeekPicker
+              sessions={bingoSessions}
+              selectedSession={selectedSession}
+              weekOffset={weekOffset}
+              onWeekOffsetChange={setWeekOffset}
+              onSelectSession={handleSelectSession}
+            />
+          </section>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto p-4 md:p-6">
-        <AnnouncementBanner socket={socketRef.current} />
+        {!isSelectedEvent && <AnnouncementBanner socket={socketRef.current} />}
 
         {!isSelectedEvent && (
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -817,34 +839,54 @@ export default function App() {
         )}
       </div>
 
-      <BookingPanel
-        isOpen={panelOpen}
-        onClose={() => setPanelOpen(false)}
-        onPickChairs={() => { setNamesFilledBeforeChairs(true); setPanelOpen(false); }}
-        session={selectedSession}
-        partySize={partySize}
-        onPartySize={handlePartySize}
-        attendees={attendees}
-        onAttendees={setAttendees}
-        selectedSeats={selectedSeats}
-        seats={seats}
-        requiredPkg={requiredPkg}
-        requiredPkgs={requiredPkgs}
-        optionalPkgs={optionalPkgs}
-        serviceFeeUnitAmount={serviceFeeUnitAmount}
-        serviceFeeAmount={serviceFeeAmount}
-        salesTaxAmount={salesTaxAmount}
-        maxOptionalPackagesPerPlayer={bookingConfig.maxOptionalPackagesPerPlayer}
-        total={total}
-        allNamesValid={allNamesValid}
-        allSeatsSelected={allSeatsSelected}
-        loading={loading}
-        onSubmit={handleSubmit}
-        holdExpiry={holdExpiry}
-        step={bookingStep}
-        onStepChange={setBookingStep}
-        phdInventory={phdInventory}
-      />
+      {isSelectedEvent ? (
+        <EventCheckoutPanel
+          isOpen={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          session={selectedSession}
+          attendees={attendees}
+          onAttendees={setAttendees}
+          onTicketSelection={ticketPackageIds => handlePartySize(ticketPackageIds.length, ticketPackageIds)}
+          requiredPkgs={requiredPkgs}
+          availableTickets={eventAvailableTickets}
+          holdExpiry={holdExpiry}
+          salesTaxAmount={salesTaxAmount}
+          total={total}
+          loading={loading}
+          onSubmit={handleSubmit}
+          step={bookingStep}
+          onStepChange={setBookingStep}
+        />
+      ) : (
+        <BookingPanel
+          isOpen={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          onPickChairs={() => { setNamesFilledBeforeChairs(true); setPanelOpen(false); }}
+          session={selectedSession}
+          partySize={partySize}
+          onPartySize={handlePartySize}
+          attendees={attendees}
+          onAttendees={setAttendees}
+          selectedSeats={selectedSeats}
+          seats={seats}
+          requiredPkg={requiredPkg}
+          requiredPkgs={requiredPkgs}
+          optionalPkgs={optionalPkgs}
+          serviceFeeUnitAmount={serviceFeeUnitAmount}
+          serviceFeeAmount={serviceFeeAmount}
+          salesTaxAmount={salesTaxAmount}
+          maxOptionalPackagesPerPlayer={bookingConfig.maxOptionalPackagesPerPlayer}
+          total={total}
+          allNamesValid={allNamesValid}
+          allSeatsSelected={allSeatsSelected}
+          loading={loading}
+          onSubmit={handleSubmit}
+          holdExpiry={holdExpiry}
+          step={bookingStep}
+          onStepChange={setBookingStep}
+          phdInventory={phdInventory}
+        />
+      )}
 
       {/* Footer — matches the Wolastoq Casino main site footer (purple gradient,
           stacked logo, contact info, social icons, responsible gambling links).
@@ -962,65 +1004,152 @@ function LiveEventBookingSurface({
   bookingStatus,
   onStart
 }) {
-  const ticketPackage = packages.find(pkg => pkg.type === 'required');
-  const ticketPrice = ticketPackage ? formatPrice(ticketPackage.price) : '';
+  const ticketPackages = packages.filter(pkg => pkg.type === 'required');
   const imageUrl = String(event?.event_image_url || '').trim();
+  const description = String(event?.event_description || '').trim();
+  const salesCutoff = String(event?.sales_cutoff_at || '').trim();
+  const [cutoffDate, cutoffTime] = salesCutoff.split('T');
+  const cutoffLabel = cutoffDate && cutoffTime
+    ? `${formatDateShort(cutoffDate)} at ${formatTime(cutoffTime)}`
+    : '';
+  const bannerImageRef = useRef(null);
+  const [bannerOrientation, setBannerOrientation] = useState('portrait');
+
+  useEffect(() => {
+    const image = bannerImageRef.current;
+    setBannerOrientation(
+      image?.complete && image.naturalWidth
+        ? (image.naturalHeight > image.naturalWidth ? 'portrait' : 'landscape')
+        : 'portrait'
+    );
+  }, [imageUrl]);
+
+  const detectBannerOrientation = (loadEvent) => {
+    const image = loadEvent.currentTarget;
+    setBannerOrientation(image.naturalHeight > image.naturalWidth ? 'portrait' : 'landscape');
+  };
 
   return (
-    <section className="mx-auto max-w-3xl overflow-hidden rounded-2xl border border-sky-500/25 bg-sky-950/20 text-center shadow-xl">
-      {imageUrl && (
-        <div className="h-52 border-b border-sky-500/20 bg-slate-950 md:h-64">
-          <img
-            src={imageUrl}
-            alt={event?.event_title || 'Live Event / Venue'}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            referrerPolicy="no-referrer"
-          />
-        </div>
-      )}
-      <div className="p-5">
-        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${
-          bookingClosed ? 'bg-red-500/20 text-red-100' : 'bg-sky-500 text-white'
-        }`}>
-          {bookingClosed ? 'Sales Closed' : 'General Admission'}
-        </span>
-        <h1 className="mt-4 text-2xl font-bold text-white md:text-3xl">
-          {event?.event_title || 'Live Event / Venue'}
-        </h1>
-        <p className="mt-2 text-sky-100/75">
-          {formatDateShort(event?.date)} at {formatTime(event?.time)}
-        </p>
-        {ticketPackage && (
-          <div className="mt-4 inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-left">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-sky-100/60">Ticket</p>
-              <p className="font-semibold text-white">{ticketPackage.name}</p>
-            </div>
-            <p className="text-xl font-bold text-brand-gold">{ticketPrice}</p>
+    <section className="mx-auto grid max-w-6xl grid-cols-[112px_minmax(0,1fr)] overflow-hidden rounded-2xl border border-sky-500/25 bg-slate-950 shadow-2xl shadow-sky-950/30 sm:grid-cols-[180px_minmax(0,1fr)] lg:grid-cols-[minmax(250px,0.75fr)_minmax(310px,1fr)_minmax(300px,0.85fr)]">
+      <div className={`relative overflow-hidden bg-gradient-to-br from-casino-purple via-sky-950 to-slate-950 ${
+        bannerOrientation === 'portrait'
+          ? 'min-h-[205px] sm:min-h-[252px] lg:min-h-[410px]'
+          : 'col-span-2 h-[150px] sm:h-[185px] lg:col-span-1 lg:h-auto lg:min-h-[410px]'
+      }`}>
+        {imageUrl ? (
+          <>
+            {bannerOrientation === 'portrait' && (
+              <img
+                src={imageUrl}
+                alt=""
+                className="absolute inset-0 h-full w-full scale-110 object-cover opacity-20 blur-2xl"
+                aria-hidden="true"
+              />
+            )}
+            <img
+              src={imageUrl}
+              alt={event?.event_title || 'Live Event / Venue'}
+              className={`relative h-full w-full ${
+                bannerOrientation === 'portrait' ? 'object-contain p-2 lg:p-4' : 'object-cover'
+              }`}
+              ref={bannerImageRef}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onLoad={detectBannerOrientation}
+            />
+          </>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center p-4 opacity-30">
+            <img src="/wolastoq-logo-stacked.png" alt="" className="max-h-full w-auto object-contain" aria-hidden="true" />
           </div>
         )}
-        <div className="mt-5 flex flex-wrap justify-center gap-3 text-sm text-white/70">
-          <span>{availableTickets} available</span>
-          <span>{soldTickets} sold</span>
-          {heldTickets > 0 && <span>{heldTickets} on hold</span>}
+      </div>
+
+      <div className={`p-3 text-left sm:p-5 lg:p-7 ${
+        bannerOrientation === 'portrait' ? '' : 'col-span-2 lg:col-span-1'
+      }`}>
+        <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+          bookingClosed ? 'bg-red-500 text-white' : 'bg-sky-500 text-white'
+        }`}>
+          {bookingClosed ? 'Sales Closed' : 'Live at Wolastoq'}
+        </span>
+        <h1 className="mt-1.5 text-lg font-bold leading-tight tracking-tight text-white sm:mt-2 sm:text-2xl lg:text-3xl">
+          {event?.event_title || 'Live Event / Venue'}
+        </h1>
+        <p className="mt-1.5 text-sm font-semibold text-sky-100">
+          {formatDateShort(event?.date)} · {formatTime(event?.time)}
+        </p>
+        <p className="mt-3 hidden line-clamp-2 text-xs leading-relaxed text-slate-300 sm:block sm:text-sm">
+          {description || 'Join us at Wolastoq Casino for a live event experience.'}
+        </p>
+
+        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-white/10 pt-2 text-xs sm:mt-4 sm:gap-y-3 sm:pt-4">
+          <div>
+            <dt className="text-slate-500">Doors open</dt>
+            <dd className="mt-0.5 font-semibold text-white">
+              {event?.doors_open_time ? formatTime(event.doors_open_time) : '1 hour before'}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Location</dt>
+            <dd className="mt-0.5 font-semibold text-white">Wolastoq Casino</dd>
+          </div>
+          {cutoffLabel && (
+            <div className="col-span-2 hidden sm:block">
+              <dt className="text-slate-500">Online sales close</dt>
+              <dd className="mt-0.5 font-semibold text-white">{cutoffLabel}</dd>
+            </div>
+          )}
+        </dl>
+      </div>
+
+      <aside className="col-span-2 border-t border-white/10 bg-sky-950/45 p-3 text-left sm:p-5 lg:col-span-1 lg:border-l lg:border-t-0 lg:p-7">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-bold text-white lg:text-xl">Tickets</h2>
+          {!bookingClosed && (
+            <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-bold text-emerald-300">On sale</span>
+          )}
         </div>
+
+        <div className="mt-2 divide-y divide-white/10">
+          {ticketPackages.length > 0 ? ticketPackages.map(pkg => (
+            <div key={pkg.id} className="flex items-center justify-between gap-3 py-1.5 sm:py-2.5">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">{pkg.name}</p>
+                {pkg.description ? <p className="hidden truncate text-xs text-slate-400 sm:block">{pkg.description}</p> : null}
+              </div>
+              <p className="shrink-0 font-bold text-brand-gold">{formatPrice(pkg.price)}</p>
+            </div>
+          )) : (
+            <p className="py-3 text-sm text-slate-400">Ticket pricing will be announced soon.</p>
+          )}
+        </div>
+
+        <div className="mt-1 flex gap-4 text-xs text-slate-300 sm:mt-2">
+          <span><strong className="text-white">{availableTickets}</strong> available</span>
+          <span><strong className="text-white">{soldTickets}</strong> sold</span>
+          {heldTickets > 0 && <span><strong className="text-white">{heldTickets}</strong> held</span>}
+        </div>
+
         {bookingClosed && bookingStatus.message ? (
-          <p className="mt-4 text-sm text-red-100">{bookingStatus.message}</p>
+          <p className="mt-3 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+            {bookingStatus.message}
+          </p>
         ) : null}
+
         <button
           type="button"
-          disabled={bookingClosed}
+          disabled={bookingClosed || ticketPackages.length === 0}
           onClick={onStart}
-          className={`mt-6 rounded-xl px-6 py-3 font-semibold transition ${
-            bookingClosed
+          className={`mt-2 w-full rounded-xl px-5 py-2.5 text-base font-bold transition active:translate-y-px sm:mt-4 sm:py-3 ${
+            bookingClosed || ticketPackages.length === 0
               ? 'cursor-not-allowed border border-white/10 bg-white/10 text-white/40'
               : 'bg-brand-gold text-white glow-gold-sm hover:bg-brand-gold-light'
           }`}
         >
-          {bookingClosed ? 'Booking Closed' : 'Buy Tickets'}
+          {bookingClosed ? 'Booking Closed' : ticketPackages.length === 0 ? 'Tickets Coming Soon' : 'Buy Tickets'}
         </button>
-      </div>
+      </aside>
     </section>
   );
 }

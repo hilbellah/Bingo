@@ -211,7 +211,8 @@ export default function EventSalesTab() {
           </div>
         </div>
         <div className="mt-3">
-          <label className="block text-xs text-gray-400 mb-1">Event Image (optional)</label>
+          <label className="block text-xs text-gray-400 mb-1">Main Event Banner (optional)</label>
+          <p className="mb-2 text-xs text-gray-400">Portrait posters and landscape banners are both supported and displayed automatically.</p>
           <div className="flex items-center gap-3">
             <label className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm border transition-colors">
               {eventImageFile ? 'Change Image' : 'Upload Image'}
@@ -396,7 +397,8 @@ export default function EventSalesTab() {
                   className="w-full px-3 py-2 border rounded-lg text-sm" rows={2} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Event Image (optional)</label>
+                <label className="block text-xs text-gray-500 mb-1">Main Event Banner (optional)</label>
+                <p className="mb-2 text-xs text-gray-400">Portrait posters and landscape banners are both supported and displayed automatically.</p>
                 <div className="flex items-center gap-3">
                   <label className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm border transition-colors">
                     {editImageFile ? 'Change Image' : 'Upload Image'}
