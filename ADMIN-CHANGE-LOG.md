@@ -365,6 +365,40 @@ Running record of admin/backend changes, where to access them, and the save-poin
 **Save point**
 - `a20982f` - Add admin credit assigned seat and print staff workflows
 
+### Refund and Void Receipt Printing
+
+**Date:** August 7, 2026
+
+**What changed**
+
+- Added a dedicated thermal receipt for full refunds, partial refunds, and pre-settlement voids.
+- Refund receipts now show:
+  - The original booking reference and session date/time
+  - Each refunded attendee, ticket reference, table, and chair
+  - The refund or void transaction reference
+  - The processed timestamp
+  - The reversed amount as a negative total
+- Replaced the misleading `Reprint Receipt` action on refunded transactions with `Print Refund Receipt`.
+- Added the refund receipt action to:
+  - `Bookings & Reports` -> `Transactions`
+  - Booking sales detail views
+  - Purchaser detail views
+- Paid bookings continue to print the original booking receipt.
+- Added a staff tutorial step explaining how to find and print refund and void receipts.
+
+**Staff workflow**
+
+1. Open `Bookings & Reports` -> `Transactions`.
+2. Filter to `Refunds / Voids` or search for the booking.
+3. Click `Print Refund Receipt`.
+4. Confirm the printed receipt identifies the correct refund/void, affected tickets, transaction reference, and negative amount.
+
+**Verification**
+
+- Receipt rendering regression check passed for partial refunds and full voids.
+- Client production build passed.
+- Project syntax check passed.
+
 ## How To Update This File
 
 For each future change, add:

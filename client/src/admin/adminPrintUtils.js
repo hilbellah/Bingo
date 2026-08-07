@@ -443,6 +443,53 @@ export function buildDailySalesReceiptLines(dailySales, cfg = {}) {
   return { lines, paperWidth };
 }
 
+export function buildRefundReceiptLines(booking, cfg = {}) {
+  const paperWidth = cfg.paperWidth === '58mm' ? '58mm' : '80mm';
+  const refundedItems = (booking.items || []).filter(item => item.refundStatus === 'refunded');
+  const isVoid = booking.paymentStatus === 'voided'
+    || (refundedItems.length > 0 && refundedItems.every(item => item.refundAction === 'void'));
+  const actionLabel = isVoid ? 'VOID' : 'REFUND';
+  const isPartial = booking.paymentStatus === 'partially_refunded';
+  const itemRefundTotal = refundedItems.reduce((sum, item) => sum + (Number(item.refundAmount) || 0), 0);
+  const refundAmount = isPartial ? itemRefundTotal : (Number(booking.totalAmount) || itemRefundTotal);
+  const refundDates = refundedItems.map(item => item.refundedAt).filter(Boolean).sort();
+  const transactionIds = [...new Set(refundedItems.map(item => item.refundTransactionId).filter(Boolean))];
+  const lines = [
+    '<div class="header">SMEC BINGO</div>',
+    '<div class="sub-header">Saint Mary\'s Entertainment Centre</div>',
+    '<div class="line"></div>',
+    `<div class="center bold">${isPartial ? 'PARTIAL ' : ''}${actionLabel} RECEIPT</div>`,
+    `<div class="center">${escapeHtml(booking.sessionDate)} at ${escapeHtml(booking.sessionTime)}</div>`,
+    '<div class="line"></div>',
+    `<div class="row"><span>Booking:</span><span class="bold">${escapeHtml(booking.referenceNumber)}</span></div>`,
+    `<div class="row"><span>Status:</span><span class="bold">${isPartial ? 'PARTIALLY REFUNDED' : actionLabel + 'ED'}</span></div>`,
+    refundDates.length > 0 ? `<div class="row"><span>${actionLabel} date:</span><span>${escapeHtml(new Date(refundDates.at(-1)).toLocaleString())}</span></div>` : '',
+    '<div class="line"></div>',
+    `<div class="bold">${actionLabel === 'VOID' ? 'Voided' : 'Refunded'} ticket${refundedItems.length === 1 ? '' : 's'}:</div>`,
+  ].filter(Boolean);
+
+  for (const item of refundedItems) {
+    lines.push(`<div style="padding:3px 0 1px">${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</div>`);
+    lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">${escapeHtml(item.referenceNumber || '')} - T${escapeHtml(item.tableNumber)}/C${escapeHtml(item.chairNumber)}</span><span class="item-amt">-${escapeHtml(item.refundAmountFormatted || moneyFromCents(item.refundAmount))}</span></div>`);
+  }
+
+  if (transactionIds.length > 0) {
+    lines.push('<div class="line"></div>');
+    lines.push(`<div style="font-size:9px">${actionLabel} transaction${transactionIds.length === 1 ? '' : 's'}:</div>`);
+    for (const id of transactionIds) lines.push(`<div style="font-size:9px;overflow-wrap:anywhere">${escapeHtml(id)}</div>`);
+  }
+  lines.push('<div class="dbl-line"></div>');
+  lines.push(`<div class="total-row"><span>${actionLabel} AMOUNT</span><span>-${escapeHtml(moneyFromCents(refundAmount))}</span></div>`);
+  lines.push('<div class="line"></div>');
+  lines.push('<div class="center" style="font-size:10px;margin-top:8px">Keep this receipt for your records.</div>');
+  return { lines, paperWidth, refundAmount, action: actionLabel.toLowerCase(), isPartial };
+}
+
+export function printRefundReceipt(booking, cfg = {}) {
+  const { lines, paperWidth } = buildRefundReceiptLines(booking, cfg);
+  printThermalReceipt('Refund Receipt', lines, paperWidth, cfg);
+}
+
 export function printBookingReceipt(booking, cfg = {}) {
   const receiptTitle = getReceiptTitle(booking);
   const receiptTotals = getReceiptTotals(booking);

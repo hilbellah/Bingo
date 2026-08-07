@@ -58,9 +58,9 @@ export default function SoldTicketsModal() {
                         <button
                           onClick={() => handlePrintBookingReceipt({...b, sessionDate: soldModal.session.date, sessionTime: soldModal.session.time})}
                           className="px-2 py-0.5 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
-                          title="Reprint automatic thermal receipt"
+                          title={['partially_refunded', 'refunded', 'voided'].includes(b.paymentStatus) ? 'Print refund or void receipt' : 'Reprint automatic thermal receipt'}
                         >
-                          Reprint Receipt
+                          {['partially_refunded', 'refunded', 'voided'].includes(b.paymentStatus) ? 'Print Refund Receipt' : 'Reprint Receipt'}
                         </button>
                         {b.paymentStatus === 'paid' && !isAssignedBooking(b) && b.items.every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
                           <button

@@ -11,6 +11,7 @@ const {
   buildBulkBookingReceiptsBody,
   buildDailySalesReceiptBody,
   buildDailySalesReceiptLines,
+  buildRefundReceiptLines,
   getReceiptTotals,
 } = await import(printUtilsUrl);
 
@@ -172,5 +173,44 @@ assert.match(dailyWithCut.body, /data-cut-percent="70"/);
 
 const emptyDaily = buildDailySalesReceiptLines(null, { paperWidth: '58mm' });
 assert.deepEqual(emptyDaily, { lines: [], paperWidth: '58mm' });
+
+const partialRefund = buildRefundReceiptLines({
+  ...booking,
+  paymentStatus: 'partially_refunded',
+  items: [
+    {
+      ...booking.items[0],
+      refundStatus: 'refunded',
+      refundAction: 'refund',
+      refundAmount: 3200,
+      refundAmountFormatted: 'CA$32.00',
+      refundedAt: '2026-06-05T12:00:00.000Z',
+      refundTransactionId: 'REFUND-123',
+    },
+  ],
+}, { paperWidth: '58mm' });
+const partialRefundHtml = partialRefund.lines.join('');
+assert.equal(partialRefund.paperWidth, '58mm');
+assert.equal(partialRefund.refundAmount, 3200);
+assert.equal(partialRefund.isPartial, true);
+assert.match(partialRefundHtml, /PARTIAL REFUND RECEIPT/);
+assert.match(partialRefundHtml, /REFUND-123/);
+assert.match(partialRefundHtml, /-CA\$32\.00/);
+
+const fullVoid = buildRefundReceiptLines({
+  ...booking,
+  paymentStatus: 'voided',
+  items: booking.items.map(item => ({
+    ...item,
+    refundStatus: 'refunded',
+    refundAction: 'void',
+    refundAmount: 3200,
+    refundAmountFormatted: 'CA$32.00',
+  })),
+});
+assert.equal(fullVoid.refundAmount, 3400);
+assert.equal(fullVoid.action, 'void');
+assert.match(fullVoid.lines.join(''), /VOID RECEIPT/);
+assert.match(fullVoid.lines.join(''), /-CA\$34\.00/);
 
 console.log('Receipt rendering check passed.');

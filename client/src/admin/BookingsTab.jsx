@@ -420,9 +420,9 @@ export default function BookingsTab() {
                                 type="button"
                                 onClick={() => handleReprintTransactionReceipt(item.id)}
                                 className="px-2 py-1 text-xs bg-gray-700 text-white rounded hover:bg-gray-800"
-                                title="Reprint thermal receipt"
+                                title={item.status === 'paid' ? 'Reprint thermal receipt' : 'Print refund or void receipt'}
                               >
-                                Reprint Receipt
+                                {item.status === 'paid' ? 'Reprint Receipt' : 'Print Refund Receipt'}
                               </button>
                             ) : (
                               <span className="text-xs text-gray-400">-</span>

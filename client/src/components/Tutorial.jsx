@@ -405,13 +405,25 @@ export default function Tutorial() {
             <li style={styles.li}>Click <strong>Bookings &amp; Reports</strong> in the sidebar.</li>
             <li style={styles.li}><strong>Booking Sales</strong> table shows a summary by session: Description (date/time), Quantity (clickable to view details), and Amount.</li>
             <li style={styles.li}><strong>Daily Sales</strong> section with a <strong>name search</strong> filter and <strong>date picker</strong>.</li>
+            <li style={styles.li}><strong>Transactions</strong> lists payments, partial refunds, full refunds, and voids with their transaction references.</li>
             <li style={styles.li}>View detailed booking breakdowns with reference numbers, attendee details, and package info.</li>
             <li style={styles.li}>Actions: <strong>Print Tickets</strong>, <strong>Save CSV</strong> for export.</li>
           </ul>
           <img src="/screenshots/admin8-bookings.png" alt="Bookings & Reports" style={styles.img} />
         </Step>
 
-        <Step number={11} title="Bulk Print Tickets">
+        <Step number={11} title="Print a Refund or Void Receipt">
+          <ul style={styles.ul}>
+            <li style={styles.li}>Open <strong>Bookings &amp; Reports</strong>, then select the <strong>Transactions</strong> board.</li>
+            <li style={styles.li}>Use the status filter to choose <strong>Refunds / Voids</strong>, or search by booking reference, customer name, or email.</li>
+            <li style={styles.li}>Find the refunded, partially refunded, or voided booking and click <strong>Print Refund Receipt</strong>.</li>
+            <li style={styles.li}>The thermal receipt identifies whether the reversal was a partial refund, full refund, or void and lists the affected tickets, seats, transaction reference, processed time, and negative amount.</li>
+            <li style={styles.li}>The same <strong>Print Refund Receipt</strong> action is available from booking detail and purchaser views after a refund has been processed.</li>
+          </ul>
+          <Note label="Important">A refund receipt confirms the reversal recorded by the platform. Bank processing time can vary, so customers should keep the receipt and allow several business days for a settled refund to appear.</Note>
+        </Step>
+
+        <Step number={12} title="Bulk Print Tickets">
           <ul style={styles.ul}>
             <li style={styles.li}>Click <strong>Bulk Print</strong> in the sidebar.</li>
             <li style={styles.li}>Select <strong>"From Date"</strong> and optional <strong>"To Date"</strong>.</li>
@@ -422,7 +434,7 @@ export default function Tutorial() {
           <img src="/screenshots/admin9-bulk-print.png" alt="Bulk Print" style={styles.img} />
         </Step>
 
-        <Step number={12} title="Create Announcements">
+        <Step number={13} title="Create Announcements">
           <ul style={styles.ul}>
             <li style={styles.li}>Click <strong>Announcements</strong> in the sidebar.</li>
             <li style={styles.li}>Enter a <strong>Title</strong> (optional), select <strong>Type</strong> (Info/Warning/Success), enter <strong>Message</strong>.</li>
@@ -433,7 +445,7 @@ export default function Tutorial() {
           <img src="/screenshots/admin10-announcements.png" alt="Announcements" style={styles.img} />
         </Step>
 
-        <Step number={13} title="Archive & Audit">
+        <Step number={14} title="Archive & Audit">
           <ul style={styles.ul}>
             <li style={styles.li}>Click <strong>Archive &amp; Audit</strong> in the sidebar.</li>
             <li style={styles.li}><strong>Deleted Sessions</strong> table shows: Date, Time, Event, Paid Bookings, Revenue, Deleted At, and Actions.</li>
@@ -442,7 +454,7 @@ export default function Tutorial() {
           </ul>
         </Step>
 
-        <Step number={14} title="Chair Management">
+        <Step number={15} title="Chair Management">
           <ul style={styles.ul}>
             <li style={styles.li}>Click <strong>Chair Management</strong> in the sidebar.</li>
             <li style={styles.li}><strong>Select a session</strong> from the dropdown to load its floor plan.</li>
@@ -451,7 +463,7 @@ export default function Tutorial() {
           </ul>
         </Step>
 
-        <Step number={15} title="PHD Inventory">
+        <Step number={16} title="PHD Inventory">
           <ul style={styles.ul}>
             <li style={styles.li}>Click <strong>PHD Inventory</strong> in the sidebar.</li>
             <li style={styles.li}>View <strong>real-time inventory cards</strong>: Available (ready to assign), In Use (currently booked), Total Stock (devices owned), Per Player Limit (max per person).</li>
@@ -461,7 +473,7 @@ export default function Tutorial() {
           <Note label="PHD">Personal Handheld Devices are tracked automatically when customers purchase PHD-type packages. Stock is limited and enforced at checkout.</Note>
         </Step>
 
-        <Step number={16} title="Printing Settings">
+        <Step number={17} title="Printing Settings">
           <ul style={styles.ul}>
             <li style={styles.li}>Click <strong>Printing Settings</strong> in the sidebar.</li>
             <li style={styles.li}><strong>Receipt Information</strong>: Business Name, Subtitle/Tagline, Receipt Title, Footer Message.</li>

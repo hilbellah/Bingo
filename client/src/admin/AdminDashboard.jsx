@@ -22,6 +22,7 @@ import AdminShell from './AdminShell';
 import {
   printAutoBookingReceipt,
   printDailySalesReceipt as printDailySalesReceiptDocument,
+  printRefundReceipt,
   printPurchasers,
   printSalesDrilldown,
   savePurchasersCsv,
@@ -377,12 +378,16 @@ export default function AdminDashboard() {
   };
 
   const handlePrintBookingReceipt = (booking) => {
+    if (['partially_refunded', 'refunded', 'voided'].includes(booking?.paymentStatus)) {
+      printRefundReceipt(booking, receiptConfigRef.current);
+      return;
+    }
     printBookingReceipt(booking);
   };
 
   const handleReprintTransactionReceipt = async (bookingId) => {
     const booking = await fetchAdminBookingReceipt(token, bookingId);
-    printBookingReceipt(booking);
+    handlePrintBookingReceipt(booking);
   };
 
   const handleLogout = () => {
