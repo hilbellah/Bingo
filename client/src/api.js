@@ -336,7 +336,8 @@ export async function cancelAdminBooking(token, id) {
   const res = await fetch(`${API}/admin/bookings/${id}/cancel`, {
     method: 'POST', headers: adminHeaders(token)
   });
-  return res.json();
+  const json = await res.json();
+  return { ok: res.ok, ...json };
 }
 
 export async function deleteAdminBooking(token, id) {

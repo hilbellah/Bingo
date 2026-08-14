@@ -778,10 +778,13 @@ export default function AdminDashboard() {
 
   const handleCancelBooking = async (id) => {
     if (!confirmAdminAction({
-      action: 'Cancel this booking and release seats',
-      warning: 'This should only be used for bookings that should no longer hold seats.',
+      action: 'Cancel this unpaid booking and release its temporary seat hold',
+      warning: 'Paid bookings cannot be cancelled here. If a payment exists, you must use Refund/Void so Authorize.Net reverses the charge before the seat is released.',
     })) return;
-    await cancelAdminBooking(token, id);
+    const result = await cancelAdminBooking(token, id);
+    if (!result?.ok) {
+      alert(result?.message || result?.error || 'Could not cancel this booking.');
+    }
     loadBookings(reportSession);
   };
 

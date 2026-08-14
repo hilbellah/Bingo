@@ -126,7 +126,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   payment_completed_at     TEXT,
   payment_failure_reason   TEXT,
   hosted_token             TEXT,
-  ticket_access_token      TEXT
+  ticket_access_token      TEXT,
+  checkout_holder_id       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS booking_items (

@@ -154,7 +154,18 @@ export async function withTransaction(fn) {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
-    const result = await fn(client);
+    const tx = {
+      query: (text, params = []) => client.query(text, params),
+      all: async (text, params = []) => (await client.query(translateSqlitePlaceholders(text), params)).rows,
+      get: async (text, params = []) => (await client.query(translateSqlitePlaceholders(text), params)).rows[0] || null,
+      run: async (text, params = []) => {
+        const result = await client.query(translateSqlitePlaceholders(text), params);
+        return { changes: result.rowCount ?? 0 };
+      },
+      allForUpdate: async (text, params = []) => (await client.query(`${translateSqlitePlaceholders(text)} FOR UPDATE`, params)).rows,
+      getForUpdate: async (text, params = []) => (await client.query(`${translateSqlitePlaceholders(text)} FOR UPDATE`, params)).rows[0] || null,
+    };
+    const result = await fn(tx);
     await client.query('COMMIT');
     return result;
   } catch (err) {

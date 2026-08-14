@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { all, get, run, saveDb } from '../database.js';
+import { all, get, run, saveDb, withTransaction } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { refundTransaction, verifyTransaction, voidTransaction } from '../services/payments.js';
 import { formatCurrency, generateRef } from '../utils/format.js';
@@ -308,14 +308,50 @@ export function registerAdminBookingRoutes(app, {
 
   app.post('/api/admin/bookings/:id/cancel', adminAuth, async (req, res) => {
     try {
-    const booking = await get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
-    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    const cancellation = await withTransaction(async tx => {
+      const booking = await tx.getForUpdate('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
+      if (!booking) return { status: 404, body: { error: 'Booking not found' } };
+      if (['paid', 'partially_refunded', 'payment_review'].includes(booking.payment_status) || booking.transaction_id) {
+        return {
+          status: 409,
+          body: {
+            error: 'refund_required',
+            message: 'This booking is linked to a payment. Complete the Authorize.Net void/refund process before its seat can be released.',
+          },
+        };
+      }
+      if (['refunded', 'voided'].includes(booking.payment_status)) {
+        return {
+          status: 409,
+          body: {
+            error: 'already_reversed',
+            message: `This booking is already ${booking.payment_status}. Its seat release is handled by the refund/void workflow.`,
+          },
+        };
+      }
 
-    const items = await all('SELECT bi.*, seats.table_number, seats.chair_number FROM booking_items bi JOIN seats ON seats.id = bi.seat_id WHERE bi.booking_id = ?', [req.params.id]);
-    for (const item of items) {
-      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
-    }
-    await run("UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?", [req.params.id]);
+      const items = await tx.all(
+        'SELECT bi.*, seats.table_number, seats.chair_number FROM booking_items bi JOIN seats ON seats.id = bi.seat_id WHERE bi.booking_id = ? ORDER BY bi.seat_id',
+        [req.params.id]
+      );
+      if (items.length > 0) {
+        const placeholders = items.map(() => '?').join(',');
+        await tx.allForUpdate(`SELECT id FROM seats WHERE id IN (${placeholders}) ORDER BY id`, items.map(item => item.seat_id));
+      }
+      const updated = await tx.run(
+        "UPDATE bookings SET payment_status = 'cancelled' WHERE id = ? AND payment_status IN ('pending', 'failed', 'cancelled') AND transaction_id IS NULL",
+        [req.params.id]
+      );
+      if (updated.changes !== 1) {
+        return { status: 409, body: { error: 'refund_required', message: 'The payment state changed. Refresh this booking and use Refund/Void if a payment completed.' } };
+      }
+      for (const item of items) {
+        await tx.run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ? AND status = 'held'", [item.seat_id]);
+      }
+      return { status: 200, booking, items };
+    });
+    if (cancellation.status !== 200) return res.status(cancellation.status).json(cancellation.body);
+    const { booking, items } = cancellation;
 
     await logAudit('booking_cancelled', 'booking', req.params.id, {
       referenceNumber: booking.reference_number,
@@ -366,7 +402,7 @@ export function registerAdminBookingRoutes(app, {
     `, deletableStatuses))?.count || 0;
 
     for (const item of items) {
-      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
+      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ? AND status = 'held'", [item.seat_id]);
     }
 
     const heldClearedResult = await run(
@@ -442,7 +478,7 @@ export function registerAdminBookingRoutes(app, {
 
     const items = await all('SELECT id, seat_id, first_name, last_name FROM booking_items WHERE booking_id = ?', [booking.id]);
     for (const item of items) {
-      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
+      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ? AND status = 'held'", [item.seat_id]);
     }
 
     await logAudit('booking_deleted', 'booking', booking.id, {
@@ -795,8 +831,17 @@ export function registerAdminBookingRoutes(app, {
         [now, item.id]
       );
       await run(
-        "UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?",
-        [item.seat_id]
+        `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
+         WHERE id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM booking_items active_item
+             JOIN bookings active_booking ON active_booking.id = active_item.booking_id
+             WHERE active_item.seat_id = seats.id
+               AND active_booking.id != ?
+               AND active_booking.payment_status IN ('paid', 'partially_refunded')
+               AND COALESCE(active_item.refund_status, 'active') != 'refunded'
+           )`,
+        [item.seat_id, item.booking_id]
       );
       const creditResult = await run(
         "UPDATE customer_credits SET status = 'cancelled' WHERE booking_item_id = ? AND status = 'active'",
@@ -894,7 +939,19 @@ export function registerAdminBookingRoutes(app, {
       }
 
       await run('UPDATE booking_items SET seat_id = ? WHERE id = ?', [targetSeat.id, item.id]);
-      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?", [item.seat_id]);
+      await run(
+        `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
+         WHERE id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM booking_items active_item
+             JOIN bookings active_booking ON active_booking.id = active_item.booking_id
+             WHERE active_item.seat_id = seats.id
+               AND active_booking.id != ?
+               AND active_booking.payment_status IN ('paid', 'partially_refunded')
+               AND COALESCE(active_item.refund_status, 'active') != 'refunded'
+           )`,
+        [item.seat_id, item.booking_id]
+      );
       await run("UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?", [targetSeat.id]);
 
       await logAudit('booking_item_seat_moved', 'booking_item', item.id, {

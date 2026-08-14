@@ -22,7 +22,7 @@ const SLOW_MODE_AFTER_POLLS = 30; // 30 polls * 2s = 60 seconds
 const BOOKING_THANK_YOU_MESSAGE = 'Thank you for booking with us. We look forward to seeing you there!';
 
 export default function BookingProcessing({ bookingId }) {
-  const [phase, setPhase] = useState('polling'); // 'polling' | 'paid' | 'paid_no_details' | 'failed' | 'cancelled'
+  const [phase, setPhase] = useState('polling'); // 'polling' | 'paid' | 'paid_no_details' | 'failed' | 'cancelled' | 'reversed' | 'review'
   const [pollCount, setPollCount] = useState(0);
   const [tickets, setTickets] = useState(null);
   const [referenceNumber, setReferenceNumber] = useState(null);
@@ -64,6 +64,16 @@ export default function BookingProcessing({ bookingId }) {
 
         if (res.status === 'cancelled') {
           setPhase('cancelled');
+          return;
+        }
+
+        if (res.status === 'voided' || res.status === 'refunded') {
+          setPhase('reversed');
+          return;
+        }
+
+        if (res.status === 'payment_review') {
+          setPhase('review');
           return;
         }
 
@@ -231,7 +241,7 @@ export default function BookingProcessing({ bookingId }) {
         </div>
         <h1 className="text-3xl font-bold text-brand-blue text-center">Payment Cancelled</h1>
         <p className="text-gray-600 text-center mt-2">
-          Your booking was cancelled. No charge was made. You can start over to try again.
+          This checkout was cancelled and its temporary seat hold may be released. Do not return to or submit the old payment page. If you already pressed Pay or see a charge, contact the bingo office and do not book the seat again; any completed payment must be voided or refunded before the seat is released.
         </p>
         <button
           onClick={goHome}
@@ -239,6 +249,33 @@ export default function BookingProcessing({ bookingId }) {
         >
           Return to Home
         </button>
+      </CenteredCard>
+    );
+  }
+
+  if (phase === 'reversed') {
+    return (
+      <CenteredCard>
+        <div className="w-20 h-20 bg-gradient-to-br from-amber-400 to-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-white text-3xl font-bold">!</div>
+        <h1 className="text-3xl font-bold text-brand-blue text-center">Payment Reversed</h1>
+        <p className="text-gray-600 text-center mt-2">
+          This payment was voided or refunded through the staff review process. No second ticket was issued and no occupied seat was released. Please contact the bingo office before booking again if you need assistance.
+        </p>
+        <button onClick={goHome} className="w-full bg-brand-blue text-white py-3 px-6 rounded-xl font-semibold hover:bg-brand-blue-dark transition-colors mt-6">
+          Return to Home
+        </button>
+      </CenteredCard>
+    );
+  }
+
+  if (phase === 'review') {
+    return (
+      <CenteredCard>
+        <div className="w-20 h-20 bg-gradient-to-br from-red-400 to-red-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-white text-3xl font-bold">!</div>
+        <h1 className="text-3xl font-bold text-brand-blue text-center">Payment Needs Review</h1>
+        <p className="text-gray-600 text-center mt-2">
+          Do not submit another payment or book this seat again. Your payment was received after this checkout was no longer valid, and staff must complete the void/refund review. No duplicate ticket has been issued.
+        </p>
       </CenteredCard>
     );
   }

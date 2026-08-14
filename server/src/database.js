@@ -46,7 +46,8 @@ export const run                     = adapter.run;
 export const exec                    = adapter.exec;
 export const batchRun                = adapter.batchRun;
 export const scheduleSaveAfterBatch  = adapter.scheduleSaveAfterBatch;
+export const withTransaction         = adapter.withTransaction;
 
 export default {
-  getDb, saveDb, all, get, run, exec, batchRun, scheduleSaveAfterBatch,
+  getDb, saveDb, all, get, run, exec, batchRun, scheduleSaveAfterBatch, withTransaction,
 };

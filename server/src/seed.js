@@ -104,6 +104,8 @@ async function seed() {
       payment_completed_at TEXT,
       payment_failure_reason TEXT,
       hosted_token TEXT,
+      ticket_access_token TEXT,
+      checkout_holder_id TEXT,
       FOREIGN KEY (session_id) REFERENCES sessions(id)
     );
     CREATE TABLE booking_items (

@@ -9,7 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
-import { getDb, all, get, run, saveDb } from './database.js';
+import { getDb, all, get, run, saveDb, withTransaction } from './database.js';
 import { migrate } from './migrate.js';
 import { migratePostgres } from './migratePostgres.js';
 import { logger } from './logger.js';
@@ -67,7 +67,7 @@ import {
   createHostedPaymentPage,
   getHostedPaymentRedirectUrl,
   verifyTransaction,
-  verifyWebhookSignature
+  verifyWebhookSignature,
 } from './services/payments.js';
 import {
   getBookingConfig,
@@ -569,6 +569,7 @@ async function insertBookingRecord({
   customerFirstName,
   customerLastName,
   emailVerifiedAt,
+  holderId,
   sessionType = 'regular_bingo'
 }) {
   if (useSessionPkgs && sessionPkgs?.length) {
@@ -609,8 +610,8 @@ async function insertBookingRecord({
     await run(
       `INSERT INTO bookings
         (id, session_id, reference_number, total_amount, payment_status, created_at, email,
-         customer_first_name, customer_last_name, email_verified_at, ticket_access_token)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         customer_first_name, customer_last_name, email_verified_at, ticket_access_token, checkout_holder_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         bookingId,
         sessionId,
@@ -623,6 +624,7 @@ async function insertBookingRecord({
         customerLastName,
         emailVerifiedAt,
         ticketAccessToken,
+        holderId || null,
       ]
     );
     bookingInserted = true;
@@ -776,28 +778,128 @@ async function findReusablePendingBooking({ sessionId, holderId, attendees, emai
 // Returns { ok, alreadyPaid? }. Safe to call multiple times — second+ calls
 // short-circuit. This is what makes /payment/return and the webhook safe to
 // both fire for the same booking.
-async function markBookingPaid({ bookingId, transactionId = null, authCode = null, source = 'instant' }) {
-  const booking = await get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
-  if (!booking) {
-    console.error(`[bookings] markBookingPaid: booking ${bookingId} not found`);
-    return { ok: false, error: 'booking_not_found' };
+async function quarantineRejectedApprovedPayment({ booking, transactionId, authCode, rejection, verifiedTransaction, paymentServices = null }) {
+  const verifyPayment = paymentServices?.verifyTransaction || verifyTransaction;
+  const verify = verifiedTransaction?.ok ? verifiedTransaction : await verifyPayment(transactionId);
+  const txStatus = String(verify?.status || '');
+  const now = new Date().toISOString();
+  await run(
+    `UPDATE bookings SET payment_status = 'payment_review', transaction_id = ?, auth_code = ?,
+       payment_completed_at = ?, payment_failure_reason = ? WHERE id = ?`,
+    [transactionId, authCode || verify?.authCode || null, now, `late_payment_${rejection}: manual_void_or_refund_required (${txStatus || verify?.error || 'status_unknown'})`.slice(0, 500), booking.id]
+  );
+  await saveDb();
+  await logPaymentEvent(booking.id, 'late_payment_requires_review', 'automatic_payment_safety', {
+    transactionId,
+    rejection,
+    priorStatus: booking.payment_status,
+    transactionStatus: txStatus || null,
+    error: verify?.error || null,
+  });
+  await logAudit('late_payment_requires_review', 'booking', booking.id, {
+    referenceNumber: booking.reference_number,
+    transactionId,
+    rejection,
+    priorStatus: booking.payment_status,
+    seatReleased: false,
+  });
+  io.to('admin:receipts').emit('booking:payment_review', {
+    bookingId: booking.id,
+    referenceNumber: booking.reference_number,
+    transactionId,
+    rejection,
+  });
+  return { ok: false, paymentRejected: true, requiresReview: true, rejection };
+}
+
+async function markBookingPaid({ bookingId, transactionId = null, authCode = null, source = 'instant', verifiedTransaction = null, paymentServices = null }) {
+  const completedAt = new Date().toISOString();
+  const claim = await withTransaction(async tx => {
+    const booking = await tx.getForUpdate('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+    if (!booking) return { ok: false, error: 'booking_not_found' };
+    if (booking.payment_status === 'paid') {
+      if (!transactionId || !booking.transaction_id || booking.transaction_id === transactionId) {
+        return { ok: true, alreadyPaid: true, booking };
+      }
+      return { ok: false, rejection: 'booking_already_paid_by_another_transaction', booking };
+    }
+    if (['refunded', 'voided'].includes(booking.payment_status) && booking.transaction_id === transactionId) {
+      return { ok: false, alreadyReversed: true, booking };
+    }
+    if (booking.payment_status === 'payment_review' && booking.transaction_id === transactionId) {
+      return { ok: false, requiresReview: true, booking };
+    }
+
+    const items = await tx.all('SELECT * FROM booking_items WHERE booking_id = ? ORDER BY seat_id', [bookingId]);
+    if (items.length === 0) return { ok: false, rejection: 'booking_has_no_seats', booking };
+    const seatIds = [...new Set(items.map(item => item.seat_id))].sort();
+    const placeholders = seatIds.map(() => '?').join(',');
+    const seats = await tx.allForUpdate(`SELECT * FROM seats WHERE id IN (${placeholders}) ORDER BY id`, seatIds);
+
+    const conflicts = await tx.all(
+      `SELECT DISTINCT b.id, b.reference_number, bi.seat_id
+       FROM booking_items bi
+       JOIN bookings b ON b.id = bi.booking_id
+       WHERE bi.seat_id IN (${placeholders})
+         AND b.id != ?
+         AND b.payment_status IN ('paid', 'partially_refunded')
+         AND COALESCE(bi.refund_status, 'active') != 'refunded'`,
+      [...seatIds, bookingId]
+    );
+
+    let rejection = null;
+    if (booking.payment_status !== 'pending') rejection = `booking_status_${booking.payment_status}`;
+    else if (conflicts.length > 0) rejection = 'seat_owned_by_another_paid_booking';
+    else if (seats.length !== seatIds.length || seats.some(seat => seat.status !== 'held')) rejection = 'seat_hold_expired_or_released';
+    else if (booking.checkout_holder_id && seats.some(seat => seat.held_by !== booking.checkout_holder_id)) rejection = 'seat_held_by_another_customer';
+
+    if (rejection) {
+      if (transactionId) {
+        await tx.run(
+          `UPDATE bookings SET payment_status = 'payment_review', transaction_id = ?, auth_code = ?,
+             payment_completed_at = ?, payment_failure_reason = ? WHERE id = ?`,
+          [transactionId, authCode || verifiedTransaction?.authCode || null, completedAt, `late_payment_${rejection}`, bookingId]
+        );
+      }
+      return { ok: false, rejection, booking, conflicts };
+    }
+
+    const updated = await tx.run(
+      `UPDATE bookings SET payment_status = 'paid', transaction_id = ?, auth_code = ?,
+         payment_completed_at = ?, payment_failure_reason = NULL
+       WHERE id = ? AND payment_status = 'pending'`,
+      [transactionId, authCode, completedAt, bookingId]
+    );
+    if (updated.changes !== 1) return { ok: false, rejection: 'payment_state_changed', booking };
+    for (const item of items) {
+      await tx.run(`UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`, [item.seat_id]);
+    }
+    return { ok: true, booking, items };
+  });
+
+  if (!claim.ok) {
+    if (claim.alreadyReversed || claim.requiresReview) return claim;
+    if (transactionId && claim.booking) {
+      return quarantineRejectedApprovedPayment({
+        booking: claim.booking,
+        transactionId,
+        authCode,
+        rejection: claim.rejection || claim.error || 'payment_rejected',
+        verifiedTransaction,
+        paymentServices,
+      });
+    }
+    console.error(`[bookings] markBookingPaid rejected booking=${bookingId}: ${claim.rejection || claim.error}`);
+    return claim;
   }
-  if (booking.payment_status === 'paid') {
+  if (claim.alreadyPaid) {
     console.log(`[bookings] markBookingPaid: ${bookingId} already paid, idempotent skip`);
     return { ok: true, alreadyPaid: true };
   }
 
+  const booking = claim.booking;
+  const items = claim.items;
   const session = await get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
-  const items = await all('SELECT * FROM booking_items WHERE booking_id = ?', [bookingId]);
-
-  // Update booking row
-  await run(`UPDATE bookings SET
-    payment_status = 'paid',
-    transaction_id = ?,
-    auth_code = ?,
-    payment_completed_at = ?
-    WHERE id = ?`,
-    [transactionId, authCode, new Date().toISOString(), bookingId]);
 
   await upsertCustomerFromBooking({
     ...booking,
@@ -807,9 +909,8 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
     payment_completed_at: new Date().toISOString(),
   });
 
-  // Flip seats to sold + emit per-seat for live seat-map updates
+  // The transaction above atomically claimed the seats. Emit per-seat updates.
   for (const it of items) {
-    await run(`UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
     io.to(`session:${booking.session_id}`).emit('seat:sold', { seatId: it.seat_id, sessionId: booking.session_id });
   }
 
@@ -934,13 +1035,24 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
 // Failed payment seats stay held only briefly so customers/admins see the table
 // open again without waiting for the full checkout hold window.
 async function markBookingFailed({ bookingId, reason, source = 'server' }) {
-  const booking = await get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
-  if (!booking) return { ok: false, error: 'booking_not_found' };
-  if (booking.payment_status === 'paid') return { ok: false, error: 'already_paid' };
-  if (booking.payment_status === 'failed') return { ok: true, alreadyFailed: true };
+  const failureReason = String(reason || 'unknown').slice(0, 500);
+  const transition = await withTransaction(async tx => {
+    const booking = await tx.getForUpdate('SELECT id, payment_status, transaction_id FROM bookings WHERE id = ?', [bookingId]);
+    if (!booking) return { ok: false, error: 'booking_not_found' };
+    if (['paid', 'partially_refunded', 'payment_review'].includes(booking.payment_status) || booking.transaction_id) {
+      return { ok: false, error: 'payment_already_recorded' };
+    }
+    if (booking.payment_status === 'failed') return { ok: true, alreadyFailed: true };
+    if (booking.payment_status !== 'pending') return { ok: false, error: 'not_pending' };
+    const updated = await tx.run(
+      `UPDATE bookings SET payment_status = 'failed', payment_failure_reason = ?
+       WHERE id = ? AND payment_status = 'pending' AND transaction_id IS NULL`,
+      [failureReason, bookingId]
+    );
+    return updated.changes === 1 ? { ok: true } : { ok: false, error: 'payment_state_changed' };
+  });
+  if (!transition.ok || transition.alreadyFailed) return transition;
 
-  await run(`UPDATE bookings SET payment_status = 'failed', payment_failure_reason = ? WHERE id = ?`,
-    [String(reason || 'unknown').slice(0, 500), bookingId]);
   // Shorten the post-payment-error hold to the go-live operational window.
   const holdShorten = await shortenBookingSeatHolds({ bookingId, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
   await saveDb();
@@ -957,12 +1069,22 @@ async function markBookingFailed({ bookingId, reason, source = 'server' }) {
 // on the Authorize.Net hosted page). Cancelled payment seats use the same short
 // release window as failed payments.
 async function markBookingCancelled({ bookingId, source = 'customer' }) {
-  const booking = await get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
-  if (!booking) return { ok: false, error: 'booking_not_found' };
-  if (booking.payment_status === 'paid') return { ok: false, error: 'already_paid' };
-  if (booking.payment_status === 'cancelled') return { ok: true, alreadyCancelled: true };
+  const transition = await withTransaction(async tx => {
+    const booking = await tx.getForUpdate('SELECT id, payment_status, transaction_id FROM bookings WHERE id = ?', [bookingId]);
+    if (!booking) return { ok: false, error: 'booking_not_found' };
+    if (['paid', 'partially_refunded', 'payment_review'].includes(booking.payment_status) || booking.transaction_id) {
+      return { ok: false, error: 'refund_required' };
+    }
+    if (booking.payment_status === 'cancelled') return { ok: true, alreadyCancelled: true };
+    if (booking.payment_status !== 'pending') return { ok: false, error: 'not_pending' };
+    const updated = await tx.run(
+      `UPDATE bookings SET payment_status = 'cancelled' WHERE id = ? AND payment_status = 'pending' AND transaction_id IS NULL`,
+      [bookingId]
+    );
+    return updated.changes === 1 ? { ok: true } : { ok: false, error: 'payment_state_changed' };
+  });
+  if (!transition.ok || transition.alreadyCancelled) return transition;
 
-  await run(`UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?`, [bookingId]);
   // Treat payment cancellations like payment failures for seat availability.
   const holdShorten = await shortenBookingSeatHolds({ bookingId, minutes: PAYMENT_FAILURE_HOLD_MINUTES, io });
   await saveDb();
@@ -975,28 +1097,37 @@ async function markBookingCancelled({ bookingId, source = 'customer' }) {
 }
 
 async function cancelPendingBookingForEdit({ bookingId, source = 'customer_edit' }) {
-  const booking = await get('SELECT id, payment_status FROM bookings WHERE id = ?', [bookingId]);
-  if (!booking) return { ok: false, error: 'booking_not_found' };
-  if (booking.payment_status === 'paid') return { ok: false, error: 'already_paid' };
-  if (booking.payment_status === 'cancelled') return { ok: true, alreadyCancelled: true };
-  if (booking.payment_status !== 'pending') return { ok: false, error: 'not_pending' };
-
-  await run(`UPDATE bookings SET payment_status = 'cancelled' WHERE id = ?`, [bookingId]);
-
   const holdUntil = holdExpiresAt(HOLD_MINUTES);
-  const items = await all('SELECT seat_id FROM booking_items WHERE booking_id = ?', [bookingId]);
-  for (const item of items) {
-    await run(
-      `UPDATE seats
-       SET held_until = ?
-       WHERE id = ? AND status = 'held'`,
-      [holdUntil, item.seat_id]
+  const transition = await withTransaction(async tx => {
+    const booking = await tx.getForUpdate('SELECT id, payment_status, transaction_id FROM bookings WHERE id = ?', [bookingId]);
+    if (!booking) return { ok: false, error: 'booking_not_found' };
+    if (['paid', 'partially_refunded', 'payment_review'].includes(booking.payment_status) || booking.transaction_id) {
+      return { ok: false, error: 'refund_required' };
+    }
+    if (booking.payment_status === 'cancelled') return { ok: true, alreadyCancelled: true };
+    if (booking.payment_status !== 'pending') return { ok: false, error: 'not_pending' };
+
+    const items = await tx.all('SELECT seat_id FROM booking_items WHERE booking_id = ? ORDER BY seat_id', [bookingId]);
+    if (items.length > 0) {
+      const placeholders = items.map(() => '?').join(',');
+      await tx.allForUpdate(`SELECT id FROM seats WHERE id IN (${placeholders}) ORDER BY id`, items.map(item => item.seat_id));
+    }
+    const updated = await tx.run(
+      `UPDATE bookings SET payment_status = 'cancelled' WHERE id = ? AND payment_status = 'pending' AND transaction_id IS NULL`,
+      [bookingId]
     );
-  }
+    if (updated.changes !== 1) return { ok: false, error: 'payment_state_changed' };
+    for (const item of items) {
+      await tx.run(`UPDATE seats SET held_until = ? WHERE id = ? AND status = 'held'`, [holdUntil, item.seat_id]);
+    }
+    return { ok: true, items };
+  });
+  if (!transition.ok || transition.alreadyCancelled) return transition;
+
   await saveDb();
 
   await logPaymentEvent(bookingId, 'cancelled_for_edit', source, {
-    heldSeatsRetained: items.length,
+    heldSeatsRetained: transition.items.length,
     heldSeatsReleaseAt: holdUntil,
   });
 
@@ -1005,12 +1136,29 @@ async function cancelPendingBookingForEdit({ bookingId, source = 'customer_edit'
 
 async function releaseBookingSeats({ bookingId, sessionId }) {
   const items = await all('SELECT seat_id FROM booking_items WHERE booking_id = ?', [bookingId]);
+  let releasedSeats = 0;
   for (const it of items) {
-    await run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [it.seat_id]);
-    io.to(`session:${sessionId}`).emit('seat:unlocked', { seatId: it.seat_id, sessionId });
+    const result = await run(
+      `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
+       WHERE id = ?
+         AND NOT EXISTS (
+           SELECT 1
+           FROM booking_items active_item
+           JOIN bookings active_booking ON active_booking.id = active_item.booking_id
+           WHERE active_item.seat_id = seats.id
+             AND active_booking.id != ?
+             AND active_booking.payment_status IN ('paid', 'partially_refunded')
+             AND COALESCE(active_item.refund_status, 'active') != 'refunded'
+         )`,
+      [it.seat_id, bookingId]
+    );
+    if (result.changes > 0) {
+      releasedSeats += 1;
+      io.to(`session:${sessionId}`).emit('seat:unlocked', { seatId: it.seat_id, sessionId });
+    }
   }
   io.to(`session:${sessionId}`).emit('seats:refresh', { sessionId });
-  return items.length;
+  return releasedSeats;
 }
 
 async function reconcileReversedBookingSeats() {
@@ -1185,7 +1333,20 @@ async function markBookingItemRefunded({
      WHERE id = ?`,
     [refundedAt, refundTransactionId || transactionId, amountCents, action, bookingItemId]
   );
-  await run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [item.seat_id]);
+  await run(
+    `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
+     WHERE id = ?
+       AND NOT EXISTS (
+         SELECT 1
+         FROM booking_items active_item
+         JOIN bookings active_booking ON active_booking.id = active_item.booking_id
+         WHERE active_item.seat_id = seats.id
+           AND active_booking.id != ?
+           AND active_booking.payment_status IN ('paid', 'partially_refunded')
+           AND COALESCE(active_item.refund_status, 'active') != 'refunded'
+       )`,
+    [item.seat_id, bookingId]
+  );
 
   const remainingRow = await get(
     `SELECT COUNT(*) as count
@@ -1573,6 +1734,7 @@ app.post('/api/bookings', adminAuth, async (req, res) => {
     if (!validation.ok) return res.status(validation.statusCode).json({ error: validation.error });
     const {
       sessionId,
+      holderId,
       attendees,
       trimmedEmail,
       customerFirstName,
@@ -1599,6 +1761,7 @@ app.post('/api/bookings', adminAuth, async (req, res) => {
       customerFirstName,
       customerLastName,
       emailVerifiedAt,
+      holderId,
       sessionType
     });
 
@@ -1769,6 +1932,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           customerFirstName,
           customerLastName,
           emailVerifiedAt,
+          holderId,
           sessionType
         }));
         bookingIdForFailure = bookingId;
@@ -1844,7 +2008,7 @@ app.post('/api/bookings/:id/edit', bookingLimiter, async (req, res) => {
   try {
     const result = await cancelPendingBookingForEdit({ bookingId: req.params.id });
     if (!result.ok) {
-      const statusCode = result.error === 'already_paid' ? 409 : result.error === 'booking_not_found' ? 404 : 400;
+      const statusCode = result.error === 'refund_required' ? 409 : result.error === 'booking_not_found' ? 404 : 400;
       return res.status(statusCode).json({ error: result.error });
     }
     res.json({ success: true, heldUntil: result.heldUntil || null });
@@ -1975,6 +2139,7 @@ async function reconcilePaymentReturn(booking, transactionId) {
       transactionId,
       authCode: verify.authCode,
       source: 'authorize_net_browser_verified',
+      verifiedTransaction: verify,
     });
     return;
   }
@@ -2046,6 +2211,7 @@ function scheduleDeferredWebhookVerification({
           transactionId,
           authCode: verify.authCode,
           source: 'authorize_net_webhook_deferred',
+          verifiedTransaction: verify,
         });
         return;
       }
@@ -2102,7 +2268,10 @@ app.all('/payment/cancel', async (req, res) => {
   try {
     const booking = await findBookingForPaymentReturn(req);
     if (booking?.id) {
-      await markBookingCancelled({ bookingId: booking.id, source: 'customer' });
+      const result = await markBookingCancelled({ bookingId: booking.id, source: 'customer' });
+      if (!result.ok && result.error === 'refund_required') {
+        return res.redirect(`/booking/${encodeURIComponent(booking.id)}/processing`);
+      }
     }
     // Client-side route — shows "Payment cancelled" with a "Try Again" button.
     // Seats remain 'held' so the customer can retry without losing them.
@@ -2225,6 +2394,7 @@ async function processAuthorizeNetWebhook({ rawBody, sigHeader, event }) {
         transactionId: transId,
         authCode: verify.authCode,
         source: 'authorize_net_webhook_verified_transaction',
+        verifiedTransaction: verify,
       });
       return;
     } catch (err) {
@@ -2281,6 +2451,7 @@ async function processAuthorizeNetWebhook({ rawBody, sigHeader, event }) {
           transactionId: transId,
           authCode: verify.authCode,
           source: 'authorize_net_webhook',
+          verifiedTransaction: verify,
         });
       } else {
         await markBookingFailed({
@@ -2683,7 +2854,7 @@ async function start() {
   registerGracefulShutdown({ server, logger });
 }
 
-export { app, io, server, start };
+export { app, io, server, start, markBookingPaid, markBookingCancelled };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   start().catch(err => {

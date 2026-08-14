@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchBookingStatus } from '../api';
 
 const STATUS_POLL_INTERVAL_MS = 2000;
@@ -24,6 +24,7 @@ function parseGatewayMessage(queryString) {
 export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel }) {
   const formRef = useRef(null);
   const submittedRef = useRef(false);
+  const allowNavigationRef = useRef(false);
   const [frameSize, setFrameSize] = useState({ width: 700, height: 720 });
   const [statusText, setStatusText] = useState('Secure payment form loading...');
   const summaryItems = payment.checkoutSummary?.items || [];
@@ -33,6 +34,18 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
   ].find(value => String(value || '').trim()) || '';
   const [cardholderName, setCardholderName] = useState('');
   const trimmedCardholderName = cardholderName.trim();
+  const cancelWarning = 'Cancel checkout? If you already pressed Pay or see a charge, do not cancel—wait for confirmation. Cancelling ends this checkout and the seat may be released. Never return to or submit an older payment page after cancelling.';
+
+  const confirmCheckoutExit = callback => {
+    if (window.confirm(cancelWarning)) {
+      allowNavigationRef.current = true;
+      callback();
+    }
+  };
+  const navigateTo = useCallback(url => {
+    allowNavigationRef.current = true;
+    window.location.href = url;
+  }, []);
 
   useEffect(() => {
     setCardholderName('');
@@ -66,13 +79,13 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
           setStatusText('Payment received. Confirming your booking...');
           const params = new URLSearchParams({ bookingId: payment.bookingId });
           if (message.transactionId) params.set('transId', message.transactionId);
-          window.location.href = `/payment/return?${params.toString()}`;
+          navigateTo(`/payment/return?${params.toString()}`);
           return;
         }
 
         if (message.action === 'cancel') {
           setStatusText('Payment cancelled. Returning to booking status...');
-          window.location.href = cancelledUrl;
+          navigateTo(`/payment/cancel?bookingId=${encodeURIComponent(payment.bookingId)}`);
         }
       },
     };
@@ -80,7 +93,17 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
     return () => {
       delete window.AuthorizeNetIFrame;
     };
-  }, [cancelledUrl, payment.bookingId]);
+  }, [navigateTo, payment.bookingId]);
+
+  useEffect(() => {
+    const warnBeforeLeaving = event => {
+      if (allowNavigationRef.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, []);
 
   useEffect(() => {
     let stopped = false;
@@ -93,19 +116,19 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
 
         if (status?.status === 'paid') {
           setStatusText('Payment confirmed. Loading your booking confirmation...');
-          window.location.href = processingUrl;
+          navigateTo(processingUrl);
           return;
         }
 
         if (status?.status === 'failed') {
           setStatusText('Payment declined. Loading next steps...');
-          window.location.href = processingUrl;
+          navigateTo(processingUrl);
           return;
         }
 
         if (status?.status === 'cancelled') {
           setStatusText('Payment cancelled. Returning to booking status...');
-          window.location.href = cancelledUrl;
+          navigateTo(cancelledUrl);
           return;
         }
       } catch (err) {
@@ -123,7 +146,7 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
       stopped = true;
       window.clearTimeout(timeoutId);
     };
-  }, [cancelledUrl, payment.bookingId, processingUrl]);
+  }, [cancelledUrl, navigateTo, payment.bookingId, processingUrl]);
 
   useEffect(() => {
     if (!formRef.current || submittedRef.current) return;
@@ -144,7 +167,7 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
           </div>
           <button
             type="button"
-            onClick={onBack}
+            onClick={() => confirmCheckoutExit(onBack)}
             className="shrink-0 rounded-lg border border-white/25 px-4 py-2 text-sm font-semibold hover:bg-white/10 transition-colors"
           >
             Back to edit
@@ -269,9 +292,13 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
               <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-gray-700">
                 Card details are handled by Authorize.Net. Wolastoq Bingo does not see or store your card number.
               </div>
+              <div className="rounded-lg bg-amber-50 border border-amber-300 p-4 text-sm text-amber-950">
+                <p className="font-bold">Before cancelling</p>
+                <p className="mt-1">If you pressed Pay or see a charge, wait for confirmation. Do not cancel and do not reuse an older payment page. Staff must void or refund any completed payment before its seat is released.</p>
+              </div>
               <button
                 type="button"
-                onClick={onCancel}
+                onClick={() => confirmCheckoutExit(onCancel)}
                 className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 Cancel checkout

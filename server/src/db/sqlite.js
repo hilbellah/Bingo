@@ -187,4 +187,26 @@ export function scheduleSaveAfterBatch() {
   }, SAVE_DELAY_MS);
 }
 
-export default { getDb, saveDb, all, get, run, exec, batchRun, scheduleSaveAfterBatch };
+export async function withTransaction(fn) {
+  if (!db) throw new Error('sqlite adapter: call getDb() before withTransaction()');
+  db.run('BEGIN IMMEDIATE');
+  const tx = {
+    query: async (sql, params = []) => ({ rows: await all(sql, params) }),
+    all,
+    get,
+    run,
+    allForUpdate: all,
+    getForUpdate: get,
+  };
+  try {
+    const result = await fn(tx);
+    db.run('COMMIT');
+    await saveDb();
+    return result;
+  } catch (err) {
+    try { db.run('ROLLBACK'); } catch (_) { /* preserve original error */ }
+    throw err;
+  }
+}
+
+export default { getDb, saveDb, all, get, run, exec, batchRun, scheduleSaveAfterBatch, withTransaction };

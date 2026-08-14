@@ -845,6 +845,7 @@ async function migrate() {
   try { await exec('ALTER TABLE bookings ADD COLUMN payment_failure_reason TEXT'); } catch(e) {}
   try { await exec('ALTER TABLE bookings ADD COLUMN hosted_token TEXT'); } catch(e) {}
   try { await exec('ALTER TABLE bookings ADD COLUMN ticket_access_token TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE bookings ADD COLUMN checkout_holder_id TEXT'); } catch(e) {}
   try {
     const bookingsWithoutTicketToken = await all("SELECT id FROM bookings WHERE ticket_access_token IS NULL OR ticket_access_token = ''");
     for (const booking of bookingsWithoutTicketToken) {
@@ -866,8 +867,10 @@ async function migrate() {
   `);
 
   try { await exec('CREATE INDEX idx_bookings_transaction_id ON bookings(transaction_id)'); } catch(e) {}
+  try { await exec("CREATE UNIQUE INDEX idx_bookings_transaction_unique ON bookings(transaction_id) WHERE transaction_id IS NOT NULL AND transaction_id != ''"); } catch(e) {}
   try { await exec('CREATE INDEX idx_bookings_payment_status ON bookings(payment_status)'); } catch(e) {}
   try { await exec('CREATE INDEX idx_bookings_ticket_access_token ON bookings(ticket_access_token)'); } catch(e) {}
+  try { await exec('CREATE INDEX idx_bookings_checkout_holder ON bookings(checkout_holder_id)'); } catch(e) {}
   try { await exec('CREATE INDEX idx_payment_events_booking ON payment_events(booking_id)'); } catch(e) {}
   try { await exec('CREATE INDEX idx_payment_events_type ON payment_events(event_type)'); } catch(e) {}
 
