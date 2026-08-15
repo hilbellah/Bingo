@@ -508,8 +508,9 @@ export function registerAdminBookingRoutes(app, {
     }
   });
 
-  app.post('/api/admin/booking-items/:id/refund', adminAuth, async (req, res) => {
+  app.post('/api/admin/legacy-disabled/booking-items/:id/refund', adminAuth, async (req, res) => {
     try {
+    return res.status(410).json({ error: 'Direct refunds are disabled. Submit a refund request for approval.' });
     const item = await get(`
       SELECT bi.*, b.id as booking_id, b.reference_number as booking_reference,
              b.payment_status, b.transaction_id, b.total_amount
@@ -998,8 +999,9 @@ export function registerAdminBookingRoutes(app, {
     }
   });
 
-  app.post('/api/admin/bookings/:id/refund', adminAuth, async (req, res) => {
+  app.post('/api/admin/legacy-disabled/bookings/:id/refund', adminAuth, async (req, res) => {
     try {
+    return res.status(410).json({ error: 'Direct refunds are disabled. Submit a refund request for approval.' });
     const booking = await get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
 

@@ -13,6 +13,7 @@ const EXPECTED_TABLES = [
   'session_packages', 'announcements', 'audit_log', 'settings', 'recurring_schedules',
   'email_verifications', 'customers', 'admin_users', 'payment_events',
   'customer_credits',
+  'refund_requests',
   'schema_migrations',
 ];
 
@@ -29,6 +30,7 @@ const EXPECTED_INDEXES = [
   'idx_email_verifications_email', 'idx_email_verifications_expires',
   'idx_customers_email', 'idx_customers_last_booking',
   'idx_payment_events_booking', 'idx_payment_events_type',
+  'idx_refund_requests_status', 'idx_refund_requests_booking', 'idx_refund_requests_pending_scope',
   'idx_customer_credits_status', 'idx_customer_credits_booking',
 ];
 

@@ -58,6 +58,7 @@ const TABLES = [
   { name: 'booking_items',        cols: ['id', 'booking_id', 'first_name', 'last_name', 'seat_id', 'package_id', 'price', 'reference_number', 'printed_at', 'refund_status', 'refunded_at', 'refund_transaction_id', 'refund_amount', 'refund_action'] },
   { name: 'booking_addons',       cols: ['id', 'booking_item_id', 'package_id', 'quantity', 'price'] },
   { name: 'payment_events',       cols: ['id', 'booking_id', 'event_type', 'source', 'raw_payload', 'created_at'] },
+  { name: 'refund_requests',      cols: ['id', 'booking_id', 'booking_item_id', 'amount_cents', 'reason', 'status', 'requested_by', 'requested_at', 'reviewed_by', 'reviewed_at', 'review_note', 'gateway_action', 'gateway_transaction_id', 'failure_reason'] },
   { name: 'announcements',        cols: ['id', 'title', 'message', 'type', 'is_active', 'start_date', 'end_date', 'sort_order', 'image_url', 'created_at', 'updated_at'] },
   { name: 'audit_log',            cols: ['id', 'action', 'entity_type', 'entity_id', 'details', 'created_at'] },
   { name: 'settings',             cols: ['key', 'value', 'updated_at'] },

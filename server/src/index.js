@@ -45,6 +45,7 @@ import {
   validatePhdInventory
 } from './services/phdInventory.js';
 import { registerAdminBookingRoutes } from './routes/adminBookingRoutes.js';
+import { registerAdminRefundApprovalRoutes } from './routes/adminRefundApprovalRoutes.js';
 import { registerAdminBulkTicketRoutes } from './routes/adminBulkTicketRoutes.js';
 import { registerAdminCustomerRoutes } from './routes/adminCustomerRoutes.js';
 import { registerAdminReportRoutes } from './routes/adminReportRoutes.js';
@@ -2807,6 +2808,14 @@ registerAdminBookingRoutes(app, {
   markBookingRefunded,
   markBookingVoided,
   sendBookingConfirmationEmail,
+});
+registerAdminRefundApprovalRoutes(app, {
+  io,
+  logAudit,
+  getBookingItemRefundAmount,
+  markBookingItemRefunded,
+  markBookingRefunded,
+  markBookingVoided,
 });
 
 registerAnnouncementRoutes(app, { io, upload, saveUploadedImage });

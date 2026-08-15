@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
+  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, fetchRefundRequests, approveRefundRequest, rejectRefundRequest, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -111,6 +111,7 @@ export default function AdminDashboard() {
 
   const [tab, setTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
+  const [refundRequests, setRefundRequests] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [packages, setPackages] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -226,7 +227,11 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  const loadDashboard = (from, to) => fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard);
+  const loadRefundRequests = () => fetchRefundRequests(token).then(setRefundRequests).catch(() => setRefundRequests([]));
+  const loadDashboard = (from, to) => Promise.all([
+    fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard),
+    loadRefundRequests(),
+  ]);
   const loadSessions = () => fetchAdminSessions(token).then(setSessions);
   const loadPackages = () => fetchAdminPackages(token).then(setPackages);
   const loadBookings = (sid) => fetchAdminBookings(token, sid).then(setBookings);
@@ -319,11 +324,16 @@ export default function AdminDashboard() {
       setDashboard(prev => prev ? { ...prev, phdInventory: phdData } : prev);
     });
 
+    socket.on('refund_request:created', loadRefundRequests);
+    socket.on('refund_request:updated', loadRefundRequests);
+
 
 
     return () => {
       socket.emit('leave:admin-receipts');
       socket.off('admin:receipts:unauthorized');
+      socket.off('refund_request:created', loadRefundRequests);
+      socket.off('refund_request:updated', loadRefundRequests);
       socket.disconnect();
     };
   }, [token]);
@@ -885,22 +895,22 @@ export default function AdminDashboard() {
     loadDashboard(dashboardDateFrom, dashboardDateTo);
   };
 
-  // Refund a paid booking through Authorize.Net. Server auto-decides void vs
-  // refund and releases seats. /cancel is for legacy/admin bookings with no
-  // payment processor; /refund is for real Authorize.Net transactions.
+  // Refunds are requests only. A different super user must approve before the
+  // server contacts Authorize.Net or releases any seat.
   const handleRefundBooking = async (id, refNumber) => {
+    const reason = window.prompt(`Reason for refund request ${refNumber || id}:`);
+    if (!reason?.trim()) return;
     const proceed = confirmAdminAction({
-      action: `Refund booking ${refNumber || id}`,
-      warning: `This will return the customer's money via Authorize.Net and release the seats. Cannot be undone.`,
+      action: `Submit refund request for ${refNumber || id}`,
+      details: [`Reason: ${reason.trim()}`],
+      warning: 'No money will move and no seat will be released until a different super user approves this request.',
     });
     if (!proceed) return;
 
-    const result = await refundAdminBooking(token, id);
+    const result = await refundAdminBooking(token, id, reason.trim());
     if (result.ok) {
-      window.alert(
-        `Refund successful (${result.action || 'completed'}).` +
-        (result.seatsReleased ? ` ${result.seatsReleased} seat(s) released.` : '')
-      );
+      window.alert(result.message || 'Refund request submitted for approval.');
+      loadRefundRequests();
       loadBookings(reportSession);
       loadTransactions(transactionFilters);
       loadBookingSales();
@@ -912,25 +922,25 @@ export default function AdminDashboard() {
         });
       }
     } else {
-      window.alert('Refund failed: ' + (result.error || 'Unknown error'));
+      window.alert('Refund request failed: ' + (result.error || 'Unknown error'));
     }
   };
 
   const handleRefundBookingItem = async (item, booking) => {
     const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
+    const reason = window.prompt(`Reason for refunding ticket ${item.referenceNumber || item.id}:`);
+    if (!reason?.trim()) return;
     const proceed = confirmAdminAction({
-      action: `Refund ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`,
-      warning: `Only this ticket will be refunded and its seat will be released. The rest of booking ${booking?.referenceNumber || ''} will remain active. Cannot be undone.`,
+      action: `Request refund for ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`,
+      details: [`Reason: ${reason.trim()}`],
+      warning: 'No money will move and the seat remains assigned until a different super user approves this request.',
     });
     if (!proceed) return;
 
-    const result = await refundAdminBookingItem(token, item.id);
+    const result = await refundAdminBookingItem(token, item.id, reason.trim());
     if (result.ok) {
-      window.alert(
-        `Ticket refund successful (${result.action || 'completed'}).` +
-        (result.amountFormatted ? ` Amount: ${result.amountFormatted}.` : '') +
-        (result.seatsReleased ? ` ${result.seatsReleased} seat released.` : '')
-      );
+      window.alert(result.message || 'Ticket refund request submitted for approval.');
+      loadRefundRequests();
       loadBookings(reportSession);
       loadTransactions(transactionFilters);
       loadBookingSales();
@@ -942,8 +952,37 @@ export default function AdminDashboard() {
         });
       }
     } else {
-      window.alert('Ticket refund failed: ' + (result.error || 'Unknown error'));
+      window.alert('Ticket refund request failed: ' + (result.error || 'Unknown error'));
     }
+  };
+
+  const handleApproveRefundRequest = async (request) => {
+    if (request.requesterIsViewer) {
+      window.alert('A different super user must approve this request.');
+      return;
+    }
+    if (!confirmAdminAction({
+      action: `Approve refund ${request.bookingReference}`,
+      details: [`Amount: ${request.amountFormatted}`, `Requested by: ${request.requestedBy}`, `Reason: ${request.reason}`],
+      warning: 'Approval will immediately submit the void/refund to Authorize.Net. This financial action cannot be undone.',
+    })) return;
+    const note = window.prompt('Optional approval note:') || '';
+    const result = await approveRefundRequest(token, request.id, note);
+    window.alert(result.ok ? `Refund approved and ${result.action || 'reversal'} completed.` : `Approval failed: ${result.error || 'Unknown error'}`);
+    loadRefundRequests();
+    loadDashboard();
+  };
+
+  const handleRejectRefundRequest = async (request) => {
+    if (request.requesterIsViewer) {
+      window.alert('A different super user must review this request.');
+      return;
+    }
+    const note = window.prompt('Reason for rejecting this refund request:');
+    if (!note?.trim()) return;
+    const result = await rejectRefundRequest(token, request.id, note.trim());
+    window.alert(result.ok ? 'Refund request rejected. No money was moved.' : `Rejection failed: ${result.error || 'Unknown error'}`);
+    loadRefundRequests();
   };
 
   const handleRemoveAssignedTicket = async (item, booking) => {
@@ -1136,6 +1175,9 @@ export default function AdminDashboard() {
     adminRole,
     isPrintStaff,
     dashboard,
+    refundRequests,
+    handleApproveRefundRequest,
+    handleRejectRefundRequest,
     dashboardDateFrom,
     dashboardDateTo,
     dashboardRange,

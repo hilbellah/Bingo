@@ -873,6 +873,29 @@ async function migrate() {
   try { await exec('CREATE INDEX idx_bookings_checkout_holder ON bookings(checkout_holder_id)'); } catch(e) {}
   try { await exec('CREATE INDEX idx_payment_events_booking ON payment_events(booking_id)'); } catch(e) {}
   try { await exec('CREATE INDEX idx_payment_events_type ON payment_events(event_type)'); } catch(e) {}
+  await exec(`
+    CREATE TABLE IF NOT EXISTS refund_requests (
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL,
+      booking_item_id TEXT,
+      amount_cents INTEGER NOT NULL,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      requested_by TEXT NOT NULL,
+      requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      review_note TEXT,
+      gateway_action TEXT,
+      gateway_transaction_id TEXT,
+      failure_reason TEXT,
+      FOREIGN KEY (booking_id) REFERENCES bookings(id),
+      FOREIGN KEY (booking_item_id) REFERENCES booking_items(id)
+    )
+  `);
+  try { await exec('CREATE INDEX idx_refund_requests_status ON refund_requests(status, requested_at)'); } catch(e) {}
+  try { await exec('CREATE INDEX idx_refund_requests_booking ON refund_requests(booking_id)'); } catch(e) {}
+  try { await exec("CREATE UNIQUE INDEX idx_refund_requests_pending_scope ON refund_requests(booking_id) WHERE status IN ('pending', 'processing', 'reconciliation_required')"); } catch(e) {}
 
   await repairRefundAmounts();
 

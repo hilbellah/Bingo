@@ -642,6 +642,59 @@ export async function sendBookingRefundNotification({ to, booking, session, item
   return { ok: false, status: 0, error: 'no_provider_configured' };
 }
 
+export async function sendRefundApprovalRequestNotification({ request, booking, item = null, recipients: explicitRecipients = [] }) {
+  const configuredRecipients = (process.env.REFUND_APPROVAL_EMAILS || process.env.SUPER_ADMIN_EMAILS || process.env.EMAIL_BCC || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
+  const recipients = [...new Set([...explicitRecipients, ...configuredRecipients]
+    .map(value => String(value || '').trim().toLowerCase())
+    .filter(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))];
+  if (recipients.length === 0) {
+    console.warn('[email] refund approval request has no configured admin recipient; request remains visible in the dashboard.');
+    return { ok: false, status: 0, error: 'no_admin_recipient' };
+  }
+
+  const adminUrl = `${(process.env.PUBLIC_SITE_URL || 'https://booking.wolastoqcasino.ca').replace(/\/$/, '')}/admin/dashboard`;
+  const amount = formatPriceDollars(request.amount_cents);
+  const subject = `Refund Approval Required - ${booking.reference_number}`;
+  const scope = item ? `Ticket ${item.reference_number || item.id}` : 'Full booking';
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.5">
+    <h2 style="color:#1a3a5c">Refund approval required</h2>
+    <p>A staff member submitted a refund/void request. No money has moved and no seat has been released.</p>
+    <table cellpadding="6" style="border-collapse:collapse">
+      <tr><td><strong>Booking</strong></td><td>${escapeHtml(booking.reference_number)}</td></tr>
+      <tr><td><strong>Scope</strong></td><td>${escapeHtml(scope)}</td></tr>
+      <tr><td><strong>Amount</strong></td><td>${escapeHtml(amount)}</td></tr>
+      <tr><td><strong>Requested by</strong></td><td>${escapeHtml(request.requested_by)}</td></tr>
+      <tr><td><strong>Reason</strong></td><td>${escapeHtml(request.reason || 'No reason supplied')}</td></tr>
+    </table>
+    <p><a href="${escapeHtml(adminUrl)}" style="display:inline-block;background:#1a3a5c;color:white;padding:10px 16px;border-radius:6px;text-decoration:none">Review in Admin Dashboard</a></p>
+    <p style="color:#6b7280;font-size:13px">A different super user must approve the request before Authorize.Net is contacted.</p>
+  </body></html>`;
+  const text = [
+    'Refund approval required', '',
+    'No money has moved and no seat has been released.',
+    `Booking: ${booking.reference_number}`,
+    `Scope: ${scope}`,
+    `Amount: ${amount}`,
+    `Requested by: ${request.requested_by}`,
+    `Reason: ${request.reason || 'No reason supplied'}`,
+    '', `Review: ${adminUrl}`,
+  ].join('\n');
+  const to = recipients[0];
+  const bcc = recipients.slice(1);
+  const emailBooking = { referenceNumber: booking.reference_number };
+
+  const postmarkToken = process.env.POSTMARK_SERVER_TOKEN;
+  if (postmarkToken) return sendViaPostmark({ token: postmarkToken, to, bcc, subject, html, text, booking: emailBooking });
+  const transporter = getGmailTransporter();
+  if (transporter) return sendViaGmail({ transporter, to, bcc, subject, html, text, booking: emailBooking });
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) return sendViaResend({ apiKey, to, bcc, subject, html, text, booking: emailBooking });
+  return { ok: false, status: 0, error: 'no_provider_configured' };
+}
+
 function renderRescheduleHtml({ booking, session, previousSession }) {
   const presentation = getBookingPresentation(session);
   const siteUrl = process.env.PUBLIC_SITE_URL || 'https://booking.wolastoqcasino.ca';

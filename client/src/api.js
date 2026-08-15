@@ -359,21 +359,40 @@ export async function clearAdminTestBookings(token) {
   return { ok: res.ok, ...json };
 }
 
-// Refund a paid booking through Authorize.Net. The server auto-decides
-// between void (pre-settlement) and refund (post-settlement) and always
-// releases seats. Returns { ok, action: 'void'|'refund', seatsReleased,
-// refundTransId } on success or { ok: false, error } on failure.
-export async function refundAdminBooking(token, id) {
+// Submit a refund request. Authorize.Net is contacted only after a different
+// super user approves the persistent request from the admin dashboard.
+export async function refundAdminBooking(token, id, reason) {
   const res = await fetch(`${API}/admin/bookings/${id}/refund`, {
-    method: 'POST', headers: adminHeaders(token)
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ reason })
   });
   const json = await res.json();
   return { ok: res.ok, ...json };
 }
 
-export async function refundAdminBookingItem(token, id) {
+export async function refundAdminBookingItem(token, id, reason) {
   const res = await fetch(`${API}/admin/booking-items/${id}/refund`, {
-    method: 'POST', headers: adminHeaders(token)
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ reason })
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
+export async function fetchRefundRequests(token, status = 'pending') {
+  const res = await fetch(`${API}/admin/refund-requests?status=${encodeURIComponent(status)}`, { headers: adminHeaders(token) });
+  return readJson(res, 'Could not load refund approval requests');
+}
+
+export async function approveRefundRequest(token, id, note = '') {
+  const res = await fetch(`${API}/admin/refund-requests/${encodeURIComponent(id)}/approve`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ note })
+  });
+  const json = await res.json();
+  return { ok: res.ok, ...json };
+}
+
+export async function rejectRefundRequest(token, id, note = '') {
+  const res = await fetch(`${API}/admin/refund-requests/${encodeURIComponent(id)}/reject`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ note })
   });
   const json = await res.json();
   return { ok: res.ok, ...json };

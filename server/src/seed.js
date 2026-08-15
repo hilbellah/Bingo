@@ -49,6 +49,7 @@ async function seed() {
 
   // Drop old tables to start fresh
   try { exec('DROP TABLE IF EXISTS booking_addons'); } catch(e) {}
+  try { exec('DROP TABLE IF EXISTS refund_requests'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS booking_items'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS bookings'); } catch(e) {}
   try { exec('DROP TABLE IF EXISTS session_packages'); } catch(e) {}
@@ -188,6 +189,23 @@ async function seed() {
       FOREIGN KEY (booking_id) REFERENCES bookings(id)
     );
 
+    CREATE TABLE refund_requests (
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL,
+      booking_item_id TEXT,
+      amount_cents INTEGER NOT NULL,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      requested_by TEXT NOT NULL,
+      requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      review_note TEXT,
+      gateway_action TEXT,
+      gateway_transaction_id TEXT,
+      failure_reason TEXT
+    );
+
     CREATE INDEX idx_seats_session ON seats(session_id);
     CREATE INDEX idx_seats_table ON seats(session_id, table_number);
     CREATE INDEX idx_seats_status ON seats(session_id, status);
@@ -199,6 +217,8 @@ async function seed() {
     CREATE INDEX idx_customers_email ON customers(email);
     CREATE INDEX idx_customers_last_booking ON customers(last_booking_at);
     CREATE INDEX idx_payment_events_booking ON payment_events(booking_id);
+    CREATE INDEX idx_refund_requests_status ON refund_requests(status, requested_at);
+    CREATE INDEX idx_refund_requests_booking ON refund_requests(booking_id);
     CREATE INDEX idx_session_packages_session ON session_packages(session_id);
     CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);
     CREATE INDEX idx_audit_log_action ON audit_log(action);

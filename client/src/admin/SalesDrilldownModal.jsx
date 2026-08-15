@@ -80,9 +80,9 @@ export default function SalesDrilldownModal() {
                           <button
                             onClick={() => handleRefundBooking(b.id, b.referenceNumber)}
                             className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                            title={b.paymentStatus === 'payment_review' ? 'Manual review required: void/refund this transaction via Authorize.Net' : 'Refund the full booking batch via Authorize.Net'}
+                            title="Submit a refund request for super-user approval"
                           >
-                            {b.paymentStatus === 'payment_review' ? 'Review & Reverse' : 'Refund Batch'}
+                            Request Refund
                           </button>
                         )}
                       </div>
@@ -167,7 +167,7 @@ export default function SalesDrilldownModal() {
                                       className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
                                       title="Refund only this ticket"
                                     >
-                                      Refund Ticket
+                                      Request Refund
                                     </button>
                                   )}
                                 </div>
