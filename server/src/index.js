@@ -1174,7 +1174,8 @@ async function reconcileReversedBookingSeats() {
         FROM booking_items paid_item
         JOIN bookings paid_booking ON paid_booking.id = paid_item.booking_id
         WHERE paid_item.seat_id = s.id
-          AND paid_booking.payment_status = 'paid'
+          AND paid_booking.payment_status IN ('paid', 'partially_refunded')
+          AND COALESCE(paid_item.refund_status, 'active') != 'refunded'
       )
   `);
 
@@ -1219,7 +1220,7 @@ function sendRefundNotificationAsync({ bookingId, action, refundTransactionId, b
   });
 }
 
-// Idempotently mark a 'paid' or 'partially_refunded' booking as 'refunded'
+// Idempotently mark a paid, partially refunded, or quarantined booking as refunded.
 // (post-settlement reversal).
 // Releases seats, refreshes public seat maps, and emails the customer plus
 // EMAIL_BCC recipients.
@@ -1227,7 +1228,7 @@ async function markBookingRefunded({ bookingId, transactionId = null, refundTran
   const booking = await get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (booking.payment_status === 'refunded') return { ok: true, alreadyRefunded: true };
-  if (!['paid', 'partially_refunded'].includes(booking.payment_status)) {
+  if (!['paid', 'partially_refunded', 'payment_review'].includes(booking.payment_status)) {
     return { ok: false, error: `cannot refund booking in status '${booking.payment_status}'` };
   }
 
@@ -1257,14 +1258,14 @@ async function markBookingRefunded({ bookingId, transactionId = null, refundTran
   return { ok: true, releasedSeats };
 }
 
-// Idempotently mark a 'paid' booking as 'voided' (pre-settlement reversal).
+// Idempotently mark a paid or quarantined booking as voided (pre-settlement reversal).
 // Same semantics as markBookingRefunded but distinguished in audit logs so
 // admins can tell which type of reversal happened.
 async function markBookingVoided({ bookingId, transactionId = null, voidTransactionId = null, source = 'admin' }) {
   const booking = await get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { ok: false, error: 'booking_not_found' };
   if (booking.payment_status === 'voided') return { ok: true, alreadyVoided: true };
-  if (booking.payment_status !== 'paid') {
+  if (!['paid', 'payment_review'].includes(booking.payment_status)) {
     return { ok: false, error: `cannot void booking in status '${booking.payment_status}'` };
   }
 
@@ -2854,7 +2855,17 @@ async function start() {
   registerGracefulShutdown({ server, logger });
 }
 
-export { app, io, server, start, markBookingPaid, markBookingCancelled };
+export {
+  app,
+  io,
+  server,
+  start,
+  markBookingPaid,
+  markBookingCancelled,
+  markBookingRefunded,
+  markBookingVoided,
+  reconcileReversedBookingSeats,
+};
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   start().catch(err => {

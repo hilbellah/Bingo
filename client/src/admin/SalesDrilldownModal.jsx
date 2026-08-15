@@ -62,6 +62,7 @@ export default function SalesDrilldownModal() {
                         <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
                           b.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
                           b.paymentStatus === 'partially_refunded' ? 'bg-amber-100 text-amber-700' :
+                          b.paymentStatus === 'payment_review' ? 'bg-red-100 text-red-800' :
                           b.paymentStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
                           'bg-gray-100 text-gray-600'
                         }`}>{b.paymentStatus}</span>
@@ -75,13 +76,13 @@ export default function SalesDrilldownModal() {
                         >
                           {['partially_refunded', 'refunded', 'voided'].includes(b.paymentStatus) ? 'Print Refund Receipt' : 'Reprint Receipt'}
                         </button>
-                        {b.paymentStatus === 'paid' && !isAssignedBooking(b) && (Array.isArray(b.items) ? b.items : []).every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
+                        {['paid', 'payment_review'].includes(b.paymentStatus) && !isAssignedBooking(b) && (Array.isArray(b.items) ? b.items : []).every(item => item.refundStatus !== 'refunded') && handleRefundBooking && (
                           <button
                             onClick={() => handleRefundBooking(b.id, b.referenceNumber)}
                             className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                            title="Refund the full booking batch via Authorize.Net"
+                            title={b.paymentStatus === 'payment_review' ? 'Manual review required: void/refund this transaction via Authorize.Net' : 'Refund the full booking batch via Authorize.Net'}
                           >
-                            Refund Batch
+                            {b.paymentStatus === 'payment_review' ? 'Review & Reverse' : 'Refund Batch'}
                           </button>
                         )}
                       </div>

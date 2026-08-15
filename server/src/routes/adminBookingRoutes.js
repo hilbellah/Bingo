@@ -1003,8 +1003,8 @@ export function registerAdminBookingRoutes(app, {
     const booking = await get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
-    if (booking.payment_status !== 'paid') {
-      return res.status(400).json({ error: `Cannot refund a booking with status '${booking.payment_status}'. Only 'paid' bookings can be refunded.` });
+    if (!['paid', 'payment_review'].includes(booking.payment_status)) {
+      return res.status(400).json({ error: `Cannot refund a booking with status '${booking.payment_status}'. Only paid or payment-review bookings can be reversed.` });
     }
     if (!booking.transaction_id) {
       return res.status(400).json({

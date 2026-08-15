@@ -63,7 +63,13 @@ await run(
 );
 await saveDb();
 
-const { app, markBookingPaid, markBookingCancelled } = await import(appUrl);
+const {
+  app,
+  markBookingPaid,
+  markBookingCancelled,
+  markBookingVoided,
+  reconcileReversedBookingSeats,
+} = await import(appUrl);
 const cancelled = await markBookingCancelled({ bookingId: firstBookingId, source: 'test' });
 assert.equal(cancelled.ok, true);
 
@@ -127,6 +133,26 @@ const activeOwners = await get(`
     AND COALESCE(bi.refund_status, 'active') != 'refunded'
 `, [seatId]);
 assert.equal(Number(activeOwners.count), 1);
+
+// Staff can complete the manual reversal after review, and doing so must not
+// release the seat from the separate valid paid booking.
+const manualVoid = await markBookingVoided({
+  bookingId: firstBookingId,
+  transactionId: 'late-transaction',
+  voidTransactionId: 'manual-void-transaction',
+  source: 'test_manual_review',
+});
+assert.equal(manualVoid.ok, true);
+assert.equal(manualVoid.releasedSeats, 0);
+assert.equal((await get('SELECT payment_status FROM bookings WHERE id = ?', [firstBookingId])).payment_status, 'voided');
+assert.equal((await get('SELECT status FROM seats WHERE id = ?', [seatId])).status, 'sold');
+
+// A partially refunded booking can still own active tickets. Maintenance must
+// not release those seats merely because an older duplicate was reversed.
+await run("UPDATE bookings SET payment_status = 'partially_refunded' WHERE id = ?", [secondBookingId]);
+await saveDb();
+assert.equal(await reconcileReversedBookingSeats(), 0);
+assert.equal((await get('SELECT status FROM seats WHERE id = ?', [seatId])).status, 'sold');
 
 const listener = await new Promise(resolve => {
   const server = app.listen(0, '127.0.0.1', () => resolve(server));
