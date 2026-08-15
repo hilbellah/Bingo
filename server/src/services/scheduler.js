@@ -323,7 +323,10 @@ export async function expireStalePendingBookings({ dryRun = false, now = new Dat
     WHERE b.payment_status = 'pending'
       AND NULLIF(TRIM(COALESCE(b.transaction_id, '')), '') IS NULL
       AND COALESCE(b.payment_attempted_at, b.created_at) < ?
-      AND NOT EXISTS (SELECT 1 FROM payment_events pe WHERE pe.booking_id = b.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM payment_events pe
+        WHERE pe.booking_id = b.id AND pe.event_type != 'initiated'
+      )
       AND NOT EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.booking_id = b.id)
       AND NOT EXISTS (
         SELECT 1
@@ -364,7 +367,10 @@ export async function expireStalePendingBookings({ dryRun = false, now = new Dat
       AND payment_status = 'pending'
       AND NULLIF(TRIM(COALESCE(transaction_id, '')), '') IS NULL
       AND COALESCE(payment_attempted_at, created_at) < ?
-      AND NOT EXISTS (SELECT 1 FROM payment_events pe WHERE pe.booking_id = bookings.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM payment_events pe
+        WHERE pe.booking_id = bookings.id AND pe.event_type != 'initiated'
+      )
       AND NOT EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.booking_id = bookings.id)
       AND NOT EXISTS (
         SELECT 1

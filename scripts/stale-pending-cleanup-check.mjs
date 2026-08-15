@@ -31,6 +31,8 @@ async function addBooking(id, { createdAt = old, transactionId = null, paymentSt
 }
 
 await addBooking('eligible');
+await addBooking('initiated-only');
+await run("INSERT INTO payment_events (id, booking_id, event_type, source) VALUES ('initiated-event', 'initiated-only', 'initiated', 'test')");
 await addBooking('recent', { createdAt: recent });
 await addBooking('has-transaction', { transactionId: 'anet-transaction' });
 await addBooking('has-event');
@@ -52,13 +54,14 @@ const { expireStalePendingBookings } = await importLocal('server/src/services/sc
 
 try {
   const preview = await expireStalePendingBookings({ dryRun: true, now });
-  assert.deepEqual(preview.candidates.map(row => row.id), ['eligible']);
+  assert.deepEqual(preview.candidates.map(row => row.id), ['eligible', 'initiated-only']);
   assert.equal((await get("SELECT payment_status FROM bookings WHERE id = 'eligible'")).payment_status, 'pending');
   assert.equal((await get("SELECT COUNT(*) AS count FROM audit_log WHERE action LIKE 'stale_pending_cleanup_%'")).count, 0);
 
   const result = await expireStalePendingBookings({ now });
-  assert.equal(result.expired, 1);
+  assert.equal(result.expired, 2);
   assert.equal((await get("SELECT payment_status FROM bookings WHERE id = 'eligible'")).payment_status, 'cancelled');
+  assert.equal((await get("SELECT payment_status FROM bookings WHERE id = 'initiated-only'")).payment_status, 'cancelled');
   assert.equal((await get("SELECT payment_failure_reason FROM bookings WHERE id = 'eligible'")).payment_failure_reason, 'expired_unpaid_cleanup');
   for (const id of ['recent', 'has-transaction', 'has-event', 'has-refund-request', 'active-hold']) {
     assert.equal((await get('SELECT payment_status FROM bookings WHERE id = ?', [id])).payment_status, 'pending', `${id} must not be expired`);
