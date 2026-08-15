@@ -79,7 +79,6 @@ CREATE TABLE IF NOT EXISTS sessions (
   is_special_event   INTEGER DEFAULT 0,
   event_title        TEXT,
   event_description  TEXT,
-  event_image_url    TEXT,
   session_type       TEXT DEFAULT 'regular_bingo',
   deleted_at         TEXT
 );
@@ -126,8 +125,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   payment_completed_at     TEXT,
   payment_failure_reason   TEXT,
   hosted_token             TEXT,
-  ticket_access_token      TEXT,
-  checkout_holder_id       TEXT
+  ticket_access_token      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS booking_items (

@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, clearAdminTestBookings, refundAdminBooking, refundAdminBookingItem, fetchRefundRequests, approveRefundRequest, rejectRefundRequest, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
+  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, refundAdminBooking, refundAdminBookingItem, fetchRefundRequests, approveRefundRequest, rejectRefundRequest, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -851,30 +851,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleClearTestBookings = async () => {
-    const proceed = confirmAdminAction({
-      action: 'Run go-live test cleanup',
-      warning: 'This deletes pending, failed, and cancelled test bookings, clears temporary held seats, and removes email verification codes. Paid, refunded, and voided Authorize.Net records are kept and must be handled with refund/void if needed.',
-    });
-    if (!proceed) return;
-
-    const result = await clearAdminTestBookings(token);
-    if (!result.ok) {
-      window.alert(result.message || result.error || 'Could not clear test bookings.');
-      return;
-    }
-
-    window.alert(
-      result.message || `Cleared ${result.deletedBookings || 0} booking(s), released ${result.releasedSeats || 0} seat(s).`
-    );
-    loadBookingSales();
-    loadDailySales(dailySalesDate, dailySalesSearch);
-    loadTransactions(transactionFilters);
-    loadBookings(reportSession);
-    loadDashboard(dashboardDateFrom, dashboardDateTo);
-    loadPhdInventory();
-  };
-
   const handleResetSalesReporting = async () => {
     const proceed = confirmAdminAction({
       action: 'Reset sales report totals',
@@ -1282,7 +1258,6 @@ export default function AdminDashboard() {
     bookings,
     loadBookings,
     handleCancelBooking,
-    handleClearTestBookings,
     handleResetSalesReporting,
     handleRefundBooking,
     handleRefundBookingItem,

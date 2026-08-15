@@ -349,16 +349,6 @@ export async function deleteAdminBooking(token, id) {
   return { ok: res.ok, ...json };
 }
 
-export async function clearAdminTestBookings(token) {
-  const res = await fetch(`${API}/admin/bookings/go-live-cleanup`, {
-    method: 'POST',
-    headers: adminHeaders(token),
-    body: JSON.stringify({ confirm: 'CLEAR TEST DATA' })
-  });
-  const json = await res.json();
-  return { ok: res.ok, ...json };
-}
-
 // Submit a refund request. Authorize.Net is contacted only after a different
 // super user approves the persistent request from the admin dashboard.
 export async function refundAdminBooking(token, id, reason) {

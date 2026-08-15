@@ -1135,11 +1135,10 @@ async function cancelPendingBookingForEdit({ bookingId, source = 'customer_edit'
   return { ok: true, heldUntil: holdUntil };
 }
 
-async function releaseBookingSeats({ bookingId, sessionId }) {
-  const items = await all('SELECT seat_id FROM booking_items WHERE booking_id = ?', [bookingId]);
+async function releaseBookingSeatsTx(tx, { bookingId, items }) {
   let releasedSeats = 0;
   for (const it of items) {
-    const result = await run(
+    const result = await tx.run(
       `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
        WHERE id = ?
          AND NOT EXISTS (
@@ -1153,12 +1152,8 @@ async function releaseBookingSeats({ bookingId, sessionId }) {
          )`,
       [it.seat_id, bookingId]
     );
-    if (result.changes > 0) {
-      releasedSeats += 1;
-      io.to(`session:${sessionId}`).emit('seat:unlocked', { seatId: it.seat_id, sessionId });
-    }
+    if (result.changes > 0) releasedSeats += 1;
   }
-  io.to(`session:${sessionId}`).emit('seats:refresh', { sessionId });
   return releasedSeats;
 }
 
@@ -1226,27 +1221,35 @@ function sendRefundNotificationAsync({ bookingId, action, refundTransactionId, b
 // Releases seats, refreshes public seat maps, and emails the customer plus
 // EMAIL_BCC recipients.
 async function markBookingRefunded({ bookingId, transactionId = null, refundTransactionId = null, source = 'admin' }) {
-  const booking = await get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
-  if (!booking) return { ok: false, error: 'booking_not_found' };
-  if (booking.payment_status === 'refunded') return { ok: true, alreadyRefunded: true };
-  if (!['paid', 'partially_refunded', 'payment_review'].includes(booking.payment_status)) {
-    return { ok: false, error: `cannot refund booking in status '${booking.payment_status}'` };
-  }
-
   const refundedAt = new Date().toISOString();
-  await run(`UPDATE bookings SET payment_status = 'refunded' WHERE id = ?`, [bookingId]);
-  await run(
-    `UPDATE booking_items
-     SET refund_status = 'refunded',
-         refunded_at = ?,
-         refund_transaction_id = ?,
-         refund_amount = COALESCE(NULLIF(refund_amount, 0), price + COALESCE((SELECT SUM(price) FROM booking_addons WHERE booking_item_id = booking_items.id), 0)),
-         refund_action = 'refund'
-     WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
-    [refundedAt, refundTransactionId || transactionId, bookingId]
-  );
-  const releasedSeats = await releaseBookingSeats({ bookingId, sessionId: booking.session_id });
-  await saveDb();
+  const transition = await withTransaction(async tx => {
+    const booking = await tx.getForUpdate('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+    if (!booking) return { ok: false, error: 'booking_not_found' };
+    if (booking.payment_status === 'refunded') return { ok: true, alreadyRefunded: true, booking, releasedSeats: 0 };
+    if (!['paid', 'partially_refunded', 'payment_review'].includes(booking.payment_status)) {
+      return { ok: false, error: `cannot refund booking in status '${booking.payment_status}'` };
+    }
+    const items = await tx.allForUpdate('SELECT id, seat_id FROM booking_items WHERE booking_id = ? ORDER BY id', [bookingId]);
+    if (items.length > 0) {
+      const placeholders = items.map(() => '?').join(',');
+      await tx.allForUpdate(`SELECT id FROM seats WHERE id IN (${placeholders}) ORDER BY id`, items.map(item => item.seat_id));
+    }
+    await tx.run("UPDATE bookings SET payment_status = 'refunded' WHERE id = ?", [bookingId]);
+    await tx.run(
+      `UPDATE booking_items
+       SET refund_status = 'refunded',
+           refunded_at = ?,
+           refund_transaction_id = ?,
+           refund_amount = COALESCE(NULLIF(refund_amount, 0), price + COALESCE((SELECT SUM(price) FROM booking_addons WHERE booking_item_id = booking_items.id), 0)),
+           refund_action = 'refund'
+       WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
+      [refundedAt, refundTransactionId || transactionId, bookingId]
+    );
+    const releasedSeats = await releaseBookingSeatsTx(tx, { bookingId, items });
+    return { ok: true, booking, releasedSeats };
+  });
+  if (!transition.ok || transition.alreadyRefunded) return transition;
+  const { booking, releasedSeats } = transition;
 
   await logPaymentEvent(bookingId, 'refunded', source, { transactionId });
   await logAudit('booking_refunded', 'booking', bookingId, { transactionId, source, releasedSeats });
@@ -1256,6 +1259,7 @@ async function markBookingRefunded({ bookingId, transactionId = null, refundTran
     perSession: await getPhdUsageBySession(),
   });
   sendRefundNotificationAsync({ bookingId, action: 'refund', refundTransactionId: refundTransactionId || transactionId });
+  io.to(`session:${booking.session_id}`).emit('seats:refresh', { sessionId: booking.session_id });
   return { ok: true, releasedSeats };
 }
 
@@ -1263,27 +1267,35 @@ async function markBookingRefunded({ bookingId, transactionId = null, refundTran
 // Same semantics as markBookingRefunded but distinguished in audit logs so
 // admins can tell which type of reversal happened.
 async function markBookingVoided({ bookingId, transactionId = null, voidTransactionId = null, source = 'admin' }) {
-  const booking = await get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
-  if (!booking) return { ok: false, error: 'booking_not_found' };
-  if (booking.payment_status === 'voided') return { ok: true, alreadyVoided: true };
-  if (!['paid', 'payment_review'].includes(booking.payment_status)) {
-    return { ok: false, error: `cannot void booking in status '${booking.payment_status}'` };
-  }
-
   const voidedAt = new Date().toISOString();
-  await run(`UPDATE bookings SET payment_status = 'voided' WHERE id = ?`, [bookingId]);
-  await run(
-    `UPDATE booking_items
-     SET refund_status = 'refunded',
-         refunded_at = ?,
-         refund_transaction_id = ?,
-         refund_amount = COALESCE(NULLIF(refund_amount, 0), price + COALESCE((SELECT SUM(price) FROM booking_addons WHERE booking_item_id = booking_items.id), 0)),
-         refund_action = 'void'
-     WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
-    [voidedAt, voidTransactionId || transactionId, bookingId]
-  );
-  const releasedSeats = await releaseBookingSeats({ bookingId, sessionId: booking.session_id });
-  await saveDb();
+  const transition = await withTransaction(async tx => {
+    const booking = await tx.getForUpdate('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+    if (!booking) return { ok: false, error: 'booking_not_found' };
+    if (booking.payment_status === 'voided') return { ok: true, alreadyVoided: true, booking, releasedSeats: 0 };
+    if (!['paid', 'payment_review'].includes(booking.payment_status)) {
+      return { ok: false, error: `cannot void booking in status '${booking.payment_status}'` };
+    }
+    const items = await tx.allForUpdate('SELECT id, seat_id FROM booking_items WHERE booking_id = ? ORDER BY id', [bookingId]);
+    if (items.length > 0) {
+      const placeholders = items.map(() => '?').join(',');
+      await tx.allForUpdate(`SELECT id FROM seats WHERE id IN (${placeholders}) ORDER BY id`, items.map(item => item.seat_id));
+    }
+    await tx.run("UPDATE bookings SET payment_status = 'voided' WHERE id = ?", [bookingId]);
+    await tx.run(
+      `UPDATE booking_items
+       SET refund_status = 'refunded',
+           refunded_at = ?,
+           refund_transaction_id = ?,
+           refund_amount = COALESCE(NULLIF(refund_amount, 0), price + COALESCE((SELECT SUM(price) FROM booking_addons WHERE booking_item_id = booking_items.id), 0)),
+           refund_action = 'void'
+       WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
+      [voidedAt, voidTransactionId || transactionId, bookingId]
+    );
+    const releasedSeats = await releaseBookingSeatsTx(tx, { bookingId, items });
+    return { ok: true, booking, releasedSeats };
+  });
+  if (!transition.ok || transition.alreadyVoided) return transition;
+  const { booking, releasedSeats } = transition;
 
   await logPaymentEvent(bookingId, 'voided', source, { transactionId });
   await logAudit('booking_voided', 'booking', bookingId, { transactionId, source, releasedSeats });
@@ -1293,6 +1305,7 @@ async function markBookingVoided({ bookingId, transactionId = null, voidTransact
     perSession: await getPhdUsageBySession(),
   });
   sendRefundNotificationAsync({ bookingId, action: 'void', refundTransactionId: voidTransactionId || transactionId });
+  io.to(`session:${booking.session_id}`).emit('seats:refresh', { sessionId: booking.session_id });
   return { ok: true, releasedSeats };
 }
 
@@ -1314,52 +1327,57 @@ async function markBookingItemRefunded({
   action = 'refund',
   source = 'admin',
 }) {
-  const booking = await get('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
-  if (!booking) return { ok: false, error: 'booking_not_found' };
-  if (!['paid', 'partially_refunded'].includes(booking.payment_status)) {
-    return { ok: false, error: `cannot refund ticket in booking status '${booking.payment_status}'` };
-  }
-
-  const item = await get('SELECT id, seat_id, first_name, last_name, reference_number, refund_status FROM booking_items WHERE id = ? AND booking_id = ?', [bookingItemId, bookingId]);
-  if (!item) return { ok: false, error: 'booking_item_not_found' };
-  if (item.refund_status === 'refunded') return { ok: true, alreadyRefunded: true, releasedSeats: 0 };
-
   const refundedAt = new Date().toISOString();
-  await run(
-    `UPDATE booking_items
-     SET refund_status = 'refunded',
-         refunded_at = ?,
-         refund_transaction_id = ?,
-         refund_amount = ?,
-         refund_action = ?
-     WHERE id = ?`,
-    [refundedAt, refundTransactionId || transactionId, amountCents, action, bookingItemId]
-  );
-  await run(
-    `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
-     WHERE id = ?
-       AND NOT EXISTS (
-         SELECT 1
-         FROM booking_items active_item
-         JOIN bookings active_booking ON active_booking.id = active_item.booking_id
-         WHERE active_item.seat_id = seats.id
-           AND active_booking.id != ?
-           AND active_booking.payment_status IN ('paid', 'partially_refunded')
-           AND COALESCE(active_item.refund_status, 'active') != 'refunded'
-       )`,
-    [item.seat_id, bookingId]
-  );
-
-  const remainingRow = await get(
-    `SELECT COUNT(*) as count
-     FROM booking_items
-     WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
-    [bookingId]
-  );
-  const remaining = remainingRow?.count || 0;
-  const nextStatus = remaining > 0 ? 'partially_refunded' : (action === 'void' ? 'voided' : 'refunded');
-  await run('UPDATE bookings SET payment_status = ? WHERE id = ?', [nextStatus, bookingId]);
-  await saveDb();
+  const transition = await withTransaction(async tx => {
+    const booking = await tx.getForUpdate('SELECT id, session_id, payment_status FROM bookings WHERE id = ?', [bookingId]);
+    if (!booking) return { ok: false, error: 'booking_not_found' };
+    if (!['paid', 'partially_refunded'].includes(booking.payment_status)) {
+      return { ok: false, error: `cannot refund ticket in booking status '${booking.payment_status}'` };
+    }
+    const item = await tx.getForUpdate(
+      'SELECT id, seat_id, first_name, last_name, reference_number, refund_status FROM booking_items WHERE id = ? AND booking_id = ?',
+      [bookingItemId, bookingId]
+    );
+    if (!item) return { ok: false, error: 'booking_item_not_found' };
+    if (item.refund_status === 'refunded') return { ok: true, alreadyRefunded: true, releasedSeats: 0 };
+    await tx.getForUpdate('SELECT id FROM seats WHERE id = ?', [item.seat_id]);
+    const updated = await tx.run(
+      `UPDATE booking_items
+       SET refund_status = 'refunded',
+           refunded_at = ?,
+           refund_transaction_id = ?,
+           refund_amount = ?,
+           refund_action = ?
+       WHERE id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
+      [refundedAt, refundTransactionId || transactionId, amountCents, action, bookingItemId]
+    );
+    if (updated.changes !== 1) return { ok: false, error: 'booking_item_state_changed' };
+    const release = await tx.run(
+      `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
+       WHERE id = ?
+         AND NOT EXISTS (
+           SELECT 1
+           FROM booking_items active_item
+           JOIN bookings active_booking ON active_booking.id = active_item.booking_id
+           WHERE active_item.seat_id = seats.id
+             AND active_item.id != ?
+             AND active_booking.payment_status IN ('paid', 'partially_refunded')
+             AND COALESCE(active_item.refund_status, 'active') != 'refunded'
+         )`,
+      [item.seat_id, item.id]
+    );
+    const remainingRow = await tx.get(
+      `SELECT COUNT(*) as count FROM booking_items
+       WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'`,
+      [bookingId]
+    );
+    const remaining = Number(remainingRow?.count || 0);
+    const nextStatus = remaining > 0 ? 'partially_refunded' : (action === 'void' ? 'voided' : 'refunded');
+    await tx.run('UPDATE bookings SET payment_status = ? WHERE id = ?', [nextStatus, bookingId]);
+    return { ok: true, booking, item, remaining, nextStatus, releasedSeats: Number(release.changes || 0) };
+  });
+  if (!transition.ok || transition.alreadyRefunded) return transition;
+  const { booking, item, remaining, nextStatus, releasedSeats } = transition;
 
   await logPaymentEvent(bookingId, action === 'void' ? 'voided' : 'refunded', source, {
     transactionId,
@@ -1378,7 +1396,7 @@ async function markBookingItemRefunded({
     amountCents,
     attendee: `${item.first_name} ${item.last_name}`,
     ticketReference: item.reference_number,
-    releasedSeats: 1,
+    releasedSeats,
     bookingStatus: nextStatus,
   });
   io.to(`session:${booking.session_id}`).emit('seats:refresh');
@@ -1393,7 +1411,8 @@ async function markBookingItemRefunded({
     refundTransactionId: refundTransactionId || transactionId,
     bookingItemId,
   });
-  return { ok: true, releasedSeats: 1, remaining, bookingStatus: nextStatus };
+  io.to(`session:${booking.session_id}`).emit('seats:refresh', { sessionId: booking.session_id });
+  return { ok: true, releasedSeats, remaining, bookingStatus: nextStatus };
 }
 
 // Loads a booking + related rows and fires the confirmation email.
@@ -2812,9 +2831,6 @@ registerAdminBookingRoutes(app, {
   io,
   logAudit,
   getBookingItemRefundAmount,
-  markBookingItemRefunded,
-  markBookingRefunded,
-  markBookingVoided,
   sendBookingConfirmationEmail,
 });
 registerAdminRefundApprovalRoutes(app, {

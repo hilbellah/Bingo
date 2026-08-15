@@ -167,6 +167,52 @@ try {
   const duplicateRemoval = await request(`/api/admin/booking-items/${assigned.data.bookingItemId}/remove-assigned`, { method: 'POST' });
   assert.equal(duplicateRemoval.response.status, 409);
 
+  const disabledBulkCleanup = await request('/api/admin/bookings/go-live-cleanup', { method: 'POST' });
+  assert.equal(disabledBulkCleanup.response.status, 410);
+  assert.equal(disabledBulkCleanup.data.error, 'bulk_cleanup_disabled');
+
+  await run(`INSERT INTO bookings
+    (id, session_id, reference_number, total_amount, payment_status, transaction_id)
+    VALUES ('delete-has-transaction', ?, 'BNG-DELETE-TX', 2500, 'pending', 'gateway-transaction')`, [sessionId]);
+  const blockedTransactionDelete = await request('/api/admin/bookings/delete-has-transaction', { method: 'DELETE' });
+  assert.equal(blockedTransactionDelete.response.status, 409);
+  assert.equal(blockedTransactionDelete.data.error, 'payment_history_present');
+
+  await run(`INSERT INTO bookings
+    (id, session_id, reference_number, total_amount, payment_status)
+    VALUES ('delete-has-event', ?, 'BNG-DELETE-EVENT', 2500, 'pending')`, [sessionId]);
+  await run("INSERT INTO payment_events (id, booking_id, event_type, source) VALUES ('delete-event', 'delete-has-event', 'payment_observed', 'test')");
+  const blockedEventDelete = await request('/api/admin/bookings/delete-has-event', { method: 'DELETE' });
+  assert.equal(blockedEventDelete.response.status, 409);
+  assert.equal(blockedEventDelete.data.error, 'financial_history_present');
+
+  const futureHold = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  await run("INSERT INTO seats (id, session_id, table_number, chair_number, status, held_by, held_until) VALUES ('delete-active-seat', ?, 11, 1, 'held', 'active-holder', ?)", [sessionId, futureHold]);
+  await run("INSERT INTO bookings (id, session_id, reference_number, total_amount, payment_status) VALUES ('delete-active-hold', ?, 'BNG-DELETE-HOLD', 2500, 'pending')", [sessionId]);
+  await run(`INSERT INTO booking_items
+    (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
+    VALUES ('delete-active-item', 'delete-active-hold', 'Active', 'Holder', 'delete-active-seat', ?, 2500, 'BNG-DELETE-HOLD-1')`, [packageId]);
+  const blockedHoldDelete = await request('/api/admin/bookings/delete-active-hold', { method: 'DELETE' });
+  assert.equal(blockedHoldDelete.response.status, 409);
+  assert.equal(blockedHoldDelete.data.error, 'active_hold_present');
+
+  const expiredHold = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  await run("INSERT INTO seats (id, session_id, table_number, chair_number, status, held_by, held_until) VALUES ('delete-expired-seat', ?, 11, 2, 'held', 'expired-holder', ?)", [sessionId, expiredHold]);
+  await run("INSERT INTO bookings (id, session_id, reference_number, total_amount, payment_status) VALUES ('delete-safe', ?, 'BNG-DELETE-SAFE', 2500, 'cancelled')", [sessionId]);
+  await run(`INSERT INTO booking_items
+    (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
+    VALUES ('delete-safe-item', 'delete-safe', 'Safe', 'Delete', 'delete-expired-seat', ?, 2500, 'BNG-DELETE-SAFE-1')`, [packageId]);
+  const safeDelete = await request('/api/admin/bookings/delete-safe', { method: 'DELETE' });
+  assert.equal(safeDelete.response.status, 200);
+  assert.equal((await get("SELECT COUNT(*) AS count FROM bookings WHERE id = 'delete-safe'")).count, 0);
+  assert.equal((await get("SELECT status FROM seats WHERE id = 'delete-expired-seat'")).status, 'vacant');
+  assert.ok(await get("SELECT id FROM audit_log WHERE action = 'booking_deleted' AND entity_id = 'delete-safe'"));
+
+  const legacyDirectBookingRefund = await request(`/api/admin/legacy-disabled/bookings/${bookingId}/refund`, { method: 'POST' });
+  assert.equal(legacyDirectBookingRefund.response.status, 410);
+  const legacyDirectItemRefund = await request(`/api/admin/legacy-disabled/booking-items/${itemId}/refund`, { method: 'POST' });
+  assert.equal(legacyDirectItemRefund.response.status, 410);
+
   const bulkAfterRemoval = await request(`/api/admin/bookings/bulk-tickets?dateFrom=${futureDate}&dateTo=${futureDate}&department=regular_bingo`);
   const ticketsAfterRemoval = bulkAfterRemoval.data.sessions.flatMap(session => session.bookings.flatMap(booking => booking.tickets));
   assert.equal(ticketsAfterRemoval.some(ticket => ticket.firstName === 'Promo' && ticket.lastName === 'Guest'), false);

@@ -143,6 +143,22 @@ try {
   assert.equal(moveToSameSeat.response.status, 400);
   assert.match(moveToSameSeat.data.error, /already assigned/i);
 
+  // Defend against status drift: a seat marked vacant must still be rejected
+  // when another active paid ticket owns it.
+  await run(`INSERT INTO bookings
+    (id, session_id, reference_number, total_amount, payment_status)
+    VALUES ('seat-move-hidden-owner', ?, 'BNG-MOVE-HIDDEN', 2500, 'paid')`, [sessionId]);
+  await run(`INSERT INTO booking_items
+    (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
+    VALUES ('seat-move-hidden-item', 'seat-move-hidden-owner', 'Hidden', 'Owner', ?, ?, 2500, 'BNG-MOVE-HIDDEN-1')`, [newSeatId, packageId]);
+  const moveToDriftedSeat = await postJson(`/api/admin/booking-items/${itemId}/move-seat`, {
+    tableNumber: 1,
+    chairNumber: 2,
+  });
+  assert.equal(moveToDriftedSeat.response.status, 409);
+  assert.match(moveToDriftedSeat.data.error, /active paid owner/i);
+  assert.equal((await get('SELECT seat_id FROM booking_items WHERE id = ?', [itemId])).seat_id, oldSeatId);
+
   console.log('Admin seat move API check passed.');
 } finally {
   await new Promise(resolve => listener.close(resolve));

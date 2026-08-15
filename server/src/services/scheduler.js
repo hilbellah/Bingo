@@ -9,6 +9,8 @@ const DEFAULT_LOOK_AHEAD_DAYS = 7;
 const DEFAULT_ENABLED = true;
 // Hard cap so a misconfigured value can't blow the DB up with hundreds of thousands of seat rows.
 const MAX_LOOK_AHEAD_DAYS = 180;
+const DEFAULT_STALE_PENDING_HOURS = 48;
+const MAX_STALE_PENDING_BATCH = 500;
 
 // Day-of-week labels for logs / API responses. Index matches JS Date.getDay().
 export const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -304,9 +306,91 @@ export async function openWeeklySessions() {
   return { changed: 0, skipped: true };
 }
 
+function getStalePendingHours() {
+  const configured = Number(process.env.STALE_PENDING_HOURS || DEFAULT_STALE_PENDING_HOURS);
+  return Number.isFinite(configured)
+    ? Math.max(24, Math.min(Math.floor(configured), 30 * 24))
+    : DEFAULT_STALE_PENDING_HOURS;
+}
+
+export async function expireStalePendingBookings({ dryRun = false, now = new Date() } = {}) {
+  const staleHours = getStalePendingHours();
+  const nowIso = now.toISOString();
+  const cutoffIso = new Date(now.getTime() - staleHours * 60 * 60 * 1000).toISOString();
+  const candidates = await all(`
+    SELECT b.id, b.reference_number, b.created_at, b.payment_attempted_at
+    FROM bookings b
+    WHERE b.payment_status = 'pending'
+      AND NULLIF(TRIM(COALESCE(b.transaction_id, '')), '') IS NULL
+      AND COALESCE(b.payment_attempted_at, b.created_at) < ?
+      AND NOT EXISTS (SELECT 1 FROM payment_events pe WHERE pe.booking_id = b.id)
+      AND NOT EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.booking_id = b.id)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM booking_items bi
+        JOIN seats s ON s.id = bi.seat_id
+        WHERE bi.booking_id = b.id
+          AND s.status = 'held'
+          AND s.held_until IS NOT NULL
+          AND s.held_until > ?
+      )
+    ORDER BY COALESCE(b.payment_attempted_at, b.created_at), b.id
+    LIMIT ?
+  `, [cutoffIso, nowIso, MAX_STALE_PENDING_BATCH]);
+
+  const candidateIds = candidates.map(row => row.id);
+  logger.info('Stale pending booking cleanup preflight', {
+    dry_run: dryRun,
+    stale_hours: staleHours,
+    cutoff: cutoffIso,
+    candidates: candidateIds.length,
+  });
+  if (dryRun || candidateIds.length === 0) {
+    return { dryRun, staleHours, cutoffIso, candidates, expired: 0 };
+  }
+
+  await run(
+    `INSERT INTO audit_log (id, action, entity_type, entity_id, details)
+     VALUES (?, 'stale_pending_cleanup_preflight', 'booking', 'scheduled_cleanup', ?)`,
+    [uuid(), JSON.stringify({ staleHours, cutoffIso, candidateIds })]
+  );
+
+  const placeholders = candidateIds.map(() => '?').join(',');
+  const updateResult = await run(`
+    UPDATE bookings
+    SET payment_status = 'cancelled',
+        payment_failure_reason = 'expired_unpaid_cleanup'
+    WHERE id IN (${placeholders})
+      AND payment_status = 'pending'
+      AND NULLIF(TRIM(COALESCE(transaction_id, '')), '') IS NULL
+      AND COALESCE(payment_attempted_at, created_at) < ?
+      AND NOT EXISTS (SELECT 1 FROM payment_events pe WHERE pe.booking_id = bookings.id)
+      AND NOT EXISTS (SELECT 1 FROM refund_requests rr WHERE rr.booking_id = bookings.id)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM booking_items bi
+        JOIN seats s ON s.id = bi.seat_id
+        WHERE bi.booking_id = bookings.id
+          AND s.status = 'held'
+          AND s.held_until IS NOT NULL
+          AND s.held_until > ?
+      )
+  `, [...candidateIds, cutoffIso, nowIso]);
+
+  const expired = Number(updateResult.changes || 0);
+  await run(
+    `INSERT INTO audit_log (id, action, entity_type, entity_id, details)
+     VALUES (?, 'stale_pending_cleanup_completed', 'booking', 'scheduled_cleanup', ?)`,
+    [uuid(), JSON.stringify({ staleHours, cutoffIso, candidateCount: candidateIds.length, expired })]
+  );
+  logger.info('Expired stale nonfinancial pending bookings', { candidates: candidateIds.length, expired });
+  return { dryRun: false, staleHours, cutoffIso, candidates, expired };
+}
+
 export async function cleanupOldData() {
   const thirtyDaysAgo = formatLocalDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
-  const ninetyDaysAgo = formatLocalDate(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000));
+
+  await expireStalePendingBookings();
 
   const oldSessions = await all(`
     SELECT id FROM sessions
@@ -332,11 +416,6 @@ export async function cleanupOldData() {
     await run(`DELETE FROM sessions WHERE id IN (${placeholders})`, sessionIds);
 
     logger.info('Cleaned up old sessions', { count: oldSessions.length });
-  }
-
-  const auditDeleted = await run('DELETE FROM audit_log WHERE created_at < ?', [ninetyDaysAgo]);
-  if (auditDeleted.changes > 0) {
-    logger.info('Pruned audit log', { entries_deleted: auditDeleted.changes });
   }
 
   await exec('VACUUM');

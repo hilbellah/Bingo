@@ -103,6 +103,14 @@ try {
   assert.equal(lockAfterUnlock.response.status, 200);
   assert.equal(lockAfterUnlock.data.success, true);
 
+  await run("UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?", [seatId]);
+  const unlockAfterPayment = await postJson(`/api/seats/${seatId}/unlock`, { holderId: 'holder-b' });
+  assert.equal(unlockAfterPayment.response.status, 403);
+  assert.equal((await get('SELECT status FROM seats WHERE id = ?', [seatId])).status, 'sold');
+
+  const missingHolderUnlock = await postJson(`/api/seats/${seatId}/unlock`, {});
+  assert.equal(missingHolderUnlock.response.status, 400);
+
   console.log('Seat lock API check passed.');
 } finally {
   await new Promise(resolve => listener.close(resolve));

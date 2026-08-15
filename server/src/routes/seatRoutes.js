@@ -45,22 +45,32 @@ export function registerSeatRoutes(app, { bookingLimiter, holdMinutes, io }) {
     }
   });
 
-  app.post('/api/seats/:seatId/unlock', async (req, res) => {
+  app.post('/api/seats/:seatId/unlock', bookingLimiter, async (req, res) => {
     try {
       const { seatId } = req.params;
       const { holderId } = req.body;
 
-      const seat = await get('SELECT * FROM seats WHERE id = ?', [seatId]);
-      if (!seat) return res.status(404).json({ error: 'Seat not found' });
-      if (seat.status !== 'held' || seat.held_by !== holderId) {
-        return res.status(403).json({ error: 'Cannot unlock seat you do not hold' });
-      }
+      if (!holderId) return res.status(400).json({ error: 'holderId required' });
+      const initialSeat = await get('SELECT id, session_id FROM seats WHERE id = ?', [seatId]);
+      if (!initialSeat) return res.status(404).json({ error: 'Seat not found' });
+      const result = await withSessionCapacityLock(initialSeat.session_id, async () => {
+        const seat = await get('SELECT * FROM seats WHERE id = ?', [seatId]);
+        if (!seat) return { status: 404, body: { error: 'Seat not found' } };
+        const unlocked = await run(
+          `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
+           WHERE id = ? AND status = 'held' AND held_by = ?`,
+          [seatId, holderId]
+        );
+        if (unlocked.changes !== 1) {
+          return { status: 403, body: { error: 'Cannot unlock a seat you do not currently hold' } };
+        }
+        return { status: 200, body: { success: true }, seat };
+      });
+      if (result.status !== 200) return res.status(result.status).json(result.body);
 
-      await run(`UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ?`, [seatId]);
+      io.to(`session:${result.seat.session_id}`).emit('seat:unlocked', { seatId, sessionId: result.seat.session_id });
 
-      io.to(`session:${seat.session_id}`).emit('seat:unlocked', { seatId, sessionId: seat.session_id });
-
-      res.json({ success: true });
+      res.json(result.body);
     } catch (err) {
       console.error('POST /api/seats/:seatId/unlock failed:', err);
       res.status(500).json({ error: 'Internal server error' });

@@ -37,7 +37,6 @@ export default function BookingsTab() {
     loadTransactions,
     handlePrintDailySalesReceipt,
     handleReprintTransactionReceipt,
-    handleClearTestBookings,
     handleResetSalesReporting,
   } = useAdminDashboard();
   const [activeBoard, setActiveBoard] = useState('dailySales');
@@ -163,15 +162,6 @@ export default function BookingsTab() {
               title="Booking Sales"
               description="Session-by-session sales totals for bingo bookings, with ticket counts you can click to drill into purchasers."
             >
-              <div className="flex items-center justify-end gap-3 mb-4 pt-4">
-                <button
-                  type="button"
-                  onClick={handleClearTestBookings}
-                  className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700"
-                >
-                  Go-Live Cleanup
-                </button>
-              </div>
               {bingoSales.length === 0 ? (
                 <p className="text-gray-400 text-center py-8">No sessions found</p>
               ) : (

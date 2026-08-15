@@ -236,7 +236,12 @@ export function registerAdminRefundApprovalRoutes(app, {
       } else {
         throw new Error(`Transaction status '${txStatus}' cannot be reversed.`);
       }
-      if (!gateway.ok) throw new Error(`${action} failed: ${gateway.error}`);
+      if (!gateway.ok) {
+        if (gateway.ambiguous) confirmedGateway = { action, gatewayId: null };
+        throw new Error(gateway.ambiguous
+          ? `${action} outcome is unknown: ${gateway.error}. Verify Authorize.Net before taking any further action.`
+          : `${action} failed: ${gateway.error}`);
+      }
       const gatewayId = gateway.refundTransId || gateway.voidTransId;
       confirmedGateway = { action, gatewayId };
       const markResult = item
@@ -262,7 +267,11 @@ export function registerAdminRefundApprovalRoutes(app, {
         await saveDb().catch(() => {});
       }
       console.error('POST /api/admin/refund-requests/:id/approve failed:', err?.message || err);
-      res.status(502).json({ error: err?.message || 'Refund approval failed. No confirmed booking update was made.' });
+      res.status(502).json({
+        error: err?.message || 'Refund approval failed. No confirmed booking update was made.',
+        status: confirmedGateway ? 'reconciliation_required' : 'pending',
+        retryAllowed: !confirmedGateway,
+      });
     }
   });
 }

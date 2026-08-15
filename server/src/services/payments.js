@@ -180,6 +180,17 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, f
     return { ok: false, error: 'createHostedPaymentPage: bookingId and refNumber required' };
   }
 
+  // Full-route regression tests need a deterministic hosted-token response.
+  // Keep this test-only seam inside the payment boundary so booking tests do
+  // not depend on Authorize.Net availability or credentials.
+  if (process.env.NODE_ENV === 'test' && process.env.ANET_TEST_HOSTED_PAYMENT_TOKEN) {
+    return {
+      ok: true,
+      token: process.env.ANET_TEST_HOSTED_PAYMENT_TOKEN,
+      redirectUrl: getHostedBaseUrl(),
+    };
+  }
+
   let merchantAuth, amount;
   try {
     merchantAuth = getMerchantAuth();
@@ -453,7 +464,11 @@ function normalizeSignatureHex(value) {
  * @param {number} args.amountCents Amount to refund, in cents.
  * @param {string} args.last4      Last 4 digits of the card (Authorize.Net
  *                                  requires this for security).
- * @returns {Promise<{ok: boolean, refundTransId?: string, error?: string}>}
+ * A failed response includes `ambiguous: true` when the gateway may have
+ * accepted the request but did not return a usable response. Callers must
+ * reconcile those outcomes instead of retrying automatically.
+ *
+ * @returns {Promise<{ok: boolean, refundTransId?: string, error?: string, ambiguous?: boolean}>}
  */
 export async function refundTransaction({ transId, amountCents, last4 }) {
   if (!transId || !amountCents || !last4) {
@@ -490,10 +505,11 @@ export async function refundTransaction({ transId, amountCents, last4 }) {
 
     const ctrl = new APIControllers.CreateTransactionController(req.getJSON());
     ctrl.setEnvironment(getEndpointConst());
-    ctrl.execute(() => {
-      try {
+    try {
+      ctrl.execute(() => {
+        try {
         const apiResponse = ctrl.getResponse();
-        if (!apiResponse) return resolve({ ok: false, error: 'no_response' });
+        if (!apiResponse) return resolve({ ok: false, error: 'no_response', ambiguous: true });
         const response = new APIContracts.CreateTransactionResponse(apiResponse);
         const okOuter = response.getMessages().getResultCode() === APIContracts.MessageTypeEnum.OK;
         const txResp = response.getTransactionResponse();
@@ -507,12 +523,16 @@ export async function refundTransaction({ transId, amountCents, last4 }) {
         const outerMsg = response.getMessages().getMessage()[0];
         const error = detail || `${outerMsg.getCode()}: ${outerMsg.getText()}`;
         console.error(`[payments] refund FAILED transId=${transId} error=${error}`);
-        return resolve({ ok: false, error });
-      } catch (err) {
-        console.error('[payments] refundTransaction exception:', err?.message || err);
-        return resolve({ ok: false, error: err?.message || String(err) });
-      }
-    });
+          return resolve({ ok: false, error, ambiguous: false });
+        } catch (err) {
+          console.error('[payments] refundTransaction response exception:', err?.message || err);
+          return resolve({ ok: false, error: err?.message || String(err), ambiguous: true });
+        }
+      });
+    } catch (err) {
+      console.error('[payments] refundTransaction transport exception:', err?.message || err);
+      resolve({ ok: false, error: err?.message || String(err), ambiguous: true });
+    }
   });
 }
 
@@ -524,7 +544,7 @@ export async function refundTransaction({ transId, amountCents, last4 }) {
  * ~24h of charge). After settlement, use refundTransaction instead.
  *
  * @param {string} transId  The transaction to void.
- * @returns {Promise<{ok: boolean, voidTransId?: string, error?: string}>}
+ * @returns {Promise<{ok: boolean, voidTransId?: string, error?: string, ambiguous?: boolean}>}
  */
 export async function voidTransaction(transId) {
   if (!transId) return { ok: false, error: 'voidTransaction: transId required' };
@@ -547,10 +567,11 @@ export async function voidTransaction(transId) {
 
     const ctrl = new APIControllers.CreateTransactionController(req.getJSON());
     ctrl.setEnvironment(getEndpointConst());
-    ctrl.execute(() => {
-      try {
+    try {
+      ctrl.execute(() => {
+        try {
         const apiResponse = ctrl.getResponse();
-        if (!apiResponse) return resolve({ ok: false, error: 'no_response' });
+        if (!apiResponse) return resolve({ ok: false, error: 'no_response', ambiguous: true });
         const response = new APIContracts.CreateTransactionResponse(apiResponse);
         const okOuter = response.getMessages().getResultCode() === APIContracts.MessageTypeEnum.OK;
         const txResp = response.getTransactionResponse();
@@ -564,11 +585,15 @@ export async function voidTransaction(transId) {
         const outerMsg = response.getMessages().getMessage()[0];
         const error = detail || `${outerMsg.getCode()}: ${outerMsg.getText()}`;
         console.error(`[payments] void FAILED transId=${transId} error=${error}`);
-        return resolve({ ok: false, error });
-      } catch (err) {
-        console.error('[payments] voidTransaction exception:', err?.message || err);
-        return resolve({ ok: false, error: err?.message || String(err) });
-      }
-    });
+          return resolve({ ok: false, error, ambiguous: false });
+        } catch (err) {
+          console.error('[payments] voidTransaction response exception:', err?.message || err);
+          return resolve({ ok: false, error: err?.message || String(err), ambiguous: true });
+        }
+      });
+    } catch (err) {
+      console.error('[payments] voidTransaction transport exception:', err?.message || err);
+      resolve({ ok: false, error: err?.message || String(err), ambiguous: true });
+    }
   });
 }

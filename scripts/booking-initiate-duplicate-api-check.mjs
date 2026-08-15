@@ -16,6 +16,7 @@ process.env.SKIP_RENDER_DISK_CHECK = '1';
 process.env.SESSION_HOLD_MINUTES = '20';
 process.env.PAYMENT_FAILURE_HOLD_MINUTES = '5';
 process.env.ANET_ENV = 'sandbox';
+process.env.ANET_TEST_HOSTED_PAYMENT_TOKEN = 'deterministic-refreshed-hosted-token';
 
 const databaseUrl = pathToFileURL(path.join(repoRoot, 'server/src/database.js'));
 const migrateUrl = pathToFileURL(path.join(repoRoot, 'server/src/migrate.js'));
@@ -147,6 +148,7 @@ try {
   assert.equal(result.data.bookingId, bookingId);
   assert.equal(result.data.referenceNumber, referenceNumber);
   assert.ok(result.data.token);
+  assert.equal(result.data.token, process.env.ANET_TEST_HOSTED_PAYMENT_TOKEN);
   assert.notEqual(result.data.token, hostedToken, 'duplicate retry should refresh the hosted payment token');
   assert.equal(result.data.ticketAccessToken, ticketAccessToken);
   assert.equal(result.data.duplicate, true);

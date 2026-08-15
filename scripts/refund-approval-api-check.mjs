@@ -49,6 +49,7 @@ const { registerAdminRefundApprovalRoutes } = await import(pathToFileURL(path.jo
 const app = express();
 app.use(express.json());
 let refundCalls = 0;
+let refundMode = 'success';
 registerAdminRefundApprovalRoutes(app, {
   io: { to: () => ({ emit: () => {} }) },
   logAudit: async () => {},
@@ -67,6 +68,7 @@ registerAdminRefundApprovalRoutes(app, {
       refundCalls += 1;
       assert.equal(transId, 'approval-transaction');
       assert.equal(amountCents, 9400);
+      if (refundMode === 'ambiguous') return { ok: false, error: 'no_response', ambiguous: true };
       return { ok: true, refundTransId: 'approved-refund-transaction' };
     },
     voidTransaction: async () => { throw new Error('void should not be called'); },
@@ -117,6 +119,27 @@ try {
   assert.equal((await get('SELECT status FROM seats WHERE id = ?', [seatId])).status, 'sold');
   assert.equal(refundCalls, 0);
 
+  refundMode = 'ambiguous';
+  const uncertainRequestResponse = await post(`/api/admin/bookings/${bookingId}/refund`, 'requester@example.com', { reason: 'Customer refund with lost gateway response' });
+  const uncertainRequest = await uncertainRequestResponse.json();
+  assert.equal(uncertainRequestResponse.status, 202);
+  const uncertainApprovalResponse = await post(`/api/admin/refund-requests/${uncertainRequest.requestId}/approve`, 'approver@example.com');
+  const uncertainApproval = await uncertainApprovalResponse.json();
+  assert.equal(uncertainApprovalResponse.status, 502);
+  assert.equal(uncertainApproval.status, 'reconciliation_required');
+  assert.equal(uncertainApproval.retryAllowed, false);
+  assert.equal((await get('SELECT status FROM refund_requests WHERE id = ?', [uncertainRequest.requestId])).status, 'reconciliation_required');
+  assert.equal((await get('SELECT payment_status FROM bookings WHERE id = ?', [bookingId])).payment_status, 'paid');
+  assert.equal((await get('SELECT status FROM seats WHERE id = ?', [seatId])).status, 'sold');
+  assert.equal(refundCalls, 1);
+
+  const blockedRetry = await post(`/api/admin/refund-requests/${uncertainRequest.requestId}/approve`, 'approver@example.com');
+  assert.equal(blockedRetry.status, 409);
+  assert.equal(refundCalls, 1);
+
+  // Simulate a staff reconciliation that confirmed no gateway refund occurred.
+  await run("UPDATE refund_requests SET status = 'rejected' WHERE id = ?", [uncertainRequest.requestId]);
+  refundMode = 'success';
   const secondRequestResponse = await post(`/api/admin/bookings/${bookingId}/refund`, 'requester@example.com', { reason: 'Approved customer refund' });
   const secondRequest = await secondRequestResponse.json();
   assert.equal(secondRequestResponse.status, 202);
@@ -124,12 +147,12 @@ try {
   const approveBody = await approveResponse.json();
   assert.equal(approveResponse.status, 200);
   assert.equal(approveBody.status, 'completed');
-  assert.equal(refundCalls, 1);
+  assert.equal(refundCalls, 2);
   assert.equal((await get('SELECT status FROM refund_requests WHERE id = ?', [secondRequest.requestId])).status, 'completed');
   assert.equal((await get('SELECT payment_status FROM bookings WHERE id = ?', [bookingId])).payment_status, 'refunded');
   assert.equal((await get('SELECT status FROM seats WHERE id = ?', [seatId])).status, 'vacant');
 
-  console.log('Refund approval request, rejection, and approval API check passed.');
+  console.log('Refund approval request, rejection, ambiguous-outcome lock, and approval API check passed.');
 } finally {
   await new Promise(resolve => listener.close(resolve));
   fs.rmSync(tmpDir, { recursive: true, force: true });

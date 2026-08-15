@@ -1,7 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { all, get, run, saveDb, withTransaction } from '../database.js';
-import { adminAuth } from '../middleware/adminAuth.js';
-import { refundTransaction, verifyTransaction, voidTransaction } from '../services/payments.js';
+import { adminAuth, requireSuperUser } from '../middleware/adminAuth.js';
 import { formatCurrency, generateRef } from '../utils/format.js';
 import { getLiveEventCapacity, withSessionCapacityLock } from '../services/liveEventCapacity.js';
 
@@ -105,9 +104,6 @@ export function registerAdminBookingRoutes(app, {
   io,
   logAudit,
   getBookingItemRefundAmount,
-  markBookingItemRefunded,
-  markBookingRefunded,
-  markBookingVoided,
   sendBookingConfirmationEmail,
 }) {
   app.get('/api/admin/bookings', adminAuth, async (req, res) => {
@@ -373,239 +369,75 @@ export function registerAdminBookingRoutes(app, {
     }
   });
 
-  app.post('/api/admin/bookings/go-live-cleanup', adminAuth, async (req, res) => {
-    try {
-    if (req.body?.confirm !== 'CLEAR TEST DATA') {
-      return res.status(400).json({
-        error: 'confirmation_required',
-        message: 'Type CLEAR TEST DATA to run go-live cleanup.',
-      });
-    }
-
-    const deletableStatuses = ['pending', 'failed', 'cancelled'];
-    const placeholders = deletableStatuses.map(() => '?').join(',');
-    const bookings = await all(
-      `SELECT id, reference_number, session_id, payment_status, total_amount
-       FROM bookings
-       WHERE payment_status IN (${placeholders})`,
-      deletableStatuses
-    );
-    const bookingIds = bookings.map(booking => booking.id);
-    const bookingPlaceholders = bookingIds.map(() => '?').join(',');
-    const items = bookingIds.length > 0
-      ? await all(`SELECT seat_id FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`, bookingIds)
-      : [];
-    const paidCount = (await get(`
-      SELECT COUNT(*) as count
-      FROM bookings
-      WHERE payment_status NOT IN (${placeholders})
-    `, deletableStatuses))?.count || 0;
-
-    for (const item of items) {
-      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ? AND status = 'held'", [item.seat_id]);
-    }
-
-    const heldClearedResult = await run(
-      "UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE status = 'held'"
-    );
-    const heldCleared = heldClearedResult.changes || 0;
-
-    if (bookingIds.length > 0) {
-      const itemRows = await all(
-        `SELECT id FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`,
-        bookingIds
-      );
-      const itemIds = itemRows.map(item => item.id);
-      if (itemIds.length > 0) {
-        const itemPlaceholders = itemIds.map(() => '?').join(',');
-        await run(`DELETE FROM booking_addons WHERE booking_item_id IN (${itemPlaceholders})`, itemIds);
-      }
-      await run(`DELETE FROM booking_items WHERE booking_id IN (${bookingPlaceholders})`, bookingIds);
-      await run(`DELETE FROM payment_events WHERE booking_id IN (${bookingPlaceholders})`, bookingIds);
-      await run(`DELETE FROM bookings WHERE id IN (${bookingPlaceholders})`, bookingIds);
-    }
-
-    await run('DELETE FROM email_verifications');
-
-    const sessionIds = [...new Set(bookings.map(booking => booking.session_id).filter(Boolean))];
-    for (const sessionId of sessionIds) {
-      io.to(`session:${sessionId}`).emit('seats:refresh');
-    }
-    io.to('admin:receipts').emit('bookings:cleared');
-
-    await logAudit('go_live_test_data_cleaned', 'booking', 'go_live_cleanup', {
-      deletedBookings: bookings.length,
-      releasedBookingSeats: items.length,
-      clearedHeldSeats: heldCleared,
-      paidBookingsKept: paidCount,
-      statusesDeleted: deletableStatuses,
-      clearedBy: req.adminUser?.email || null,
+  app.post('/api/admin/bookings/go-live-cleanup', adminAuth, requireSuperUser, (_req, res) => {
+    res.status(410).json({
+      error: 'bulk_cleanup_disabled',
+      message: 'Bulk booking cleanup is permanently disabled. Stale unpaid bookings are expired by the audited maintenance policy.',
     });
-
-    await saveDb();
-    res.json({
-      ok: true,
-      deletedBookings: bookings.length,
-      releasedSeats: items.length + heldCleared,
-      heldSeatsCleared: heldCleared,
-      paidBookingsKept: paidCount,
-      message: paidCount > 0
-        ? `Cleared ${bookings.length} pending/failed/cancelled test booking(s) and ${heldCleared} held seat(s). Kept ${paidCount} paid/refunded/voided booking(s).`
-        : `Cleared ${bookings.length} test booking(s) and ${heldCleared} held seat(s).`,
-    });
-    } catch (err) {
-      console.error('POST /api/admin/bookings/go-live-cleanup failed:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
   });
 
-  app.delete('/api/admin/bookings/:id', adminAuth, async (req, res) => {
+  app.delete('/api/admin/bookings/:id', adminAuth, requireSuperUser, async (req, res) => {
     try {
-    const identifier = req.params.id;
-    const booking = await get(
-      'SELECT * FROM bookings WHERE id = ? OR reference_number = ?',
-      [identifier, identifier]
-    );
-    if (!booking) return res.status(404).json({ error: 'Booking not found' });
-
-    const deletableStatuses = new Set(['pending', 'failed', 'cancelled']);
-    if (!deletableStatuses.has(booking.payment_status)) {
-      return res.status(409).json({
-        error: 'booking_not_deletable',
-        message: `Only pending, failed, or cancelled test bookings can be deleted. Booking ${booking.reference_number} is '${booking.payment_status}'. Use refund/void for paid transactions.`,
+      const identifier = req.params.id;
+      const deletion = await withTransaction(async tx => {
+        const booking = await tx.getForUpdate(
+          'SELECT * FROM bookings WHERE id = ? OR reference_number = ?',
+          [identifier, identifier]
+        );
+        if (!booking) return { status: 404, body: { error: 'Booking not found' } };
+        if (!['pending', 'failed', 'cancelled'].includes(booking.payment_status)) {
+          return { status: 409, body: { error: 'booking_not_deletable', message: `Booking ${booking.reference_number} is '${booking.payment_status}'. Use the approved refund/void workflow.` } };
+        }
+        if (String(booking.transaction_id || '').trim()) {
+          return { status: 409, body: { error: 'payment_history_present', message: 'This booking has a gateway transaction and cannot be deleted.' } };
+        }
+        const paymentEvents = await tx.get('SELECT COUNT(*) as count FROM payment_events WHERE booking_id = ?', [booking.id]);
+        const refundRequests = await tx.get('SELECT COUNT(*) as count FROM refund_requests WHERE booking_id = ?', [booking.id]);
+        if (Number(paymentEvents?.count || 0) > 0 || Number(refundRequests?.count || 0) > 0) {
+          return { status: 409, body: { error: 'financial_history_present', message: 'This booking has payment or refund history and must be retained.' } };
+        }
+        const items = await tx.all('SELECT id, seat_id, first_name, last_name FROM booking_items WHERE booking_id = ? ORDER BY seat_id', [booking.id]);
+        if (items.length > 0) {
+          const placeholders = items.map(() => '?').join(',');
+          const seats = await tx.allForUpdate(`SELECT id, status, held_until FROM seats WHERE id IN (${placeholders}) ORDER BY id`, items.map(item => item.seat_id));
+          const nowIso = new Date().toISOString();
+          if (seats.some(seat => seat.status === 'held' && seat.held_until && seat.held_until > nowIso)) {
+            return { status: 409, body: { error: 'active_hold_present', message: 'This booking still has an active customer seat hold and cannot be deleted.' } };
+          }
+        }
+        const details = {
+          referenceNumber: booking.reference_number,
+          sessionId: booking.session_id,
+          paymentStatus: booking.payment_status,
+          totalAmount: booking.total_amount,
+          attendees: items.map(item => ({ firstName: item.first_name, lastName: item.last_name })),
+          deletedBy: req.adminUser?.email || null,
+        };
+        await tx.run(
+          `INSERT INTO audit_log (id, action, entity_type, entity_id, details)
+           VALUES (?, 'booking_deleted', 'booking', ?, ?)`,
+          [uuid(), booking.id, JSON.stringify(details)]
+        );
+        for (const item of items) {
+          await tx.run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ? AND status = 'held'", [item.seat_id]);
+        }
+        await tx.run('DELETE FROM booking_addons WHERE booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?)', [booking.id]);
+        await tx.run('DELETE FROM booking_items WHERE booking_id = ?', [booking.id]);
+        await tx.run('DELETE FROM bookings WHERE id = ?', [booking.id]);
+        return { status: 200, booking, items };
       });
-    }
-
-    const items = await all('SELECT id, seat_id, first_name, last_name FROM booking_items WHERE booking_id = ?', [booking.id]);
-    for (const item of items) {
-      await run("UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL WHERE id = ? AND status = 'held'", [item.seat_id]);
-    }
-
-    await logAudit('booking_deleted', 'booking', booking.id, {
-      referenceNumber: booking.reference_number,
-      sessionId: booking.session_id,
-      paymentStatus: booking.payment_status,
-      totalAmount: booking.total_amount,
-      attendees: items.map(item => ({ firstName: item.first_name, lastName: item.last_name })),
-    });
-
-    await run('DELETE FROM payment_events WHERE booking_id = ?', [booking.id]);
-    await run('DELETE FROM booking_addons WHERE booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?)', [booking.id]);
-    await run('DELETE FROM booking_items WHERE booking_id = ?', [booking.id]);
-    await run('DELETE FROM bookings WHERE id = ?', [booking.id]);
-
-    io.to(`session:${booking.session_id}`).emit('seats:refresh');
-    await saveDb();
-
-    res.json({
-      ok: true,
-      deleted: booking.reference_number,
-      releasedSeats: items.length,
-    });
+      if (deletion.status !== 200) return res.status(deletion.status).json(deletion.body);
+      io.to(`session:${deletion.booking.session_id}`).emit('seats:refresh');
+      await saveDb();
+      res.json({ ok: true, deleted: deletion.booking.reference_number, releasedSeats: deletion.items.length });
     } catch (err) {
       console.error('DELETE /api/admin/bookings/:id failed:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   });
 
-  app.post('/api/admin/legacy-disabled/booking-items/:id/refund', adminAuth, async (req, res) => {
-    try {
-    return res.status(410).json({ error: 'Direct refunds are disabled. Submit a refund request for approval.' });
-    const item = await get(`
-      SELECT bi.*, b.id as booking_id, b.reference_number as booking_reference,
-             b.payment_status, b.transaction_id, b.total_amount
-      FROM booking_items bi
-      JOIN bookings b ON b.id = bi.booking_id
-      WHERE bi.id = ?
-    `, [req.params.id]);
-    if (!item) return res.status(404).json({ error: 'Ticket not found' });
-
-    if (item.refund_status === 'refunded') {
-      return res.status(400).json({ error: 'This ticket has already been refunded.' });
-    }
-    if (!['paid', 'partially_refunded'].includes(item.payment_status)) {
-      return res.status(400).json({ error: `Cannot refund a ticket from booking status '${item.payment_status}'.` });
-    }
-    if (!item.transaction_id) {
-      return res.status(400).json({
-        error: 'This booking has no transaction_id (likely created before payment integration). Use Cancel for legacy bookings.'
-      });
-    }
-
-    const amountCents = await getBookingItemRefundAmount(item.id);
-    if (!amountCents || amountCents <= 0) {
-      return res.status(400).json({ error: 'Could not determine the ticket refund amount.' });
-    }
-
-    const activeItems = (await get(`
-      SELECT COUNT(*) as count
-      FROM booking_items
-      WHERE booking_id = ? AND COALESCE(refund_status, 'active') != 'refunded'
-    `, [item.booking_id]))?.count || 0;
-
-    const verify = await verifyTransaction(item.transaction_id);
-    if (!verify.ok) {
-      return res.status(502).json({ error: `Could not verify transaction state: ${verify.error}` });
-    }
-
-    const txStatus = String(verify.status || '');
-    let action;
-    let result;
-
-    if (txStatus === 'capturedPendingSettlement' || txStatus === 'authorizedPendingCapture') {
-      if (activeItems > 1) {
-        return res.status(400).json({
-          error: 'This payment has not settled yet, so Authorize.Net can only void the full booking. Partial ticket refunds are available after settlement.'
-        });
-      }
-      action = 'void';
-      result = await voidTransaction(item.transaction_id);
-    } else if (txStatus === 'settledSuccessfully' || txStatus === 'settlementError') {
-      action = 'refund';
-      if (!verify.last4) {
-        return res.status(502).json({ error: 'Could not determine card last 4 for refund - Authorize.Net API did not return card details.' });
-      }
-      result = await refundTransaction({
-        transId: item.transaction_id,
-        amountCents,
-        last4: verify.last4,
-      });
-    } else {
-      return res.status(400).json({
-        error: `Cannot refund: transaction is in status '${txStatus}'. It may already be refunded or voided.`
-      });
-    }
-
-    if (!result.ok) {
-      return res.status(502).json({ error: `${action} failed: ${result.error}` });
-    }
-
-    const markResult = await markBookingItemRefunded({
-      bookingId: item.booking_id,
-      bookingItemId: item.id,
-      transactionId: item.transaction_id,
-      refundTransactionId: result.refundTransId || result.voidTransId,
-      amountCents,
-      action,
-      source: 'admin',
-    });
-    if (!markResult.ok) {
-      return res.status(500).json({ error: markResult.error || 'Refund was processed but ticket status could not be updated.' });
-    }
-
-    res.json({
-      ok: true,
-      action,
-      refundTransId: result.refundTransId || result.voidTransId,
-      amountCents,
-      amountFormatted: formatCurrency(amountCents),
-      seatsReleased: markResult.releasedSeats || 0,
-      bookingStatus: markResult.bookingStatus,
-    });
-    } catch (err) {
-      console.error('POST /api/admin/booking-items/:id/refund failed:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
+  app.post('/api/admin/legacy-disabled/booking-items/:id/refund', adminAuth, (_req, res) => {
+    res.status(410).json({ error: 'Direct refunds are disabled. Submit a refund request for approval.' });
   });
 
   app.post('/api/admin/booking-items/:id/no-show-credit', adminAuth, async (req, res) => {
@@ -903,70 +735,96 @@ export function registerAdminBookingRoutes(app, {
         return res.status(400).json({ error: 'A valid target table and chair are required.' });
       }
 
-      const item = await get(`
-        SELECT bi.*, b.id as booking_id, b.reference_number as booking_reference,
-               b.session_id, b.payment_status, old_seat.table_number as old_table_number,
-               old_seat.chair_number as old_chair_number
-        FROM booking_items bi
-        JOIN bookings b ON b.id = bi.booking_id
-        JOIN seats old_seat ON old_seat.id = bi.seat_id
-        WHERE bi.id = ?
-      `, [req.params.id]);
-      if (!item) return res.status(404).json({ error: 'Ticket not found' });
-      if (item.refund_status === 'refunded') {
-        return res.status(400).json({ error: 'Cannot move a refunded ticket.' });
-      }
-      if (!['paid', 'partially_refunded'].includes(item.payment_status)) {
-        return res.status(400).json({ error: `Cannot move a ticket from booking status '${item.payment_status}'.` });
-      }
+      const move = await withTransaction(async tx => {
+        const itemLookup = await tx.get('SELECT booking_id FROM booking_items WHERE id = ?', [req.params.id]);
+        if (!itemLookup) return { status: 404, body: { error: 'Ticket not found' } };
+        const booking = await tx.getForUpdate(
+          'SELECT id, reference_number, session_id, payment_status FROM bookings WHERE id = ?',
+          [itemLookup.booking_id]
+        );
+        const lockedItem = await tx.getForUpdate('SELECT * FROM booking_items WHERE id = ? AND booking_id = ?', [req.params.id, itemLookup.booking_id]);
+        if (!booking || !lockedItem) return { status: 404, body: { error: 'Ticket not found' } };
+        const item = {
+          ...lockedItem,
+          booking_id: booking.id,
+          booking_reference: booking.reference_number,
+          session_id: booking.session_id,
+          payment_status: booking.payment_status,
+        };
+        if (item.refund_status === 'refunded') return { status: 400, body: { error: 'Cannot move a refunded ticket.' } };
+        if (!['paid', 'partially_refunded'].includes(item.payment_status)) {
+          return { status: 400, body: { error: `Cannot move a ticket from booking status '${item.payment_status}'.` } };
+        }
 
-      const targetSeat = await get(
-        `SELECT *
-         FROM seats
-         WHERE session_id = ? AND table_number = ? AND chair_number = ?`,
-        [item.session_id, tableNumber, chairNumber]
-      );
-      if (!targetSeat) {
-        return res.status(404).json({ error: `Seat T${tableNumber}-C${chairNumber} was not found for this session.` });
-      }
-      if (targetSeat.id === item.seat_id) {
-        return res.status(400).json({ error: 'This ticket is already assigned to that seat.' });
-      }
-      if (targetSeat.is_disabled) {
-        return res.status(409).json({ error: `Seat T${tableNumber}-C${chairNumber} is disabled.` });
-      }
-      if (targetSeat.status !== 'vacant') {
-        return res.status(409).json({ error: `Seat T${tableNumber}-C${chairNumber} is currently ${targetSeat.status}.` });
-      }
+        const targetLookup = await tx.get(
+          `SELECT id FROM seats WHERE session_id = ? AND table_number = ? AND chair_number = ?`,
+          [item.session_id, tableNumber, chairNumber]
+        );
+        if (!targetLookup) return { status: 404, body: { error: `Seat T${tableNumber}-C${chairNumber} was not found for this session.` } };
+        if (targetLookup.id === item.seat_id) return { status: 400, body: { error: 'This ticket is already assigned to that seat.' } };
 
-      await run('UPDATE booking_items SET seat_id = ? WHERE id = ?', [targetSeat.id, item.id]);
-      await run(
-        `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
-         WHERE id = ?
-           AND NOT EXISTS (
-             SELECT 1 FROM booking_items active_item
-             JOIN bookings active_booking ON active_booking.id = active_item.booking_id
-             WHERE active_item.seat_id = seats.id
-               AND active_booking.id != ?
-               AND active_booking.payment_status IN ('paid', 'partially_refunded')
-               AND COALESCE(active_item.refund_status, 'active') != 'refunded'
-           )`,
-        [item.seat_id, item.booking_id]
-      );
-      await run("UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?", [targetSeat.id]);
+        const seatIds = [item.seat_id, targetLookup.id].sort();
+        const lockedSeats = await tx.allForUpdate(
+          'SELECT * FROM seats WHERE id IN (?, ?) ORDER BY id',
+          seatIds
+        );
+        const oldSeat = lockedSeats.find(seat => seat.id === item.seat_id);
+        const targetSeat = lockedSeats.find(seat => seat.id === targetLookup.id);
+        if (!oldSeat || !targetSeat) return { status: 409, body: { error: 'Seat assignment changed. Refresh and try again.' } };
+        item.old_table_number = oldSeat.table_number;
+        item.old_chair_number = oldSeat.chair_number;
+        if (targetSeat.is_disabled) return { status: 409, body: { error: `Seat T${tableNumber}-C${chairNumber} is disabled.` } };
+        if (targetSeat.status !== 'vacant') return { status: 409, body: { error: `Seat T${tableNumber}-C${chairNumber} is currently ${targetSeat.status}.` } };
+        const activeOwner = await tx.get(`
+          SELECT COUNT(*) as count
+          FROM booking_items active_item
+          JOIN bookings active_booking ON active_booking.id = active_item.booking_id
+          WHERE active_item.seat_id = ?
+            AND active_item.id != ?
+            AND active_booking.payment_status IN ('paid', 'partially_refunded')
+            AND COALESCE(active_item.refund_status, 'active') != 'refunded'
+        `, [targetSeat.id, item.id]);
+        if (Number(activeOwner?.count || 0) > 0) {
+          return { status: 409, body: { error: `Seat T${tableNumber}-C${chairNumber} already has an active paid owner.` } };
+        }
 
-      await logAudit('booking_item_seat_moved', 'booking_item', item.id, {
-        bookingId: item.booking_id,
-        referenceNumber: item.booking_reference,
-        sessionId: item.session_id,
-        fromSeatId: item.seat_id,
-        fromTable: item.old_table_number,
-        fromChair: item.old_chair_number,
-        toSeatId: targetSeat.id,
-        toTable: targetSeat.table_number,
-        toChair: targetSeat.chair_number,
-        movedBy: req.adminUser?.email || null,
+        const moved = await tx.run('UPDATE booking_items SET seat_id = ? WHERE id = ? AND seat_id = ?', [targetSeat.id, item.id, item.seat_id]);
+        if (moved.changes !== 1) return { status: 409, body: { error: 'Ticket seat changed. Refresh and try again.' } };
+        await tx.run(
+          `UPDATE seats SET status = 'vacant', held_by = NULL, held_until = NULL
+           WHERE id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM booking_items active_item
+               JOIN bookings active_booking ON active_booking.id = active_item.booking_id
+               WHERE active_item.seat_id = seats.id
+                 AND active_item.id != ?
+                 AND active_booking.payment_status IN ('paid', 'partially_refunded')
+                 AND COALESCE(active_item.refund_status, 'active') != 'refunded'
+             )`,
+          [item.seat_id, item.id]
+        );
+        const sold = await tx.run("UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ? AND status = 'vacant'", [targetSeat.id]);
+        if (sold.changes !== 1) throw new Error('Target seat state changed during move.');
+        await tx.run(
+          `INSERT INTO audit_log (id, action, entity_type, entity_id, details)
+           VALUES (?, 'booking_item_seat_moved', 'booking_item', ?, ?)`,
+          [uuid(), item.id, JSON.stringify({
+            bookingId: item.booking_id,
+            referenceNumber: item.booking_reference,
+            sessionId: item.session_id,
+            fromSeatId: item.seat_id,
+            fromTable: item.old_table_number,
+            fromChair: item.old_chair_number,
+            toSeatId: targetSeat.id,
+            toTable: targetSeat.table_number,
+            toChair: targetSeat.chair_number,
+            movedBy: req.adminUser?.email || null,
+          })]
+        );
+        return { status: 200, item, targetSeat };
       });
+      if (move.status !== 200) return res.status(move.status).json(move.body);
+      const { item, targetSeat } = move;
 
       io.to(`session:${item.session_id}`).emit('seats:refresh', { sessionId: item.session_id });
       io.to('admin:receipts').emit('booking:seat_moved', {
@@ -999,79 +857,7 @@ export function registerAdminBookingRoutes(app, {
     }
   });
 
-  app.post('/api/admin/legacy-disabled/bookings/:id/refund', adminAuth, async (req, res) => {
-    try {
-    return res.status(410).json({ error: 'Direct refunds are disabled. Submit a refund request for approval.' });
-    const booking = await get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
-    if (!booking) return res.status(404).json({ error: 'Booking not found' });
-
-    if (!['paid', 'payment_review'].includes(booking.payment_status)) {
-      return res.status(400).json({ error: `Cannot refund a booking with status '${booking.payment_status}'. Only paid or payment-review bookings can be reversed.` });
-    }
-    if (!booking.transaction_id) {
-      return res.status(400).json({
-        error: 'This booking has no transaction_id (likely created via the legacy /api/bookings endpoint before payment integration). Use Cancel instead.'
-      });
-    }
-
-    const verify = await verifyTransaction(booking.transaction_id);
-    if (!verify.ok) {
-      return res.status(502).json({ error: `Could not verify transaction state: ${verify.error}` });
-    }
-
-    const txStatus = String(verify.status || '');
-    let action;
-    let result;
-    let markResult;
-
-    if (txStatus === 'capturedPendingSettlement' || txStatus === 'authorizedPendingCapture') {
-      action = 'void';
-      result = await voidTransaction(booking.transaction_id);
-      if (result.ok) {
-        markResult = await markBookingVoided({
-          bookingId: booking.id,
-          transactionId: booking.transaction_id,
-          voidTransactionId: result.voidTransId,
-          source: 'admin',
-        });
-      }
-    } else if (txStatus === 'settledSuccessfully' || txStatus === 'settlementError') {
-      action = 'refund';
-      if (!verify.last4) {
-        return res.status(502).json({ error: 'Could not determine card last 4 for refund - Authorize.Net API did not return card details.' });
-      }
-      result = await refundTransaction({
-        transId: booking.transaction_id,
-        amountCents: booking.total_amount,
-        last4: verify.last4,
-      });
-      if (result.ok) {
-        markResult = await markBookingRefunded({
-          bookingId: booking.id,
-          transactionId: booking.transaction_id,
-          refundTransactionId: result.refundTransId,
-          source: 'admin',
-        });
-      }
-    } else {
-      return res.status(400).json({
-        error: `Cannot refund: transaction is in status '${txStatus}'. It may already be refunded or voided.`
-      });
-    }
-
-    if (!result.ok) {
-      return res.status(502).json({ error: `${action} failed: ${result.error}` });
-    }
-
-    res.json({
-      ok: true,
-      action,
-      refundTransId: result.refundTransId || result.voidTransId,
-      seatsReleased: markResult?.releasedSeats || 0,
-    });
-    } catch (err) {
-      console.error('POST /api/admin/bookings/:id/refund failed:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
+  app.post('/api/admin/legacy-disabled/bookings/:id/refund', adminAuth, (_req, res) => {
+    res.status(410).json({ error: 'Direct refunds are disabled. Submit a refund request for approval.' });
   });
 }
