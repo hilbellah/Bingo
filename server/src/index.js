@@ -2311,6 +2311,14 @@ async function processAuthorizeNetWebhook({ rawBody, sigHeader, event }) {
   let invoiceNumber = payload?.merchantReferenceId || payload?.invoiceNumber;
   const signatureValid = verifyWebhookSignature(rawBody, sigHeader);
 
+  // Log the verification result before invoice lookup. Authorize.Net's
+  // diagnostic ping does not include a merchant invoice number, so logging
+  // only after booking resolution made signature tests inconclusive.
+  console.log(
+    `[webhooks] signature ${signatureValid ? 'valid' : 'invalid'} eventType=${eventType || 'unknown'} ` +
+    `notificationId=${notificationId || 'none'} rawBytes=${rawBody?.length || 0}`
+  );
+
   if (!invoiceNumber && signatureValid && transId) {
     const verify = await verifyTransaction(transId);
     if (verify.ok && verify.invoiceNumber) {
