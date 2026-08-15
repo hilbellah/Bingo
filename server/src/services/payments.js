@@ -408,12 +408,28 @@ export function verifyWebhookSignature(rawBody, signatureHeader) {
   }
 
   const bodyBuf = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(String(rawBody), 'utf8');
-  const expected = crypto.createHmac('sha512', keyBuffer).update(bodyBuf).digest('hex').toUpperCase();
-
-  const expectedBuf = Buffer.from(expected);
   const providedBuf = Buffer.from(provided);
-  if (expectedBuf.length !== providedBuf.length) return false;
-  return crypto.timingSafeEqual(expectedBuf, providedBuf);
+  const keyCandidates = [
+    { encoding: 'hex-decoded', value: keyBuffer },
+    // Authorize.Net's webhook documentation says to use the Signature Key as
+    // the HMAC key, while its transaction-hash guide explicitly says to
+    // hex-decode it. Accepting both documented interpretations is safe: both
+    // still require possession of the complete 512-bit merchant secret.
+    { encoding: 'hex-text', value: Buffer.from(signatureKey, 'ascii') },
+  ];
+
+  for (const candidate of keyCandidates) {
+    const expected = crypto.createHmac('sha512', candidate.value).update(bodyBuf).digest('hex').toUpperCase();
+    const expectedBuf = Buffer.from(expected);
+    if (expectedBuf.length === providedBuf.length && crypto.timingSafeEqual(expectedBuf, providedBuf)) {
+      if (candidate.encoding !== 'hex-decoded') {
+        console.warn(`[payments] webhook signature matched ${candidate.encoding} key encoding`);
+      }
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function normalizeSignatureHex(value) {
