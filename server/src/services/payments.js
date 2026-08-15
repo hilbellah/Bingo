@@ -130,6 +130,30 @@ function getIframeCommunicatorUrl() {
   }
 }
 
+function withGatewayReadTimeout(label, executor) {
+  const configured = Number(process.env.ANET_READ_TIMEOUT_MS || 30000);
+  const timeoutMs = Number.isFinite(configured) ? Math.max(5000, Math.min(configured, 120000)) : 30000;
+  return new Promise(outerResolve => {
+    let finished = false;
+    const timer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      outerResolve({ ok: false, error: `${label}_timeout_after_${timeoutMs}ms` });
+    }, timeoutMs);
+    const resolve = value => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      outerResolve(value);
+    };
+    try {
+      executor(resolve);
+    } catch (err) {
+      resolve({ ok: false, error: err?.message || String(err) });
+    }
+  });
+}
+
 // ---------- 1) Create hosted payment page (get redirect token) ----------
 
 /**
@@ -164,7 +188,7 @@ export async function createHostedPaymentPage({ bookingId, amountCents, email, f
     return { ok: false, error: err.message };
   }
 
-  return new Promise((resolve) => {
+  return withGatewayReadTimeout('hosted_payment_token', resolve => {
     const tx = new APIContracts.TransactionRequestType();
     tx.setTransactionType(APIContracts.TransactionTypeEnum.AUTHCAPTURETRANSACTION);
     tx.setAmount(amount);
@@ -291,7 +315,7 @@ export async function verifyTransaction(transId) {
     return { ok: false, error: err.message };
   }
 
-  return new Promise((resolve) => {
+  return withGatewayReadTimeout('transaction_verification', resolve => {
     const req = new APIContracts.GetTransactionDetailsRequest();
     req.setMerchantAuthentication(merchantAuth);
     req.setTransId(String(transId));
