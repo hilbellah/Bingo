@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
+import { formatLocalDateStr, venueToday } from '../utils/formatters';
 
 function getReceiptBadge(receipt) {
   if (receipt.sessionType === 'event' || receipt.notificationType === 'live_event_ticket') {
@@ -55,7 +56,7 @@ export default function DashboardTab() {
     if (setTab) setTab('inventory');
   };
 
-  const formatDate = (date) => date.toISOString().split('T')[0];
+  const formatDate = (date) => formatLocalDateStr(date);
   const addDays = (dateText, days) => {
     const date = new Date(`${dateText}T00:00:00`);
     date.setDate(date.getDate() + days);
@@ -76,7 +77,7 @@ export default function DashboardTab() {
     return formatDate(new Date(date.getFullYear(), date.getMonth(), 1));
   };
   const applyDashboardRange = (range) => {
-    const anchor = dashboardDateFrom || formatDate(new Date());
+    const anchor = dashboardDateFrom || venueToday();
     let from = anchor;
     let to = anchor;
     if (range === 'multi-day') {
@@ -213,7 +214,7 @@ export default function DashboardTab() {
                 />
               </div>
               <button
-                onClick={() => { const t = formatDate(new Date()); setDashboardRange('daily'); setDashboardDateFrom(t); setDashboardDateTo(t); loadDashboard(t, t); }}
+                onClick={() => { const t = venueToday(); setDashboardRange('daily'); setDashboardDateFrom(t); setDashboardDateTo(t); loadDashboard(t, t); }}
                 className="text-xs text-brand-blue hover:underline"
               >
                 Today

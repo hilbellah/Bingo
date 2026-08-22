@@ -148,8 +148,8 @@ export default function Tutorial() {
         <p style={styles.headerSub}>Step-by-Step Guide for Presentation &amp; Testing</p>
         <p style={{ marginTop: '10px' }}>
           Live Site:{' '}
-          <a href="https://bingo-jk2h.onrender.com" target="_blank" rel="noreferrer" style={styles.headerLink}>
-            https://bingo-jk2h.onrender.com
+          <a href="https://booking.wolastoqcasino.ca" target="_blank" rel="noreferrer" style={styles.headerLink}>
+            https://booking.wolastoqcasino.ca
           </a>
         </p>
         <a href="/" style={styles.backLink}>&larr; Back to Booking</a>
@@ -165,7 +165,7 @@ export default function Tutorial() {
 
         <Step number={1} title="Open the Website">
           <ul style={styles.ul}>
-            <li style={styles.li}>Go to <strong><a href="https://bingo-jk2h.onrender.com" target="_blank" rel="noreferrer" style={styles.link}>https://bingo-jk2h.onrender.com</a></strong></li>
+            <li style={styles.li}>Go to <strong><a href="https://booking.wolastoqcasino.ca" target="_blank" rel="noreferrer" style={styles.link}>https://booking.wolastoqcasino.ca</a></strong></li>
             <li style={styles.li}>The site loads with the <strong>Saint Mary's Entertainment Centre</strong> branding and tagline "Bingo -- Nightly Jackpots up to $5,000".</li>
             <li style={styles.li}>The first available bingo session is automatically selected.</li>
             <li style={styles.li}>Any active announcements appear at the top of the page.</li>
@@ -250,24 +250,26 @@ export default function Tutorial() {
 
         <Step number={7} title="Enter Payment Information">
           <ul style={styles.ul}>
-            <li style={styles.li}>A yellow banner reminds you this is <strong>demo mode</strong> (no real charges).</li>
-            <li style={styles.li}>Fill in: <strong>Cardholder Name</strong>, <strong>Card Number</strong> (auto-detects Visa/Mastercard/Amex/Discover), <strong>Expiry Date</strong>, <strong>CVV</strong>, <strong>Address</strong>, <strong>Postal Code</strong>.</li>
-            <li style={styles.li}>Click <strong>"Complete Booking"</strong> to submit.</li>
+            <li style={styles.li}>The checkout page shows your <strong>order summary</strong> (tickets, add-ons, service charge, and HST) with the total.</li>
+            <li style={styles.li}>The card form is a <strong>secure embedded Authorize.Net payment form</strong> — your card details go directly to the payment processor and are never stored by the bingo site.</li>
+            <li style={styles.li}>Fill in your <strong>card number</strong>, <strong>expiry date</strong>, and <strong>CVV</strong>, then submit the payment.</li>
+            <li style={styles.li}><strong style={styles.gold}>This is a real payment</strong> — your card will be charged the total shown.</li>
           </ul>
+          <Note label="Important">Your seats stay reserved while you complete payment. If you need to change something, use the Back option before paying.</Note>
         </Step>
 
         <Step number={8} title="Booking Confirmation">
           <ul style={styles.ul}>
-            <li style={styles.li}>A <strong>success screen</strong> appears with a green checkmark.</li>
+            <li style={styles.li}>After payment, a <strong>"Confirming Your Payment..."</strong> screen briefly appears, then a <strong>success screen</strong> with a green checkmark.</li>
             <li style={styles.li}>You see: <strong>Booking Reference Number</strong> (BNG-XXXXXX), <strong>date/time</strong>, <strong>total paid</strong>, <strong>seat assignments</strong>.</li>
             <li style={styles.li}>Each attendee receives a <strong>unique ticket reference</strong> within the booking.</li>
-            <li style={styles.li}>Two options: <strong>"View Printable Tickets"</strong> or <strong>"Start New Booking"</strong>.</li>
+            <li style={styles.li}>A <strong>confirmation email</strong> is sent to the address you entered — check spam or junk if you don't see it.</li>
           </ul>
         </Step>
 
         <Step number={9} title="Print Your Tickets">
           <ul style={styles.ul}>
-            <li style={styles.li}>Tickets can be accessed anytime at <strong><a href="https://bingo-jk2h.onrender.com/tickets" target="_blank" rel="noreferrer" style={styles.link}>https://bingo-jk2h.onrender.com/tickets</a></strong></li>
+            <li style={styles.li}>Tickets can be accessed anytime at <strong><a href="https://booking.wolastoqcasino.ca/tickets" target="_blank" rel="noreferrer" style={styles.link}>https://booking.wolastoqcasino.ca/tickets</a></strong></li>
             <li style={styles.li}>Enter your <strong>reference number</strong> (BNG-XXXXXX) to look up your tickets.</li>
             <li style={styles.li}>Each attendee gets a <strong>double-sided tear-off ticket</strong> with venue copy and customer copy.</li>
             <li style={styles.li}>Tickets show individual reference numbers, add-on items, and package details.</li>
@@ -287,7 +289,7 @@ export default function Tutorial() {
 
         <Step number={1} title="Log In to the Admin Panel">
           <ul style={styles.ul}>
-            <li style={styles.li}>Navigate to <strong><a href="https://bingo-jk2h.onrender.com/admin" target="_blank" rel="noreferrer" style={styles.link}>https://bingo-jk2h.onrender.com/admin</a></strong></li>
+            <li style={styles.li}>Navigate to <strong><a href="https://booking.wolastoqcasino.ca/admin" target="_blank" rel="noreferrer" style={styles.link}>https://booking.wolastoqcasino.ca/admin</a></strong></li>
             <li style={styles.li}>Enter your <strong>Username</strong> (email) and <strong>Password</strong>.</li>
             <li style={styles.li}>Use the <strong>eye icon</strong> to toggle password visibility.</li>
             <li style={styles.li}>Click <strong>Sign In</strong>.</li>
@@ -508,11 +510,11 @@ export default function Tutorial() {
               </tr>
             </thead>
             <tbody>
-              <tr><td style={styles.td}>Homepage (Booking)</td><td style={styles.td}><a href="https://bingo-jk2h.onrender.com" target="_blank" rel="noreferrer" style={styles.link}>https://bingo-jk2h.onrender.com</a></td></tr>
-              <tr><td style={styles.td}>Ticket Lookup</td><td style={styles.td}><a href="https://bingo-jk2h.onrender.com/tickets" target="_blank" rel="noreferrer" style={styles.link}>https://bingo-jk2h.onrender.com/tickets</a></td></tr>
-              <tr><td style={styles.td}>View Tickets</td><td style={styles.td}>https://bingo-jk2h.onrender.com/tickets/&#123;reference-number&#125;</td></tr>
-              <tr><td style={styles.td}>Admin Login</td><td style={styles.td}><a href="https://bingo-jk2h.onrender.com/admin" target="_blank" rel="noreferrer" style={styles.link}>https://bingo-jk2h.onrender.com/admin</a></td></tr>
-              <tr><td style={styles.td}>Tutorial</td><td style={styles.td}><a href="https://bingo-jk2h.onrender.com/tutorial" target="_blank" rel="noreferrer" style={styles.link}>https://bingo-jk2h.onrender.com/tutorial</a></td></tr>
+              <tr><td style={styles.td}>Homepage (Booking)</td><td style={styles.td}><a href="https://booking.wolastoqcasino.ca" target="_blank" rel="noreferrer" style={styles.link}>https://booking.wolastoqcasino.ca</a></td></tr>
+              <tr><td style={styles.td}>Ticket Lookup</td><td style={styles.td}><a href="https://booking.wolastoqcasino.ca/tickets" target="_blank" rel="noreferrer" style={styles.link}>https://booking.wolastoqcasino.ca/tickets</a></td></tr>
+              <tr><td style={styles.td}>View Tickets</td><td style={styles.td}>https://booking.wolastoqcasino.ca/tickets/&#123;reference-number&#125;</td></tr>
+              <tr><td style={styles.td}>Admin Login</td><td style={styles.td}><a href="https://booking.wolastoqcasino.ca/admin" target="_blank" rel="noreferrer" style={styles.link}>https://booking.wolastoqcasino.ca/admin</a></td></tr>
+              <tr><td style={styles.td}>Tutorial</td><td style={styles.td}><a href="https://booking.wolastoqcasino.ca/tutorial" target="_blank" rel="noreferrer" style={styles.link}>https://booking.wolastoqcasino.ca/tutorial</a></td></tr>
             </tbody>
           </table>
 

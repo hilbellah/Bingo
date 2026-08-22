@@ -4,7 +4,7 @@ import { getNextPhdSessionId, getPhdInventoryForSession } from '../services/phdI
 import { getSalesReportCutoff, setSalesReportCutoff } from '../services/salesReporting.js';
 import { sessionTypeSql } from '../services/sessionPackages.js';
 import { clearExpiredHolds } from '../services/holds.js';
-import { formatCurrency, formatLocalDate } from '../utils/format.js';
+import { formatCurrency, formatLocalDate, formatVenueDate } from '../utils/format.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -42,7 +42,7 @@ function endOfMonth(date) {
 }
 
 function normalizeSalesReportRange(query) {
-  const today = formatLocalDate(new Date());
+  const today = formatVenueDate(new Date());
   const requestedRange = String(query.range || query.period || '').trim().toLowerCase();
   const allowedRanges = new Set(['', 'daily', 'day', 'multi-day', 'multiday', 'custom', 'weekly', 'week', 'monthly', 'month']);
   if (!allowedRanges.has(requestedRange)) {
@@ -129,7 +129,7 @@ export function registerAdminReportRoutes(app) {
   app.get('/api/admin/dashboard', adminAuth, async (req, res) => {
     try {
       await clearExpiredHolds();
-      const today = formatLocalDate(new Date());
+      const today = formatVenueDate(new Date());
       const dateFrom = req.query.dateFrom || req.query.date || today;
       const dateTo = req.query.dateTo || dateFrom;
       const cutoff = await getSalesReportCutoff();
@@ -558,11 +558,17 @@ export function registerAdminReportRoutes(app) {
         SELECT *
         FROM transaction_rows
         ${whereClause}
-        ORDER BY transaction_at DESC, created_at DESC
+        ORDER BY datetime(transaction_at) DESC, created_at DESC
         LIMIT 1000
       `, params);
+      // transaction_at mixes 'YYYY-MM-DD HH:MM:SS' (payment_events shim) and
+      // ISO 'T...Z' strings — datetime() normalizes them so same-day rows
+      // sort correctly. The LIMIT also caps the summary: flag truncation so
+      // wide date ranges don't silently under-report totals.
+      const truncated = rows.length >= 1000;
 
       const rowBookingIds = new Set(rows.map(row => row.id));
+      const rowStatusById = new Map(rows.map(row => [row.id, row.payment_status]));
       const partialRefundByBooking = {};
       const refundedEvents = await all(`
         SELECT booking_id, raw_payload
@@ -576,6 +582,10 @@ export function registerAdminReportRoutes(app) {
           if (!payload?.partial) return sum;
           const amount = Number(payload.amountCents || 0);
           partialRefundByBooking[event.booking_id] = (partialRefundByBooking[event.booking_id] || 0) + amount;
+          // A booking that has since become fully refunded/voided is already
+          // counted at its full total below — adding its earlier item-refund
+          // events on top double-counts every ticket-by-ticket refund.
+          if (['refunded', 'voided'].includes(rowStatusById.get(event.booking_id))) return sum;
           return sum + amount;
         } catch {
           return sum;
@@ -649,6 +659,10 @@ export function registerAdminReportRoutes(app) {
         filters: { dateFrom, dateTo, status, search },
         salesReportCutoffAt: cutoff,
         summary: {
+          truncated,
+          truncationNote: truncated
+            ? 'Only the most recent 1000 transactions are included — totals below may under-report. Narrow the date range for exact figures.'
+            : null,
           totalTransactions: rows.length,
           paidCount: (statusCounts.paid || 0) + (statusCounts.partially_refunded || 0),
           refundCount: (statusCounts.refunded || 0) + (statusCounts.voided || 0) + (statusCounts.partially_refunded || 0),

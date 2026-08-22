@@ -216,7 +216,10 @@ export function buildAutoBookingReceiptLines(booking, cfg = {}) {
     const cents = Number(price || 0);
     const qty = Number(quantity || 1);
     if (!Number.isFinite(cents) || cents <= 0 || !Number.isFinite(qty) || qty <= 0) return fallback;
-    return 'CA$' + (cents / qty / 100).toFixed(0);
+    const unit = cents / qty / 100;
+    // Whole-dollar prices print compact ("CA$20"); anything with cents keeps
+    // two decimals so line items reconcile with the subtotal.
+    return 'CA$' + (Number.isInteger(unit) ? unit.toFixed(0) : unit.toFixed(2));
   };
   const packageLabel = (priceText, name) => [priceText, name].filter(Boolean).join(' - ');
   const receiptTotals = getReceiptTotals(booking);
@@ -451,7 +454,15 @@ export function buildRefundReceiptLines(booking, cfg = {}) {
   const actionLabel = isVoid ? 'VOID' : 'REFUND';
   const isPartial = booking.paymentStatus === 'partially_refunded';
   const itemRefundTotal = refundedItems.reduce((sum, item) => sum + (Number(item.refundAmount) || 0), 0);
-  const refundAmount = isPartial ? itemRefundTotal : (Number(booking.totalAmount) || itemRefundTotal);
+  // The bold total must reconcile with the printed line items. Voids always
+  // reverse the entire charge, so the service-charge difference is itemized;
+  // refunds report the recorded per-item amounts (the non-refundable service
+  // charge is not part of an item refund), never the raw booking total.
+  const bookingTotal = Number(booking.totalAmount) || 0;
+  const voidServiceCharge = isVoid && !isPartial ? Math.max(0, bookingTotal - itemRefundTotal) : 0;
+  const refundAmount = isVoid && !isPartial
+    ? (bookingTotal || itemRefundTotal)
+    : (itemRefundTotal || (isPartial ? 0 : bookingTotal));
   const refundDates = refundedItems.map(item => item.refundedAt).filter(Boolean).sort();
   const transactionIds = [...new Set(refundedItems.map(item => item.refundTransactionId).filter(Boolean))];
   const lines = [
@@ -471,6 +482,10 @@ export function buildRefundReceiptLines(booking, cfg = {}) {
   for (const item of refundedItems) {
     lines.push(`<div style="padding:3px 0 1px">${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}</div>`);
     lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">${escapeHtml(item.referenceNumber || '')} - T${escapeHtml(item.tableNumber)}/C${escapeHtml(item.chairNumber)}</span><span class="item-amt">-${escapeHtml(item.refundAmountFormatted || moneyFromCents(item.refundAmount))}</span></div>`);
+  }
+
+  if (voidServiceCharge > 0) {
+    lines.push(`<div class="item-row"><span class="item-desc" style="font-size:10px;color:#555">Service charge</span><span class="item-amt">-${escapeHtml(moneyFromCents(voidServiceCharge))}</span></div>`);
   }
 
   if (transactionIds.length > 0) {

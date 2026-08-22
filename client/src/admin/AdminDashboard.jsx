@@ -29,7 +29,7 @@ import {
   saveSalesDrilldownCsv,
 } from './adminPrintUtils';
 import { confirmAdminAction } from './adminConfirm';
-import { formatDateShort, formatTime } from '../utils/formatters';
+import { formatDateShort, formatTime, venueToday } from '../utils/formatters';
 
 function formatPrice(cents) {
   return 'CA$' + (cents / 100).toFixed(2);
@@ -144,14 +144,14 @@ export default function AdminDashboard() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [salesDrilldown, setSalesDrilldown] = useState(null); // { session, bookings }
   const [dailySales, setDailySales] = useState(null);
-  const [dailySalesDate, setDailySalesDate] = useState(new Date().toISOString().split('T')[0]);
-  const [dailySalesDateTo, setDailySalesDateTo] = useState(new Date().toISOString().split('T')[0]);
+  const [dailySalesDate, setDailySalesDate] = useState(venueToday());
+  const [dailySalesDateTo, setDailySalesDateTo] = useState(venueToday());
   const [dailySalesRange, setDailySalesRange] = useState('daily');
   const [dailySalesSearch, setDailySalesSearch] = useState('');
   const [transactions, setTransactions] = useState({ items: [], summary: null, filters: {} });
   const [transactionFilters, setTransactionFilters] = useState({ dateFrom: '', dateTo: '', status: 'all', search: '' });
-  const [dashboardDateFrom, setDashboardDateFrom] = useState(new Date().toISOString().split('T')[0]);
-  const [dashboardDateTo, setDashboardDateTo] = useState(new Date().toISOString().split('T')[0]);
+  const [dashboardDateFrom, setDashboardDateFrom] = useState(venueToday());
+  const [dashboardDateTo, setDashboardDateTo] = useState(venueToday());
   const [dashboardRange, setDashboardRange] = useState('daily');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [autoPrint, setAutoPrint] = useState(false);
@@ -192,6 +192,7 @@ export default function AdminDashboard() {
   const socketRef = useRef(null);
   const autoPrintRef = useRef(false);
   const receiptConfigRef = useRef(receiptConfig);
+  const approvingRefundRequestRef = useRef(false);
 
   useEffect(() => {
     if (!token) { navigate('/admin'); return; }
@@ -232,6 +233,11 @@ export default function AdminDashboard() {
     fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard),
     loadRefundRequests(),
   ]);
+  // Latest-render loadDashboard for the socket effect: its deps are [token],
+  // so without the ref a 'booking:new' event refetches with the MOUNT-time
+  // date range and silently overwrites whatever range the admin selected.
+  const loadDashboardRef = useRef(loadDashboard);
+  loadDashboardRef.current = loadDashboard;
   const loadSessions = () => fetchAdminSessions(token).then(setSessions);
   const loadPackages = () => fetchAdminPackages(token).then(setPackages);
   const loadBookings = (sid) => fetchAdminBookings(token, sid).then(setBookings);
@@ -315,7 +321,7 @@ export default function AdminDashboard() {
         printBookingReceipt(receiptData);
       }
       // Refresh dashboard if this role can view it.
-      if (!isPrintStaff) loadDashboard();
+      if (!isPrintStaff) loadDashboardRef.current();
     });
 
     socket.on('phd:updated', (phdData) => {
@@ -422,6 +428,7 @@ export default function AdminDashboard() {
   const handleCreateSession = async () => {
     if (!newSession.date) return;
     const payload = { ...newSession, session_type: newSession.is_special_event ? 'special_bingo' : 'regular_bingo' };
+    payload.packages = (payload.packages || []).map(({ priceText, ...pkg }) => pkg);
     if (payload.session_type === 'special_bingo') {
       payload.sales_cutoff_at = buildSalesCutoffAt(payload.sales_cutoff_date || payload.date, payload.cutoff_time);
     }
@@ -527,7 +534,12 @@ export default function AdminDashboard() {
   };
 
   const handleSaveSessionPkgs = async () => {
-    const valid = sessionPkgList.filter(p => p.name && p.price > 0);
+    const dropped = sessionPkgList.filter(p => (p.name || p.priceText) && !(p.name && p.price > 0));
+    if (dropped.length > 0) {
+      const names = dropped.map(p => p.name || '(unnamed)').join(', ');
+      if (!window.confirm(`These packages have no name or a CA$0.00 price and will be REMOVED from this session if you continue:\n\n${names}\n\nContinue and remove them?`)) return;
+    }
+    const valid = sessionPkgList.filter(p => p.name && p.price > 0).map(({ priceText, ...p }) => p);
     const session = sessions.find(s => s.id === editingSessionPkgs);
     if (!confirmAdminAction({
       action: 'Save package/pricing changes for this session',
@@ -822,6 +834,7 @@ export default function AdminDashboard() {
       sales_cutoff_at: buildSalesCutoffAt(newEvent.sales_cutoff_date || newEvent.date, newEvent.cutoff_time),
     };
     delete payload.sales_cutoff_date;
+    payload.packages = (payload.packages || []).map(({ priceText, ...pkg }) => pkg);
     const proceed = confirmAdminAction({
       action: 'Create this live event / venue',
       details: [
@@ -937,14 +950,22 @@ export default function AdminDashboard() {
       window.alert('A different super user must approve this request.');
       return;
     }
+    // In-flight guard: the gateway round-trip can take seconds and a second
+    // click on the money-moving Approve button must not fire a second POST.
+    if (approvingRefundRequestRef.current) return;
     if (!confirmAdminAction({
       action: `Approve refund ${request.bookingReference}`,
       details: [`Amount: ${request.amountFormatted}`, `Requested by: ${request.requestedBy}`, `Reason: ${request.reason}`],
       warning: 'Approval will immediately submit the void/refund to Authorize.Net. This financial action cannot be undone.',
     })) return;
     const note = window.prompt('Optional approval note:') || '';
-    const result = await approveRefundRequest(token, request.id, note);
-    window.alert(result.ok ? `Refund approved and ${result.action || 'reversal'} completed.` : `Approval failed: ${result.error || 'Unknown error'}`);
+    approvingRefundRequestRef.current = true;
+    try {
+      const result = await approveRefundRequest(token, request.id, note);
+      window.alert(result.ok ? `Refund approved and ${result.action || 'reversal'} completed.` : `Approval failed: ${result.error || 'Unknown error'}`);
+    } finally {
+      approvingRefundRequestRef.current = false;
+    }
     loadRefundRequests();
     loadDashboard();
   };

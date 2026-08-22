@@ -39,7 +39,7 @@ export function registerTicketRoutes(app) {
       const items = await all(`
         SELECT bi.id as item_id, bi.first_name, bi.last_name, bi.price, bi.reference_number,
                seats.table_number, seats.chair_number,
-               COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
+               COALESCE(p.name, sp.name) as package_name, bi.price as package_price
         FROM booking_items bi
         JOIN seats ON seats.id = bi.seat_id
         LEFT JOIN packages p ON p.id = bi.package_id

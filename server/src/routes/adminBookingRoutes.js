@@ -260,7 +260,7 @@ export function registerAdminBookingRoutes(app, {
              s.date as session_date, s.time as session_time,
              bi.first_name, bi.last_name,
              seats.table_number, seats.chair_number,
-             COALESCE(p.name, sp.name) as package_name, COALESCE(p.price, sp.price) as package_price
+             COALESCE(p.name, sp.name) as package_name, bi.price as package_price
       FROM bookings b
       JOIN sessions s ON b.session_id = s.id
       JOIN booking_items bi ON bi.booking_id = b.id
@@ -529,11 +529,6 @@ export function registerAdminBookingRoutes(app, {
       const session = await get('SELECT id, date, time, event_title, session_type, is_special_event, ticket_limit FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
       if (!session) return res.status(404).json({ error: 'Session not found.' });
 
-      const capacity = await withSessionCapacityLock(sessionId, () => getLiveEventCapacity(session));
-      if (capacity && capacity.remaining < 1) {
-        return res.status(409).json({ error: 'This live event has reached its ticket limit.' });
-      }
-
       const seat = await get(
         'SELECT * FROM seats WHERE session_id = ? AND table_number = ? AND chair_number = ?',
         [sessionId, tableNumber, chairNumber]
@@ -556,20 +551,48 @@ export function registerAdminBookingRoutes(app, {
       const now = new Date().toISOString();
       const label = type === 'donation' ? 'Donation assigned seat' : 'Promo assigned seat';
 
-      await run(
-        `INSERT INTO bookings
-          (id, session_id, reference_number, total_amount, payment_status, created_at,
-           email, customer_first_name, customer_last_name, payment_provider, booking_source, admin_note)
-         VALUES (?, ?, ?, 0, 'paid', ?, NULL, ?, ?, 'admin_assigned', ?, ?)`,
-        [bookingId, sessionId, bookingRef, now, firstName, lastName, type, note || label]
-      );
-      await run(
-        `INSERT INTO booking_items
-          (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
-         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-        [itemId, bookingId, firstName, lastName, seat.id, pkg.id, itemRef]
-      );
-      await run("UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?", [seat.id]);
+      // Atomic create inside the capacity lock: the capacity check must not
+      // be separated from the writes (two concurrent assigns could both pass
+      // remaining=1), and the seat flip must re-assert vacancy so a customer
+      // hold placed between the check and the write is never clobbered.
+      const creation = await withSessionCapacityLock(sessionId, async () => {
+        const capacity = await getLiveEventCapacity(session);
+        if (capacity && capacity.remaining < 1) {
+          return { status: 409, error: 'This live event has reached its ticket limit.' };
+        }
+        try {
+          await withTransaction(async tx => {
+            const seatClaim = await tx.run(
+              `UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL
+               WHERE id = ? AND status = 'vacant' AND is_disabled = 0`,
+              [seat.id]
+            );
+            if (seatClaim.changes !== 1) {
+              throw Object.assign(new Error('seat_no_longer_vacant'), { seatConflict: true });
+            }
+            await tx.run(
+              `INSERT INTO bookings
+                (id, session_id, reference_number, total_amount, payment_status, created_at,
+                 email, customer_first_name, customer_last_name, payment_provider, booking_source, admin_note)
+               VALUES (?, ?, ?, 0, 'paid', ?, NULL, ?, ?, 'admin_assigned', ?, ?)`,
+              [bookingId, sessionId, bookingRef, now, firstName, lastName, type, note || label]
+            );
+            await tx.run(
+              `INSERT INTO booking_items
+                (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number)
+               VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+              [itemId, bookingId, firstName, lastName, seat.id, pkg.id, itemRef]
+            );
+          });
+        } catch (err) {
+          if (err?.seatConflict) {
+            return { status: 409, error: `Seat T${tableNumber}-C${chairNumber} is no longer vacant.` };
+          }
+          throw err;
+        }
+        return { status: 200 };
+      });
+      if (creation.status !== 200) return res.status(creation.status).json({ error: creation.error });
 
       await logAudit('assigned_ticket_created', 'booking', bookingId, {
         bookingReference: bookingRef,

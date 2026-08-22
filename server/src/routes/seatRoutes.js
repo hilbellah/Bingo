@@ -29,7 +29,18 @@ export function registerSeatRoutes(app, { bookingLimiter, holdMinutes, io }) {
           return { status: 409, body: { error: 'This live event has reached its ticket limit.', bookingClosed: true, reason: 'sold_out' } };
         }
         const holdUntil = holdExpiresAt(holdMinutes);
-        await run(`UPDATE seats SET status = 'held', held_by = ?, held_until = ? WHERE id = ?`, [holderId, holdUntil, seatId]);
+        // Guarded write: markBookingPaid flips seats to 'sold' outside this
+        // capacity lock, so re-assert the preconditions in the UPDATE itself
+        // or a lock racing a payment could drag a sold seat back to 'held'.
+        const locked = await run(
+          `UPDATE seats SET status = 'held', held_by = ?, held_until = ?
+           WHERE id = ? AND is_disabled = 0 AND status != 'sold'
+             AND (status = 'vacant' OR held_by = ? OR held_until IS NULL OR held_until <= ?)`,
+          [holderId, holdUntil, seatId, holderId, new Date().toISOString()]
+        );
+        if (locked.changes !== 1) {
+          return { status: 409, body: { error: 'Seat is no longer available' } };
+        }
         return { status: 200, body: { success: true, holdUntil }, seat, holdUntil };
       });
       if (result.status !== 200) return res.status(result.status).json(result.body);

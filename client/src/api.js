@@ -127,14 +127,24 @@ export async function initiateBooking(sessionId, holderId, attendees, customer) 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, holderId, attendees, email, customerFirstName, customerLastName })
   });
-  return res.json();
+  // A proxy/server error page is not JSON; surface it as a normal { error }
+  // instead of throwing mid-checkout.
+  let data = null;
+  try { data = await res.json(); } catch { /* non-JSON body */ }
+  if (!res.ok) {
+    return data && data.error ? data : { error: `Could not start payment (HTTP ${res.status}). Please try again.` };
+  }
+  return data || { error: 'Could not start payment. Please try again.' };
 }
 
 // Polls booking payment status. Used by BookingProcessing while waiting for
 // the webhook to flip the booking to 'paid' / 'failed' / 'cancelled'.
 export async function fetchBookingStatus(bookingId) {
   const res = await fetch(`${API}/bookings/${encodeURIComponent(bookingId)}/status`);
-  return res.json();
+  let data = null;
+  try { data = await res.json(); } catch { /* non-JSON body */ }
+  if (res.status === 404) return { notFound: true, ...(data || {}) };
+  return data || { error: `HTTP ${res.status}` };
 }
 
 export async function editPendingBooking(bookingId) {

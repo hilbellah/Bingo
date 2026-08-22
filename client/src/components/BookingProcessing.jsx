@@ -38,6 +38,11 @@ export default function BookingProcessing({ bookingId }) {
         const res = await fetchBookingStatus(bookingId);
         if (cancelled) return;
 
+        if (res.notFound) {
+          setPhase('not_found');
+          return;
+        }
+
         if (res.status === 'paid') {
           setReferenceNumber(res.referenceNumber);
           // Fetch full receipt data
@@ -260,6 +265,21 @@ export default function BookingProcessing({ bookingId }) {
         <h1 className="text-3xl font-bold text-brand-blue text-center">Payment Reversed</h1>
         <p className="text-gray-600 text-center mt-2">
           This payment was voided or refunded through the staff review process. No second ticket was issued and no occupied seat was released. Please contact the bingo office before booking again if you need assistance.
+        </p>
+        <button onClick={goHome} className="w-full bg-brand-blue text-white py-3 px-6 rounded-xl font-semibold hover:bg-brand-blue-dark transition-colors mt-6">
+          Return to Home
+        </button>
+      </CenteredCard>
+    );
+  }
+
+  if (phase === 'not_found') {
+    return (
+      <CenteredCard>
+        <div className="w-20 h-20 bg-gradient-to-br from-gray-400 to-gray-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-white text-3xl font-bold">?</div>
+        <h1 className="text-3xl font-bold text-brand-blue text-center">Booking Not Found</h1>
+        <p className="text-gray-600 text-center mt-2">
+          We couldn't find this booking. It may have expired or the link may be old. If you completed a payment and received a confirmation email, your booking is safe — otherwise please start a new booking.
         </p>
         <button onClick={goHome} className="w-full bg-brand-blue text-white py-3 px-6 rounded-xl font-semibold hover:bg-brand-blue-dark transition-colors mt-6">
           Return to Home

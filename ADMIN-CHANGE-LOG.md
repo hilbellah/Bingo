@@ -398,6 +398,7 @@ Running record of admin/backend changes, where to access them, and the save-poin
 - Receipt rendering regression check passed for partial refunds and full voids.
 - Client production build passed.
 - Project syntax check passed.
+- Production custom domain confirmed as `https://booking.wolastoqcasino.ca`; staff documentation should use this domain instead of the underlying Render host.
 
 ## How To Update This File
 

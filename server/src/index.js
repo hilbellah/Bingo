@@ -62,7 +62,7 @@ import {
   startMaintenanceTasks
 } from './startup.js';
 import { createUploadMiddleware } from './uploads.js';
-import { formatCurrency, formatLocalDate, generateRef } from './utils/format.js';
+import { formatCurrency, formatVenueDate, generateRef } from './utils/format.js';
 import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode } from './services/email.js';
 import {
   createHostedPaymentPage,
@@ -402,6 +402,18 @@ async function validateBookingRequest(body, { requireEmailVerification = true, r
 
   if (!sessionId || !holderId || !attendees?.length) {
     return { ok: false, statusCode: 400, error: 'Missing required fields' };
+  }
+
+  // One chair per attendee: a double-tap race in the client could submit the
+  // same seat twice, producing two charged tickets for one physical chair.
+  const attendeeSeatIds = attendees.map(att => String(att?.seatId || '').trim()).filter(Boolean);
+  if (new Set(attendeeSeatIds).size !== attendeeSeatIds.length) {
+    return { ok: false, statusCode: 400, error: 'Each attendee must have a different seat.' };
+  }
+  // Every customer flow caps at 6 tickets per order; enforce it here too so
+  // a client-side race can never charge an oversized booking.
+  if (attendees.length > 6) {
+    return { ok: false, statusCode: 400, error: 'A booking can include at most 6 tickets.' };
   }
 
   // Email is optional in the payment flow; Authorize.Net may still show its own
@@ -824,11 +836,20 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
       }
       return { ok: false, rejection: 'booking_already_paid_by_another_transaction', booking };
     }
-    if (['refunded', 'voided'].includes(booking.payment_status) && booking.transaction_id === transactionId) {
+    if (['refunded', 'voided', 'partially_refunded'].includes(booking.payment_status) && booking.transaction_id === transactionId) {
+      // Idempotent echo of the transaction that already paid this booking —
+      // its current (possibly partially refunded) state must stand.
       return { ok: false, alreadyReversed: true, booking };
     }
     if (booking.payment_status === 'payment_review' && booking.transaction_id === transactionId) {
       return { ok: false, requiresReview: true, booking };
+    }
+    if (['refunded', 'voided', 'partially_refunded', 'payment_review'].includes(booking.payment_status)
+      && transactionId && booking.transaction_id && booking.transaction_id !== transactionId) {
+      // A different charge arriving after the booking reached a completed
+      // financial state must never overwrite that state or its original
+      // transaction id — surface the stray charge for manual review instead.
+      return { ok: false, rejection: 'stale_payment_after_completed_state', preserveBookingState: true, booking };
     }
 
     const items = await tx.all('SELECT * FROM booking_items WHERE booking_id = ? ORDER BY seat_id', [bookingId]);
@@ -850,6 +871,12 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
 
     let rejection = null;
     if (booking.payment_status !== 'pending') rejection = `booking_status_${booking.payment_status}`;
+    // The gateway-verified amount must match what this booking currently
+    // charges. A stale hosted-payment page can complete at an outdated total
+    // after the reusable-checkout path rebuilt the booking's line items.
+    else if (verifiedTransaction?.ok
+      && Number.isFinite(Number(verifiedTransaction.amountCents))
+      && Number(verifiedTransaction.amountCents) !== Number(booking.total_amount)) rejection = 'payment_amount_mismatch';
     else if (conflicts.length > 0) rejection = 'seat_owned_by_another_paid_booking';
     else if (seats.length !== seatIds.length || seats.some(seat => seat.status !== 'held')) rejection = 'seat_hold_expired_or_released';
     else if (booking.checkout_holder_id && seats.some(seat => seat.held_by !== booking.checkout_holder_id)) rejection = 'seat_held_by_another_customer';
@@ -880,6 +907,48 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
 
   if (!claim.ok) {
     if (claim.alreadyReversed || claim.requiresReview) return claim;
+    if (claim.preserveBookingState) {
+      await logPaymentEvent(bookingId, 'stale_payment_requires_review', 'automatic_payment_safety', {
+        strayTransactionId: transactionId,
+        originalTransactionId: claim.booking.transaction_id,
+        bookingStatus: claim.booking.payment_status,
+      });
+      await logAudit('stale_payment_requires_review', 'booking', bookingId, {
+        referenceNumber: claim.booking.reference_number,
+        strayTransactionId: transactionId,
+        originalTransactionId: claim.booking.transaction_id,
+        bookingStatus: claim.booking.payment_status,
+      });
+      io.to('admin:receipts').emit('booking:payment_review', {
+        bookingId,
+        referenceNumber: claim.booking.reference_number,
+        transactionId,
+        rejection: claim.rejection,
+      });
+      return { ok: false, paymentRejected: true, requiresReview: true, rejection: claim.rejection };
+    }
+    if (claim.rejection === 'booking_already_paid_by_another_transaction') {
+      // The booking is legitimately paid by its original transaction. Do NOT
+      // demote it to payment_review or overwrite transaction_id — that lost
+      // the real payment's id and let the refund flow release paid seats.
+      // Surface the duplicate charge for a manual gateway-side refund instead.
+      await logPaymentEvent(bookingId, 'duplicate_payment_requires_review', 'automatic_payment_safety', {
+        duplicateTransactionId: transactionId,
+        originalTransactionId: claim.booking.transaction_id,
+      });
+      await logAudit('duplicate_payment_requires_review', 'booking', bookingId, {
+        referenceNumber: claim.booking.reference_number,
+        duplicateTransactionId: transactionId,
+        originalTransactionId: claim.booking.transaction_id,
+      });
+      io.to('admin:receipts').emit('booking:payment_review', {
+        bookingId,
+        referenceNumber: claim.booking.reference_number,
+        transactionId,
+        rejection: claim.rejection,
+      });
+      return { ok: false, paymentRejected: true, requiresReview: true, rejection: claim.rejection };
+    }
     if (transactionId && claim.booking) {
       return quarantineRejectedApprovedPayment({
         booking: claim.booking,
@@ -1474,7 +1543,7 @@ app.get('/api/sessions', async (req, res) => {
   try {
     await releaseExpiredHolds(io);
     await archivePastSessions();
-    const today = formatLocalDate(new Date());
+    const today = formatVenueDate(new Date());
     const sessions = await all(
       `SELECT s.*,
         COALESCE(SUM(CASE WHEN st.status = 'vacant' AND st.is_disabled = 0 THEN 1 ELSE 0 END), 0) as available_seats,
@@ -1566,7 +1635,7 @@ app.get('/api/theme', async (req, res) => {
 // --- Announcements (public) ---
 app.get('/api/announcements', async (req, res) => {
   try {
-    const today = formatLocalDate(new Date());
+    const today = formatVenueDate(new Date());
     const announcements = await all(
       `SELECT * FROM announcements
        WHERE is_active = 1
@@ -1883,7 +1952,7 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           itemReferenceBySeat: reusable.itemReferenceBySeat,
         });
 
-        const result = await createHostedPaymentPage({
+        const result = await testablePaymentServices.createHostedPaymentPage({
           bookingId: reusable.bookingId,
           amountCents: rebuiltBooking.totalAmount,
           email: trimmedEmail,
@@ -1898,24 +1967,80 @@ app.post('/api/bookings/initiate', bookingLimiter, async (req, res) => {
           return { statusCode: 502, body: { error: 'Could not start payment. Please try again.' } };
         }
 
-        await run(
-          `DELETE FROM booking_addons
-           WHERE booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?)`,
-          [reusable.bookingId]
-        );
-        await run('DELETE FROM booking_items WHERE booking_id = ?', [reusable.bookingId]);
-        for (const itemRow of rebuiltBooking.itemRows) {
-          await run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', itemRow);
+        // Atomic rebuild: a payment webhook landing mid-rebuild must never
+        // observe the booking with zero items. Also stamp the CURRENT
+        // holder id — the reused booking may have been created from another
+        // device, and markBookingPaid rejects (quarantines) a paid booking
+        // whose seats are held by a different holder than the one recorded.
+        // The booking is locked and re-confirmed 'pending' INSIDE the
+        // transaction: the hosted-token gateway call above takes seconds, and
+        // the previous payment can complete during it — rebuilding a paid
+        // booking would change its items/total after money already moved.
+        const rebuildResult = await withTransaction(async tx => {
+          const lockedBooking = await tx.getForUpdate(
+            'SELECT id, payment_status FROM bookings WHERE id = ?',
+            [reusable.bookingId]
+          );
+          if (!lockedBooking || lockedBooking.payment_status !== 'pending') {
+            return { ok: false, paymentStatus: lockedBooking?.payment_status || 'missing' };
+          }
+          await tx.run(
+            `DELETE FROM booking_addons
+             WHERE booking_item_id IN (SELECT id FROM booking_items WHERE booking_id = ?)`,
+            [reusable.bookingId]
+          );
+          await tx.run('DELETE FROM booking_items WHERE booking_id = ?', [reusable.bookingId]);
+          for (const itemRow of rebuiltBooking.itemRows) {
+            await tx.run('INSERT INTO booking_items (id, booking_id, first_name, last_name, seat_id, package_id, price, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', itemRow);
+          }
+          for (const addonRow of rebuiltBooking.addonRows) {
+            await tx.run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)', addonRow);
+          }
+          const finalized = await tx.run(
+            `UPDATE bookings
+             SET hosted_token = ?, payment_attempted_at = ?, customer_first_name = ?, customer_last_name = ?, total_amount = ?, checkout_holder_id = ?
+             WHERE id = ? AND payment_status = 'pending'`,
+            [result.token, new Date().toISOString(), customerFirstName, customerLastName, rebuiltBooking.totalAmount, holderId, reusable.bookingId]
+          );
+          if (finalized.changes !== 1) {
+            throw Object.assign(new Error('booking_no_longer_pending'), { rebuildConflict: true });
+          }
+          return { ok: true };
+        }).catch(err => {
+          if (err?.rebuildConflict) return { ok: false, paymentStatus: 'changed' };
+          throw err;
+        });
+        if (!rebuildResult.ok) {
+          const statusNow = rebuildResult.paymentStatus === 'changed'
+            ? (await get('SELECT payment_status FROM bookings WHERE id = ?', [reusable.bookingId]))?.payment_status || 'missing'
+            : rebuildResult.paymentStatus;
+          console.warn(`[bookings] /initiate rebuild aborted: booking ${reusable.bookingId} is '${statusNow}', not pending`);
+          await logPaymentEvent(reusable.bookingId, 'initiate_rebuild_aborted_not_pending', 'server', {
+            paymentStatus: statusNow,
+          });
+          // Only claim the payment completed when it actually did — the
+          // booking may equally have failed, been cancelled, or vanished.
+          const completedStates = ['paid', 'partially_refunded', 'refunded', 'voided', 'payment_review'];
+          if (completedStates.includes(statusNow)) {
+            return {
+              statusCode: 409,
+              body: {
+                error: 'Your earlier payment for these seats has already completed. Check your email for the confirmation — do not pay again.',
+                bookingId: reusable.bookingId,
+                referenceNumber: reusable.refNumber,
+                alreadyCompleted: true,
+              },
+            };
+          }
+          return {
+            statusCode: 409,
+            body: {
+              error: 'This checkout is no longer active. Please refresh the page and start a new booking.',
+              bookingId: reusable.bookingId,
+              referenceNumber: reusable.refNumber,
+            },
+          };
         }
-        for (const addonRow of rebuiltBooking.addonRows) {
-          await run('INSERT INTO booking_addons (id, booking_item_id, package_id, quantity, price) VALUES (?, ?, ?, ?, ?)', addonRow);
-        }
-        await run(
-          `UPDATE bookings
-           SET hosted_token = ?, payment_attempted_at = ?, customer_first_name = ?, customer_last_name = ?, total_amount = ?
-           WHERE id = ?`,
-          [result.token, new Date().toISOString(), customerFirstName, customerLastName, rebuiltBooking.totalAmount, reusable.bookingId]
-        );
         await saveDb();
         await logPaymentEvent(reusable.bookingId, 'initiated', 'server', {
           totalAmount: rebuiltBooking.totalAmount,
@@ -2125,7 +2250,12 @@ function getReturnTransactionId(req) {
 }
 
 async function reconcilePaymentReturn(booking, transactionId) {
-  if (!transactionId || booking.payment_status === 'paid') return;
+  if (!transactionId) return;
+  // Same-transaction return on a paid booking is the normal idempotent case;
+  // a DIFFERENT transaction id must proceed so the duplicate charge is
+  // verified and flagged rather than silently ignored.
+  if (booking.payment_status === 'paid'
+    && (!booking.transaction_id || booking.transaction_id === transactionId)) return;
 
   const verify = await verifyTransaction(transactionId);
   if (!verify.ok) {
@@ -2324,6 +2454,17 @@ app.all('/payment/cancel', async (req, res) => {
 //   net.authorize.payment.void.created          — pre-settlement void
 //   net.authorize.payment.fraud.declined        — Authorize.Net's fraud rule rejected
 //   net.authorize.payment.fraud.held            — held for manual fraud review
+// Test-only seam: lets API checks stub gateway calls (webhook verification,
+// hosted-page token creation), mirroring the paymentServices injection used
+// by the refund approval routes. No-op outside NODE_ENV=test.
+const testablePaymentServices = { verifyTransaction, createHostedPaymentPage };
+export function __setPaymentServicesForTesting(overrides = {}) {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('__setPaymentServicesForTesting is test-only');
+  }
+  Object.assign(testablePaymentServices, overrides);
+}
+
 async function processAuthorizeNetWebhook({ rawBody, sigHeader, event }) {
   const { eventType, payload, notificationId } = event || {};
   const transId = payload?.id;
@@ -2448,8 +2589,12 @@ async function processAuthorizeNetWebhook({ rawBody, sigHeader, event }) {
 
   try {
     if (eventType === 'net.authorize.payment.authcapture.created') {
-      // Idempotent — second webhook for the same booking is a no-op.
-      if (booking.payment_status === 'paid') {
+      // Idempotent — a second webhook for the SAME transaction is a no-op.
+      // A different transaction id on an already-paid booking is a real
+      // duplicate charge and must fall through to markBookingPaid, whose
+      // duplicate branch logs and surfaces it without touching the booking.
+      if (booking.payment_status === 'paid'
+        && (!transId || !booking.transaction_id || booking.transaction_id === transId)) {
         return;
       }
       // Verify the transaction with Authorize.Net before flipping. Defence
@@ -2490,11 +2635,69 @@ async function processAuthorizeNetWebhook({ rawBody, sigHeader, event }) {
         });
       }
     } else if (eventType === 'net.authorize.payment.refund.created') {
-      await markBookingRefunded({
-        bookingId: booking.id,
-        transactionId: transId,
-        source: 'authorize_net_webhook',
-      });
+      // transId is the REFUND transaction's id, not the original charge.
+      // Refunds issued through the admin approval flow are already recorded
+      // on booking_items before this webhook arrives — treating the echo as
+      // a new full refund used to escalate partial refunds into full ones,
+      // releasing seats the customer still paid for.
+      const alreadyRecorded = await get(
+        'SELECT id FROM booking_items WHERE booking_id = ? AND refund_transaction_id = ?',
+        [booking.id, transId]
+      );
+      if (alreadyRecorded) {
+        await logPaymentEvent(booking.id, 'webhook_refund_already_recorded', 'authorize_net_webhook', {
+          eventType, notificationId, transId, invoiceNumber,
+        });
+        return;
+      }
+      if (['refunded', 'voided'].includes(booking.payment_status)) {
+        return;
+      }
+
+      // Unknown refund transaction — issued directly in the Authorize.Net
+      // dashboard, or our own record failed after the gateway succeeded.
+      // Verify the refunded amount before deciding what it covers.
+      const verify = await testablePaymentServices.verifyTransaction(transId);
+      if (!verify.ok) {
+        console.error(`[webhooks] refund verification failed for booking=${booking.id} refundTransId=${transId}: ${verify.error || 'unknown error'}`);
+        await logPaymentEvent(booking.id, 'webhook_refund_verify_failed', 'authorize_net_webhook', {
+          eventType, notificationId, transId, invoiceNumber,
+          error: verify.error || null,
+        });
+        return;
+      }
+      const refundedRow = await get(
+        `SELECT COALESCE(SUM(refund_amount), 0) as total FROM booking_items
+         WHERE booking_id = ? AND COALESCE(refund_status, 'active') = 'refunded'`,
+        [booking.id]
+      );
+      const outstandingCents = Math.max(0, Number(booking.total_amount || 0) - Number(refundedRow?.total || 0));
+      const refundCents = Number(verify.amountCents || 0);
+      if (outstandingCents > 0 && refundCents >= outstandingCents) {
+        await markBookingRefunded({
+          bookingId: booking.id,
+          transactionId: booking.transaction_id || transId,
+          refundTransactionId: transId,
+          source: 'authorize_net_webhook',
+        });
+      } else {
+        // A partial external refund can't be attributed to a specific ticket
+        // from here — record it for reconciliation instead of guessing.
+        // NOTE for admins: refund the ticket from the admin panel, never from
+        // the Authorize.Net dashboard, or the money moves without the seat.
+        console.warn(`[webhooks] external partial refund for booking=${booking.id} ref=${invoiceNumber} amount=${refundCents} outstanding=${outstandingCents} — flagged for manual reconciliation`);
+        await logPaymentEvent(booking.id, 'webhook_external_partial_refund', 'authorize_net_webhook', {
+          eventType, notificationId, transId, invoiceNumber,
+          refundAmountCents: refundCents,
+          outstandingCents,
+        });
+        io.to('admin:receipts').emit('booking:external_partial_refund', {
+          bookingId: booking.id,
+          bookingReference: booking.reference_number,
+          refundTransactionId: transId,
+          amountCents: refundCents,
+        });
+      }
     } else if (eventType === 'net.authorize.payment.void.created') {
       await markBookingVoided({
         bookingId: booking.id,

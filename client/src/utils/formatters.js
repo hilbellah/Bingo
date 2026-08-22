@@ -5,6 +5,24 @@ export function parseLocalDate(dateStr) {
   return new Date(`${dateStr}T12:00:00`);
 }
 
+// The venue runs on Atlantic time; "today" must be the venue's calendar date
+// no matter what timezone the admin's browser is in (UTC-based defaults made
+// the dashboard flip to tomorrow from ~8-9 PM Atlantic).
+const VENUE_TIME_ZONE = 'America/Moncton';
+
+export function venueToday() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: VENUE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+export function formatLocalDateStr(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export function formatTime(timeStr) {
   if (!timeStr) return '';
   const [h, m] = timeStr.split(':').map(Number);
@@ -31,7 +49,7 @@ export function getWeekStart(dateStr) {
   const diff = (day === 0 ? -6 : 1) - day;
   const monday = new Date(date);
   monday.setDate(date.getDate() + diff);
-  return monday.toISOString().split('T')[0];
+  return formatLocalDateStr(monday);
 }
 
 export function formatWeekRange(weekStart) {

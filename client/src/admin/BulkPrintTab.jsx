@@ -417,25 +417,36 @@ export default function BulkPrintTab() {
     ticket.sessionType === 'event' || printParts.nameCopy || printParts.seatCopy || printParts.singleCopy
   );
   const selectedReceiptBookings = useMemo(() => {
-    if (!bulkData?.sessions || selectedTicketIds.size === 0) return [];
+    // Derive from the filter-visible selection (selectedTickets), not the raw
+    // id set — after a filter change the raw set can still contain hidden
+    // tickets, printing receipts the admin can't see selected anywhere.
+    const visibleSelectedIds = new Set(selectedTickets.map(ticket => ticket.id));
+    if (!bulkData?.sessions || visibleSelectedIds.size === 0) return [];
     const formatMoney = (cents) => 'CA$' + (Math.max(0, Number(cents) || 0) / 100).toFixed(2);
     const receiptBookings = [];
 
     for (const session of bulkData.sessions) {
       for (const booking of session.bookings || []) {
-        const selectedItems = (booking.tickets || []).filter(ticket => selectedTicketIds.has(ticket.id));
+        const selectedItems = (booking.tickets || []).filter(ticket => visibleSelectedIds.has(ticket.id));
         if (selectedItems.length === 0) continue;
 
         const allItemsSubtotal = (booking.tickets || []).reduce((sum, ticket) => {
           const addonTotal = (ticket.addons || []).reduce((addonSum, addon) => addonSum + (Number(addon.price) || 0), 0);
           return sum + (Number(ticket.packagePrice) || 0) + addonTotal;
         }, 0);
-        const feePerTicket = booking.tickets?.length
-          ? Math.max(0, Math.round(((Number(booking.totalAmount) || 0) - allItemsSubtotal) / booking.tickets.length))
-          : 0;
+        // Distribute the service charge exactly: floor per ticket, remainder
+        // cents on the first tickets, so the receipts sum to what was charged.
+        const ticketCount = booking.tickets?.length || 0;
+        const totalFee = Math.max(0, (Number(booking.totalAmount) || 0) - allItemsSubtotal);
+        const baseFee = ticketCount ? Math.floor(totalFee / ticketCount) : 0;
+        const feeRemainder = ticketCount ? totalFee - baseFee * ticketCount : 0;
+        const feeForTicket = (ticket) => {
+          const index = (booking.tickets || []).findIndex(item => item.id === ticket.id);
+          return baseFee + (index >= 0 && index < feeRemainder ? 1 : 0);
+        };
         const ticketTotalAmount = (ticket) => {
           const addonTotal = (ticket.addons || []).reduce((addonSum, addon) => addonSum + (Number(addon.price) || 0), 0);
-          return (Number(ticket.packagePrice) || 0) + addonTotal + feePerTicket;
+          return (Number(ticket.packagePrice) || 0) + addonTotal + feeForTicket(ticket);
         };
         const sessionType = session.sessionType || (session.isSpecialEvent ? 'special_bingo' : 'regular_bingo');
         const sessionTitle = session.eventTitle
@@ -482,7 +493,7 @@ export default function BulkPrintTab() {
     }
 
     return receiptBookings;
-  }, [bulkData, selectedTicketIds]);
+  }, [bulkData, selectedTickets]);
 
   const printedCount = allTickets.filter(ticket => ticket.printedAt).length;
   const unprintedCount = allTickets.length - printedCount;
@@ -592,7 +603,13 @@ export default function BulkPrintTab() {
   const handlePrintThermalReceipts = () => {
     if (selectedReceiptBookings.length === 0) return;
     const printedTicketIds = selectedTickets.map(ticket => ticket.id);
-    printBulkBookingReceipts(selectedReceiptBookings, receiptConfig, () => recordPrintedTickets(printedTicketIds));
+    // The browser can't tell Print from Cancel, so confirm before recording —
+    // otherwise a cancelled dialog silently marked every ticket as printed.
+    printBulkBookingReceipts(selectedReceiptBookings, receiptConfig, () => {
+      if (window.confirm(`Mark ${printedTicketIds.length} ticket(s) as printed?\n\nChoose Cancel if you cancelled the print dialog.`)) {
+        recordPrintedTickets(printedTicketIds);
+      }
+    });
   };
 
   const handleLoadBulkTicketsAndScroll = async () => {
@@ -605,7 +622,11 @@ export default function BulkPrintTab() {
     const body = buildSpecialPaperPrintBody(bulkData.sessions, selectedTicketsForPrint, printParts);
     if (!body) return;
     const printedTicketIds = selectedTicketsForPrint.map(ticket => ticket.id);
-    writeSpecialPaperPrintDocument(body, () => recordPrintedTickets(printedTicketIds));
+    writeSpecialPaperPrintDocument(body, () => {
+      if (window.confirm(`Mark ${printedTicketIds.length} ticket(s) as printed?\n\nChoose Cancel if you cancelled the print dialog.`)) {
+        recordPrintedTickets(printedTicketIds);
+      }
+    });
   };
 
   const walkInSessions = useMemo(() => (

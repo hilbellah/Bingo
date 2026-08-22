@@ -244,14 +244,20 @@ export function registerAdminRefundApprovalRoutes(app, {
       }
       const gatewayId = gateway.refundTransId || gateway.voidTransId;
       confirmedGateway = { action, gatewayId };
+      // A void reverses the ENTIRE unsettled charge (item + service fee +
+      // HST), not just the requested item amount — record what actually
+      // moved so the books reconcile with Authorize.Net.
+      const reversedAmountCents = action === 'void'
+        ? Number(booking.total_amount || claimed.amount_cents)
+        : Number(claimed.amount_cents);
       const markResult = item
-        ? await markBookingItemRefunded({ bookingId: booking.id, bookingItemId: item.id, transactionId: booking.transaction_id, refundTransactionId: gatewayId, amountCents: Number(claimed.amount_cents), action, source: 'approved_refund_request' })
+        ? await markBookingItemRefunded({ bookingId: booking.id, bookingItemId: item.id, transactionId: booking.transaction_id, refundTransactionId: gatewayId, amountCents: reversedAmountCents, action, source: 'approved_refund_request' })
         : action === 'void'
           ? await markBookingVoided({ bookingId: booking.id, transactionId: booking.transaction_id, voidTransactionId: gatewayId, source: 'approved_refund_request' })
           : await markBookingRefunded({ bookingId: booking.id, transactionId: booking.transaction_id, refundTransactionId: gatewayId, source: 'approved_refund_request' });
       if (!markResult?.ok) throw new Error(`Payment was reversed but the booking update failed: ${markResult?.error || 'unknown error'}`);
 
-      await run("UPDATE refund_requests SET status = 'completed', gateway_action = ?, gateway_transaction_id = ?, failure_reason = NULL WHERE id = ? AND status = 'processing'", [action, gatewayId, claimed.id]);
+      await run("UPDATE refund_requests SET status = 'completed', gateway_action = ?, gateway_transaction_id = ?, amount_cents = ?, failure_reason = NULL WHERE id = ? AND status = 'processing'", [action, gatewayId, reversedAmountCents, claimed.id]);
       await saveDb();
       await logAudit('refund_approval_completed', item ? 'booking_item' : 'booking', item?.id || booking.id, { requestId: claimed.id, approvedBy: req.adminUser.email, action, gatewayTransactionId: gatewayId });
       io.to('admin:receipts').emit('refund_request:updated', { requestId: claimed.id, status: 'completed' });

@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { all, get, run, saveDb } from '../database.js';
+import { all, get, run, saveDb, withTransaction } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { archivePastSessions } from '../services/sessionArchive.js';
 import { releaseExpiredHolds } from '../services/holds.js';
@@ -683,11 +683,55 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       const packageValidation = validateSessionPackagesForType(sessionType, packageDrafts);
       if (!packageValidation.ok) return res.status(400).json({ error: packageValidation.error });
 
-      await run('DELETE FROM session_packages WHERE session_id = ?', [req.params.id]);
-      for (const pkg of packageValidation.packages) {
-        await run('INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [uuid(), req.params.id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0, pkg.description || '']);
+      // ID-preserving sync. The old delete-all + reinsert-with-new-UUIDs
+      // orphaned booking_items/booking_addons.package_id on every save after
+      // tickets sold: names went NULL on receipts/reports and PHD stock
+      // stopped counting sold devices.
+      const existingRows = await all('SELECT id FROM session_packages WHERE session_id = ?', [req.params.id]);
+      const existingIds = new Set(existingRows.map(row => row.id));
+      const keptIds = new Set(
+        packageValidation.packages
+          .filter(pkg => pkg.id && existingIds.has(pkg.id))
+          .map(pkg => pkg.id)
+      );
+      const removedIds = [...existingIds].filter(id => !keptIds.has(id));
+      if (removedIds.length > 0) {
+        const placeholders = removedIds.map(() => '?').join(',');
+        const referenced = await get(
+          `SELECT sp.name FROM session_packages sp
+           WHERE sp.id IN (${placeholders})
+             AND (EXISTS (SELECT 1 FROM booking_items bi WHERE bi.package_id = sp.id)
+               OR EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.package_id = sp.id))
+           LIMIT 1`,
+          removedIds
+        );
+        if (referenced) {
+          return res.status(409).json({
+            error: `"${referenced.name}" already has sold tickets and cannot be removed. Rename or reprice it instead.`,
+          });
+        }
       }
+      await withTransaction(async tx => {
+        if (removedIds.length > 0) {
+          const placeholders = removedIds.map(() => '?').join(',');
+          await tx.run(`DELETE FROM session_packages WHERE id IN (${placeholders})`, removedIds);
+        }
+        for (const pkg of packageValidation.packages) {
+          if (pkg.id && existingIds.has(pkg.id)) {
+            await tx.run(
+              `UPDATE session_packages
+               SET name = ?, price = ?, type = ?, max_quantity = ?, sort_order = ?, is_phd = ?, description = ?
+               WHERE id = ? AND session_id = ?`,
+              [pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0, pkg.description || '', pkg.id, req.params.id]
+            );
+          } else {
+            await tx.run(
+              'INSERT INTO session_packages (id, session_id, name, price, type, max_quantity, sort_order, is_phd, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [uuid(), req.params.id, pkg.name, pkg.price, pkg.type, pkg.max_quantity || 1, pkg.sort_order || 0, pkg.is_phd ? 1 : 0, pkg.description || '']
+            );
+          }
+        }
+      });
       res.json({ success: true, count: packageValidation.packages.length });
     } catch (err) {
       console.error('POST /api/admin/sessions/:id/packages failed:', err);

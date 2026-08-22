@@ -1,5 +1,5 @@
 import { all, get, run } from '../database.js';
-import { formatLocalDate } from '../utils/format.js';
+import { formatVenueDate } from '../utils/format.js';
 
 const DEFAULT_PHD_CONFIG = { totalStock: 200, perPlayerLimit: 2, sessionStockOverrides: {} };
 
@@ -93,7 +93,7 @@ export async function getPhdUsedForSession(sessionId) {
     SELECT COUNT(DISTINCT bi.id) as total_used
     FROM booking_items bi
     JOIN bookings b ON b.id = bi.booking_id
-    WHERE b.payment_status IN ('paid', 'partially_refunded')
+    WHERE b.payment_status IN ('paid', 'partially_refunded', 'payment_review')
       AND b.session_id = ?
       AND COALESCE(bi.refund_status, 'active') != 'refunded'
       AND (
@@ -129,7 +129,7 @@ export async function getPhdInventoryForSession(sessionId) {
 }
 
 export async function getPhdUsageBySession() {
-  const today = formatLocalDate(new Date());
+  const today = formatVenueDate(new Date());
   const config = await getPhdConfig();
   const rows = await all(`
     SELECT * FROM (
@@ -138,7 +138,7 @@ export async function getPhdUsageBySession() {
           SELECT COUNT(DISTINCT bi.id)
           FROM booking_items bi
           JOIN bookings b ON b.id = bi.booking_id
-          WHERE b.payment_status IN ('paid', 'partially_refunded')
+          WHERE b.payment_status IN ('paid', 'partially_refunded', 'payment_review')
             AND b.session_id = s.id
             AND COALESCE(bi.refund_status, 'active') != 'refunded'
             AND (
@@ -157,7 +157,7 @@ export async function getPhdUsageBySession() {
         ) as phd_count
       FROM sessions s
       WHERE s.deleted_at IS NULL
-    )
+    ) AS phd_usage
     WHERE date >= ? OR phd_count > 0
     ORDER BY date ASC, time ASC
     LIMIT 120
@@ -177,7 +177,7 @@ export async function getPhdUsageBySession() {
 }
 
 export async function getNextPhdSessionId() {
-  const today = formatLocalDate(new Date());
+  const today = formatVenueDate(new Date());
   const row = await get(
     `SELECT id FROM sessions
      WHERE date >= ? AND is_available = 1 AND deleted_at IS NULL

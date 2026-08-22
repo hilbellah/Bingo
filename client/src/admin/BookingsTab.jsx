@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
+import { formatLocalDateStr } from '../utils/formatters';
 
 function SalesPanel({ title, description, children }) {
   return (
@@ -103,7 +104,7 @@ export default function BookingsTab() {
   const addDays = (dateText, days) => {
     const date = new Date(`${dateText}T00:00:00`);
     date.setDate(date.getDate() + days);
-    return date.toISOString().split('T')[0];
+    return formatLocalDateStr(date);
   };
   const dailySalesRangeLabel = dailySales?.rangeLabel || dailySalesDate;
   const dailySalesReportTitle = dailySales?.reportTitle || 'Daily Sales Report';

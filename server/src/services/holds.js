@@ -61,20 +61,31 @@ export async function releaseExpiredHolds(io) {
 export async function shortenBookingSeatHolds({ bookingId, minutes, io }) {
   const { paymentFailureHoldMinutes } = resolveHoldConfig();
   const releaseAt = holdExpiresAt(minutes || paymentFailureHoldMinutes);
-  const booking = await get('SELECT id, session_id FROM bookings WHERE id = ?', [bookingId]);
+  const booking = await get('SELECT id, session_id, checkout_holder_id FROM bookings WHERE id = ?', [bookingId]);
   if (!booking) return { changedSeats: 0, releaseAt };
 
+  // Only shorten holds still owned by THIS booking's customer. A late
+  // failure webhook must not cut short a fresh hold someone else has since
+  // taken on the same seat (without the holder guard it did exactly that).
+  const holderId = String(booking.checkout_holder_id || '').trim() || null;
+  const holderClause = holderId ? 'AND s.held_by = ?' : '';
   const seats = await all(`
     SELECT s.id
     FROM seats s
     JOIN booking_items bi ON bi.seat_id = s.id
     WHERE bi.booking_id = ?
       AND s.status = 'held'
+      ${holderClause}
       AND (s.held_until IS NULL OR s.held_until > ?)
-  `, [bookingId, releaseAt]);
+  `, holderId ? [bookingId, holderId, releaseAt] : [bookingId, releaseAt]);
 
   for (const seat of seats) {
-    await run('UPDATE seats SET held_until = ? WHERE id = ?', [releaseAt, seat.id]);
+    await run(
+      `UPDATE seats SET held_until = ?
+       WHERE id = ? AND status = 'held' ${holderId ? 'AND held_by = ?' : ''}
+         AND (held_until IS NULL OR held_until > ?)`,
+      holderId ? [releaseAt, seat.id, holderId, releaseAt] : [releaseAt, seat.id, releaseAt]
+    );
   }
 
   if (seats.length > 0 && io) {

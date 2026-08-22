@@ -195,10 +195,10 @@ export default function SessionsTab() {
                           }} className="flex-1 px-2 py-1.5 border rounded text-sm" placeholder="Package name" />
                           <div className="relative w-24">
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">CAD</span>
-                            <input type="text" inputMode="decimal" value={(pkg.price / 100).toFixed(2)} onChange={e => {
+                            <input type="text" inputMode="decimal" value={pkg.priceText ?? (pkg.price ? String(pkg.price / 100) : '')} onChange={e => {
                               const val = e.target.value.replace(/[^0-9.]/g, '');
                               const pkgs = [...newSession.packages];
-                              pkgs[i] = {...pkgs[i], price: Math.round(parseFloat(val || 0) * 100)};
+                              pkgs[i] = {...pkgs[i], priceText: val, price: Math.round(parseFloat(val || 0) * 100)};
                               setNewSession({...newSession, packages: pkgs});
                             }} className="w-full pl-9 pr-2 py-1.5 border rounded text-sm" placeholder="0.00" />
                           </div>
@@ -410,7 +410,19 @@ export default function SessionsTab() {
 
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={editForm.is_special_event}
-                          onChange={e => setEditForm({...editForm, is_special_event: e.target.checked})}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setEditForm({
+                              ...editForm,
+                              is_special_event: checked,
+                              // handleSaveEdit derives is_special_event from
+                              // session_type, so the type must follow the
+                              // checkbox or unchecking is silently reverted.
+                              session_type: editForm.session_type === 'event'
+                                ? 'event'
+                                : (checked ? 'special_bingo' : 'regular_bingo'),
+                            });
+                          }}
                           className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-500" />
                         <span className="text-sm font-medium text-gray-700">Special Bingo</span>
                       </label>
@@ -491,10 +503,10 @@ export default function SessionsTab() {
                         list[i] = {...list[i], name: e.target.value};
                         setSessionPkgList(list);
                       }} className="flex-1 px-2 py-1.5 border rounded text-sm" placeholder="Package name" />
-                      <input type="text" inputMode="decimal" value={pkg.price / 100} onChange={e => {
+                      <input type="text" inputMode="decimal" value={pkg.priceText ?? (pkg.price ? String(pkg.price / 100) : '')} onChange={e => {
                         const val = e.target.value.replace(/[^0-9.]/g, '');
                         const list = [...sessionPkgList];
-                        list[i] = {...list[i], price: Math.round(parseFloat(val || 0) * 100)};
+                        list[i] = {...list[i], priceText: val, price: Math.round(parseFloat(val || 0) * 100)};
                         setSessionPkgList(list);
                       }} className="w-20 px-2 py-1.5 border rounded text-sm" placeholder="$" />
                       <select value={pkg.type} onChange={e => {

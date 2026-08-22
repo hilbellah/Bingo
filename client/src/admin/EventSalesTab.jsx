@@ -181,10 +181,10 @@ export default function EventSalesTab() {
                   <input
                     type="text"
                     inputMode="decimal"
-                    value={pkg.price ? String(pkg.price / 100) : ''}
+                    value={pkg.priceText ?? (pkg.price ? String(pkg.price / 100) : '')}
                     onChange={e => {
                       const val = e.target.value.replace(/[^0-9.]/g, '');
-                      updateEventPackage(index, { price: Math.round(parseFloat(val || 0) * 100) });
+                      updateEventPackage(index, { priceText: val, price: Math.round(parseFloat(val || 0) * 100) });
                     }}
                     className="w-full px-3 py-2 border rounded-lg text-sm"
                     placeholder="25.00"
@@ -472,10 +472,10 @@ export default function EventSalesTab() {
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Price (CAD)</label>
-                  <input type="text" inputMode="decimal" value={pkg.price ? pkg.price / 100 : ''} onChange={e => {
+                  <input type="text" inputMode="decimal" value={pkg.priceText ?? (pkg.price ? String(pkg.price / 100) : '')} onChange={e => {
                     const val = e.target.value.replace(/[^0-9.]/g, '');
                     const list = [...sessionPkgList];
-                    list[i] = { ...(list[i] || pkg), price: Math.round(parseFloat(val || 0) * 100), type: 'required', max_quantity: 1, sort_order: i, is_phd: false };
+                    list[i] = { ...(list[i] || pkg), priceText: val, price: Math.round(parseFloat(val || 0) * 100), type: 'required', max_quantity: 1, sort_order: i, is_phd: false };
                     setSessionPkgList(list);
                   }} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>

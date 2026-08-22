@@ -142,6 +142,18 @@ export default function App() {
   const [attendees, setAttendees] = useState([]);
   const [seats, setSeats] = useState([]);
   const [selectedSeats, setSelectedSeats] = useState([]);
+  // Ref mirror of selectedSeats for async click handlers: two rapid chair
+  // taps both await lockSeat, and the second's closure would otherwise not
+  // see the first's update — dropping a locked seat from the selection.
+  const selectedSeatsRef = useRef([]);
+  useEffect(() => { selectedSeatsRef.current = selectedSeats; }, [selectedSeats]);
+  const applySelectedSeats = (next) => {
+    selectedSeatsRef.current = next;
+    setSelectedSeats(next);
+  };
+  // Seats with a lock/unlock request currently in flight — a double-tap on
+  // one chair must not fire two lock requests that both append the seat.
+  const pendingSeatClicksRef = useRef(new Set());
   const [holdExpiry, setHoldExpiry] = useState(null);
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -210,16 +222,22 @@ export default function App() {
       if (data.length > 0) {
         setSelectedSession(data.find(session => getSessionType(session) !== 'event') || data[0]);
       }
+    }).catch(err => {
+      console.error('Failed to load sessions:', err);
+      setError('Could not load sessions. Please check your connection and refresh the page.');
     });
   }, []);
 
   useEffect(() => {
     if (!selectedSession) return undefined;
 
-    fetchSeats(selectedSession.id, holderId).then(setSeats);
-    fetchSessionPackages(selectedSession.id).then(setPackages);
+    fetchSeats(selectedSession.id, holderId).then(setSeats).catch(err => {
+      console.error('Failed to load seats:', err);
+      setError('Could not load the seat map. Please refresh the page.');
+    });
+    fetchSessionPackages(selectedSession.id).then(setPackages).catch(() => {});
     setPhdInventory(null);
-    fetchPhdInventory(selectedSession.id).then(setPhdInventory);
+    fetchPhdInventory(selectedSession.id).then(setPhdInventory).catch(() => {});
     setOpenTable(null);
 
     const socket = socketRef.current;
@@ -242,7 +260,15 @@ export default function App() {
     };
     const handleRefresh = () => fetchSeats(selectedSession.id, holderId).then(setSeats);
 
+    // Socket.io drops room membership on reconnect (server restart, network
+    // blip) — re-join and refetch or seat updates silently stop arriving.
+    const handleReconnect = () => {
+      socket.emit('join:session', selectedSession.id);
+      fetchSeats(selectedSession.id, holderId).then(setSeats).catch(() => {});
+    };
+
     socket.emit('join:session', selectedSession.id);
+    socket.on('connect', handleReconnect);
     socket.on('seat:locked', handleLocked);
     socket.on('seat:unlocked', handleUnlocked);
     socket.on('seat:sold', handleSold);
@@ -250,6 +276,7 @@ export default function App() {
 
     return () => {
       socket.emit('leave:session', selectedSession.id);
+      socket.off('connect', handleReconnect);
       socket.off('seat:locked', handleLocked);
       socket.off('seat:unlocked', handleUnlocked);
       socket.off('seat:sold', handleSold);
@@ -257,19 +284,60 @@ export default function App() {
     };
   }, [selectedSession, socketRef, holderId]);
 
+  // Reconcile the local selection against seat reality: when a hold expires
+  // or a seat is taken, drop it from the selection instead of showing "Your
+  // Pick" on a seat that will be rejected at checkout.
+  useEffect(() => {
+    if (paymentSession || loading || seats.length === 0) return;
+    const current = selectedSeatsRef.current;
+    if (current.length === 0) return;
+    const byId = new Map(seats.map(seat => [seat.id, seat]));
+    const holdExpired = holdExpiry ? new Date(holdExpiry).getTime() <= Date.now() : false;
+    const stillMine = current.filter(id => {
+      const seat = byId.get(id);
+      if (!seat) return false;
+      if (seat.status === 'held') return seat.isMyHold;
+      if (seat.status === 'sold') return false;
+      // 'vacant' can be a momentarily stale snapshot right after locking —
+      // only treat it as lost once our own tracked hold window has lapsed.
+      return !holdExpired;
+    });
+    if (stillMine.length === current.length) return;
+    applySelectedSeats(stillMine);
+    if (!namesFilledBeforeChairs) {
+      setPartySize(stillMine.length);
+      setAttendees(prev => prev.slice(0, Math.max(stillMine.length, isSelectedSpecialBingo ? 1 : 0)));
+    }
+    if (stillMine.length === 0) {
+      setHoldExpiry(null);
+      setBookingStep(0);
+      setError('Your chair hold expired, so your selection was cleared. Please pick your chairs again.');
+      setTimeout(() => setError(''), 6000);
+    }
+  }, [seats, holdExpiry, paymentSession, loading]);
+
   const handleChairClick = async (chair) => {
     if (bookingClosed) {
       setError(selectedBookingStatus.message);
       setTimeout(() => setError(''), 4000);
       return;
     }
-    if (selectedSeats.includes(chair.id)) {
+    // One in-flight request per seat: a double-tap must not run two
+    // lock/unlock round-trips that both mutate the selection.
+    if (pendingSeatClicksRef.current.has(chair.id)) return;
+    pendingSeatClicksRef.current.add(chair.id);
+    try {
+    if (selectedSeatsRef.current.includes(chair.id)) {
       await unlockSeat(chair.id, holderId);
-      const removedIndex = selectedSeats.indexOf(chair.id);
-      const newSelected = selectedSeats.filter(id => id !== chair.id);
-      setSelectedSeats(newSelected);
-      setPartySize(newSelected.length);
-      setAttendees(prev => prev.filter((_, index) => index !== removedIndex));
+      const current = selectedSeatsRef.current;
+      const removedIndex = current.indexOf(chair.id);
+      const newSelected = current.filter(id => id !== chair.id);
+      applySelectedSeats(newSelected);
+      if (!namesFilledBeforeChairs) {
+        setPartySize(newSelected.length);
+        setAttendees(prev => prev.filter((_, index) => index !== removedIndex));
+      }
+      if (newSelected.length === 0) setHoldExpiry(null);
       setBookingStep(prev => newSelected.length === 0 ? 0 : (prev === 2 ? 1 : prev));
       return;
     }
@@ -278,7 +346,7 @@ export default function App() {
     if (chair.status === 'held' && !chair.isMyHold) return;
     if (bookingStep === 2) return;
 
-    if (selectedSeats.length >= 6) {
+    if (selectedSeatsRef.current.length >= 6) {
       setError('Maximum 6 chairs per booking. Tap a selected chair to deselect.');
       setTimeout(() => setError(''), 4000);
       return;
@@ -291,8 +359,19 @@ export default function App() {
       return;
     }
 
-    const newSelected = [...selectedSeats, chair.id];
-    setSelectedSeats(newSelected);
+    // Re-check after the await: never append the same seat twice, and never
+    // exceed the 6-chair limit (two clicks on DIFFERENT chairs can both pass
+    // the pre-request check at 5 selected). Release the lock we just took.
+    if (selectedSeatsRef.current.includes(chair.id)) return;
+    if (selectedSeatsRef.current.length >= 6) {
+      unlockSeat(chair.id, holderId).catch(() => {});
+      setError('Maximum 6 chairs per booking. Tap a selected chair to deselect.');
+      setTimeout(() => setError(''), 4000);
+      return;
+    }
+    const wasEmpty = selectedSeatsRef.current.length === 0;
+    const newSelected = [...selectedSeatsRef.current, chair.id];
+    applySelectedSeats(newSelected);
 
     if (!namesFilledBeforeChairs) {
       setPartySize(newSelected.length);
@@ -305,12 +384,15 @@ export default function App() {
       });
     }
 
-    if (!holdExpiry || new Date(result.holdUntil) > new Date(holdExpiry)) {
-      setHoldExpiry(result.holdUntil);
-    }
+    // Each seat carries its own 20-minute hold; the countdown must show the
+    // EARLIEST expiry or seats picked first expire while the timer still runs.
+    setHoldExpiry(prev => (!prev || new Date(result.holdUntil) < new Date(prev)) ? result.holdUntil : prev);
 
-    if (selectedSeats.length === 0 && !namesFilledBeforeChairs) {
+    if (wasEmpty && !namesFilledBeforeChairs) {
       setPanelOpen(true);
+    }
+    } finally {
+      pendingSeatClicksRef.current.delete(chair.id);
     }
   };
 
@@ -348,7 +430,7 @@ export default function App() {
       const result = await lockSeat(seat.id, holderId);
       if (result.success) {
         newlyLocked.push(seat.id);
-        if (!nextHoldExpiry || new Date(result.holdUntil) > new Date(nextHoldExpiry)) {
+        if (!nextHoldExpiry || new Date(result.holdUntil) < new Date(nextHoldExpiry)) {
           nextHoldExpiry = result.holdUntil;
         }
       }
@@ -435,6 +517,10 @@ export default function App() {
     }
     setLoading(true);
     setError('');
+
+    // Everything below performs network calls; without the try/finally a
+    // dropped request left the customer stuck on a disabled spinner button.
+    try {
 
     let submitSelectedSeats = selectedSeats;
     if (isSelectedEvent && selectedSeats.length !== partySize) {
@@ -524,7 +610,13 @@ export default function App() {
         } : null,
       },
     });
-    setLoading(false);
+
+    } catch (err) {
+      console.error('Booking submit failed:', err);
+      setError('Could not start payment. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToEditCheckout = async () => {

@@ -2,7 +2,7 @@ import { v4 as uuid } from 'uuid';
 import { all, batchRun, exec, get, run, scheduleSaveAfterBatch } from '../database.js';
 import { logger } from '../logger.js';
 import { getSessionConflictGroup, sessionConflictGroupSql } from './sessionPackages.js';
-import { formatLocalDate } from '../utils/format.js';
+import { formatLocalDate, formatVenueDate, venueDateAnchor } from '../utils/format.js';
 
 // Default fallback values if the auto_generate_config row is missing or unparseable.
 const DEFAULT_LOOK_AHEAD_DAYS = 7;
@@ -116,15 +116,14 @@ export async function ensureFutureSessions() {
     return { created: 0, skipped: true };
   }
 
-  const now = new Date();
-  const todayStr = formatLocalDate(now);
+  const anchor = venueDateAnchor();
+  const todayStr = formatLocalDate(anchor);
   const lookAhead = config.lookAheadDays;
   let created = 0;
 
   for (let offset = 0; offset < lookAhead; offset++) {
-    const candidate = new Date(now);
-    candidate.setDate(now.getDate() + offset);
-    candidate.setHours(12, 0, 0, 0);
+    const candidate = new Date(anchor);
+    candidate.setDate(anchor.getDate() + offset);
     const dateStr = formatLocalDate(candidate);
 
     if (dateStr < todayStr) continue;
@@ -190,10 +189,9 @@ export async function ensureFutureSessions() {
 
 export async function pruneFutureSessionsBeyondLookahead() {
   const config = await getAutoGenerateConfig();
-  const now = new Date();
-  const cutoff = new Date(now);
-  cutoff.setDate(now.getDate() + config.lookAheadDays - 1);
-  cutoff.setHours(12, 0, 0, 0);
+  const anchor = venueDateAnchor();
+  const cutoff = new Date(anchor);
+  cutoff.setDate(anchor.getDate() + config.lookAheadDays - 1);
   const cutoffDateStr = formatLocalDate(cutoff);
   const prunedAt = new Date().toISOString();
 
@@ -235,7 +233,7 @@ export async function pruneFutureSessionsBeyondLookahead() {
 
 export async function syncGeneratedSessionsForRecurringSchedule({ dayOfWeek, time, sessionType, isActive }) {
   const targetAvailable = isActive ? 1 : 0;
-  const todayStr = formatLocalDate(new Date());
+  const todayStr = formatVenueDate(new Date());
   const day = String(Number(dayOfWeek));
   const hour = String(time || '').slice(0, 2);
   const type = sessionType || 'regular_bingo';
@@ -271,7 +269,7 @@ export async function syncGeneratedSessionsForRecurringSchedule({ dayOfWeek, tim
 }
 
 export async function closeGeneratedSessionsWithoutActiveSchedule() {
-  const todayStr = formatLocalDate(new Date());
+  const todayStr = formatVenueDate(new Date());
   const result = await run(
     `UPDATE sessions
         SET is_available = 0
@@ -394,7 +392,7 @@ export async function expireStalePendingBookings({ dryRun = false, now = new Dat
 }
 
 export async function cleanupOldData() {
-  const thirtyDaysAgo = formatLocalDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  const thirtyDaysAgo = formatVenueDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
 
   await expireStalePendingBookings();
 
@@ -433,8 +431,8 @@ export async function cleanupOldData() {
 export async function getScheduleSummary() {
   const config = await getAutoGenerateConfig();
   const schedules = await listRecurringSchedules();
-  const now = new Date();
-  const todayStr = formatLocalDate(now);
+  const anchor = venueDateAnchor();
+  const todayStr = formatLocalDate(anchor);
 
   const activeDays = schedules.filter(s => s.is_active).map(s => s.day_of_week);
   const activeDayLabels = [...new Set(activeDays)]
@@ -447,8 +445,8 @@ export async function getScheduleSummary() {
     [todayStr]
   ))[0]?.count || 0;
 
-  const lookAheadDate = new Date(now);
-  lookAheadDate.setDate(now.getDate() + config.lookAheadDays - 1);
+  const lookAheadDate = new Date(anchor);
+  lookAheadDate.setDate(anchor.getDate() + config.lookAheadDays - 1);
   const lookAheadDateStr = formatLocalDate(lookAheadDate);
 
   const upcomingInWindow = await all(

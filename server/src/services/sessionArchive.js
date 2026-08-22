@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { all, run, saveDb } from '../database.js';
 import { logger } from '../logger.js';
-import { formatLocalDate } from '../utils/format.js';
+import { formatVenueDate } from '../utils/format.js';
 import { sessionTypeSql } from './sessionPackages.js';
 
 async function logArchiveAudit(session) {
@@ -25,7 +25,7 @@ async function logArchiveAudit(session) {
 }
 
 export async function archivePastSessions() {
-  const today = formatLocalDate(new Date());
+  const today = formatVenueDate(new Date());
   const pastSessions = await all(`
     SELECT s.id, s.date, s.time, s.event_title, ${sessionTypeSql('s')} as session_type
     FROM sessions s

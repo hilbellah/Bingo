@@ -64,6 +64,12 @@ export async function getCustomerRows(search = '') {
       COALESCE(addons.addon_total, 0) as addon_total,
       COUNT(bi.id) OVER (PARTITION BY b.id) as booking_item_count,
       SUM(COALESCE(bi.price, 0) + COALESCE(addons.addon_total, 0)) OVER (PARTITION BY b.id) as booking_item_subtotal,
+      COALESCE((
+        SELECT SUM(COALESCE(bi2.refund_amount, 0))
+        FROM booking_items bi2
+        WHERE bi2.booking_id = b.id
+          AND COALESCE(bi2.refund_status, 'active') = 'refunded'
+      ), 0) as booking_refunded_total,
       s.date as session_date,
       s.time as session_time,
       seats.table_number,
@@ -106,7 +112,10 @@ export async function getCustomerRows(search = '') {
     const itemBaseTotal = toNumber(row.item_price) + toNumber(row.addon_total);
     const bookingSubtotal = toNumber(row.booking_item_subtotal);
     const bookingItemCount = toNumber(row.booking_item_count);
-    const bookingTotal = toNumber(row.booking_total);
+    // Net out refunded tickets before computing the per-item service-charge
+    // allocation — the raw total still includes refunded items' prices, which
+    // otherwise get redistributed onto remaining tickets as phantom spend.
+    const bookingTotal = Math.max(0, toNumber(row.booking_total) - toNumber(row.booking_refunded_total));
     const bookingAllocation = bookingTotal > bookingSubtotal && bookingItemCount > 0
       ? Math.round((bookingTotal - bookingSubtotal) / bookingItemCount)
       : 0;

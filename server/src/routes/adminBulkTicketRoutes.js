@@ -52,7 +52,9 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
       JOIN seats ON seats.id = bi.seat_id
       LEFT JOIN packages p ON p.id = bi.package_id
       LEFT JOIN session_packages sp ON sp.id = bi.package_id
-      WHERE s.date >= ? AND s.date <= ? AND b.payment_status = 'paid'
+      WHERE s.date >= ? AND s.date <= ?
+        AND b.payment_status IN ('paid', 'partially_refunded')
+        AND COALESCE(bi.refund_status, 'active') != 'refunded'
         ${hasSpecialEvent ? `AND ${sessionTypeSql('s')} IN (${departmentPlaceholders})` : 'AND 1 = 0'}
       ORDER BY s.date ASC, s.time ASC, b.reference_number, seats.table_number, seats.chair_number
     `, hasSpecialEvent ? [dateFrom, endDate, ...requestedDepartments] : [dateFrom, endDate]);
@@ -158,11 +160,12 @@ export function registerAdminBulkTicketRoutes(app, { logAudit }) {
       `UPDATE booking_items
        SET printed_at = ?
        WHERE id IN (${placeholders})
+         AND COALESCE(refund_status, 'active') != 'refunded'
          AND booking_id IN (
            SELECT b.id
            FROM bookings b
            JOIN sessions s ON s.id = b.session_id
-           WHERE b.payment_status = 'paid'
+           WHERE b.payment_status IN ('paid', 'partially_refunded')
              AND ${sessionTypeSql('s')} IN ('regular_bingo', 'special_bingo', 'event')
          )`,
       [now, ...uniqueIds]
