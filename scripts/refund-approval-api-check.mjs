@@ -89,7 +89,8 @@ try {
   const requestResponse = await post(`/api/admin/bookings/${bookingId}/refund`, 'requester@example.com', { reason: 'Customer requested a refund' });
   const requestBody = await requestResponse.json();
   assert.equal(requestResponse.status, 202);
-  assert.equal(requestBody.approvalRequired, true);
+  assert.equal(requestBody.approvalRequired, false);
+  assert.equal(requestBody.readyToExecute, true);
   assert.equal((await get('SELECT payment_status FROM bookings WHERE id = ?', [bookingId])).payment_status, 'paid');
   assert.equal((await get('SELECT status FROM seats WHERE id = ?', [seatId])).status, 'sold');
 
@@ -103,16 +104,13 @@ try {
   const overlappingTicketRequest = await post(`/api/admin/booking-items/${itemId}/refund`, 'requester@example.com', { reason: 'Overlapping ticket request' });
   assert.equal(overlappingTicketRequest.status, 409);
 
-  const requesterApproval = await post(`/api/admin/refund-requests/${requestBody.requestId}/approve`, 'requester@example.com');
-  assert.equal(requesterApproval.status, 403);
-
   const listResponse = await fetch(`${base}/api/admin/refund-requests`, { headers: { Authorization: auth('approver@example.com') } });
   const requests = await listResponse.json();
   assert.equal(listResponse.status, 200);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].bookingReference, 'BNG-APPROVAL');
 
-  const rejectResponse = await post(`/api/admin/refund-requests/${requestBody.requestId}/reject`, 'approver@example.com', { note: 'Not authorized by management' });
+  const rejectResponse = await post(`/api/admin/refund-requests/${requestBody.requestId}/reject`, 'requester@example.com', { note: 'Cancelled before execution' });
   assert.equal(rejectResponse.status, 200);
   assert.equal((await get('SELECT status FROM refund_requests WHERE id = ?', [requestBody.requestId])).status, 'rejected');
   assert.equal((await get('SELECT payment_status FROM bookings WHERE id = ?', [bookingId])).payment_status, 'paid');
@@ -123,7 +121,7 @@ try {
   const uncertainRequestResponse = await post(`/api/admin/bookings/${bookingId}/refund`, 'requester@example.com', { reason: 'Customer refund with lost gateway response' });
   const uncertainRequest = await uncertainRequestResponse.json();
   assert.equal(uncertainRequestResponse.status, 202);
-  const uncertainApprovalResponse = await post(`/api/admin/refund-requests/${uncertainRequest.requestId}/approve`, 'approver@example.com');
+  const uncertainApprovalResponse = await post(`/api/admin/refund-requests/${uncertainRequest.requestId}/approve`, 'requester@example.com');
   const uncertainApproval = await uncertainApprovalResponse.json();
   assert.equal(uncertainApprovalResponse.status, 502);
   assert.equal(uncertainApproval.status, 'reconciliation_required');
@@ -133,7 +131,7 @@ try {
   assert.equal((await get('SELECT status FROM seats WHERE id = ?', [seatId])).status, 'sold');
   assert.equal(refundCalls, 1);
 
-  const blockedRetry = await post(`/api/admin/refund-requests/${uncertainRequest.requestId}/approve`, 'approver@example.com');
+  const blockedRetry = await post(`/api/admin/refund-requests/${uncertainRequest.requestId}/approve`, 'requester@example.com');
   assert.equal(blockedRetry.status, 409);
   assert.equal(refundCalls, 1);
 
@@ -143,7 +141,7 @@ try {
   const secondRequestResponse = await post(`/api/admin/bookings/${bookingId}/refund`, 'requester@example.com', { reason: 'Approved customer refund' });
   const secondRequest = await secondRequestResponse.json();
   assert.equal(secondRequestResponse.status, 202);
-  const approveResponse = await post(`/api/admin/refund-requests/${secondRequest.requestId}/approve`, 'approver@example.com', { note: 'Approved by management' });
+  const approveResponse = await post(`/api/admin/refund-requests/${secondRequest.requestId}/approve`, 'requester@example.com', { note: 'Authorized by refunding admin' });
   const approveBody = await approveResponse.json();
   assert.equal(approveResponse.status, 200);
   assert.equal(approveBody.status, 'completed');
@@ -152,7 +150,7 @@ try {
   assert.equal((await get('SELECT payment_status FROM bookings WHERE id = ?', [bookingId])).payment_status, 'refunded');
   assert.equal((await get('SELECT status FROM seats WHERE id = ?', [seatId])).status, 'vacant');
 
-  console.log('Refund approval request, rejection, ambiguous-outcome lock, and approval API check passed.');
+  console.log('Direct admin refund authorization, retry safety, and reconciliation API check passed.');
 } finally {
   await new Promise(resolve => listener.close(resolve));
   fs.rmSync(tmpDir, { recursive: true, force: true });

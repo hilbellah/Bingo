@@ -2781,7 +2781,7 @@ app.post('/api/admin/login', adminLoginLimiter, async (req, res) => {
     const dbUser = await get('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND is_active = 1', [username]);
     if (dbUser && bcrypt.compareSync(password, dbUser.password_hash)) {
       const superUser = isSuperUser(dbUser.email, 'db', dbUser);
-      const role = superUser ? 'super_user' : ['admin', 'print_staff'].includes(String(dbUser.role || '').toLowerCase()) ? String(dbUser.role).toLowerCase() : 'admin';
+      const role = superUser ? 'super_user' : ['admin', 'print_staff', 'viewer'].includes(String(dbUser.role || '').toLowerCase()) ? String(dbUser.role).toLowerCase() : 'admin';
       const token = Buffer.from(`${username}:${password}`).toString('base64');
       return res.json({
         token,
@@ -2812,7 +2812,7 @@ app.get('/api/admin/users', adminAuth, requireSuperUser, async (req, res) => {
 app.post('/api/admin/users', adminAuth, requireSuperUser, async (req, res) => {
   try {
     const { email, password, displayName, isSuperUser: makeSuperUser } = req.body;
-    const role = ['super_user', 'admin', 'print_staff'].includes(String(req.body.role || '').toLowerCase())
+    const role = ['super_user', 'admin', 'print_staff', 'viewer'].includes(String(req.body.role || '').toLowerCase())
       ? String(req.body.role).toLowerCase()
       : makeSuperUser ? 'super_user' : 'admin';
     const normalizedEmail = (email || '').trim();
@@ -2864,7 +2864,7 @@ app.patch('/api/admin/users/:id', adminAuth, requireSuperUser, async (req, res) 
       const nextRole = req.body.role !== undefined
         ? String(req.body.role || '').toLowerCase()
         : req.body.isSuperUser ? 'super_user' : 'admin';
-      if (!['super_user', 'admin', 'print_staff'].includes(nextRole)) {
+      if (!['super_user', 'admin', 'print_staff', 'viewer'].includes(nextRole)) {
         return res.status(400).json({ error: 'Invalid role' });
       }
       if (user.email.toLowerCase() === 'kylepaul@stmec.com' && nextRole !== 'super_user') {

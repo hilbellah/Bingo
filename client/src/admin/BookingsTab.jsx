@@ -321,13 +321,13 @@ export default function BookingsTab() {
                   >
                     Reset
                   </button>
-                  <button
+                  {handleResetSalesReporting && <button
                     type="button"
                     onClick={handleResetSalesReporting}
                     className="ml-auto px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700"
                   >
                     Reset Sales Totals
-                  </button>
+                  </button>}
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-4">

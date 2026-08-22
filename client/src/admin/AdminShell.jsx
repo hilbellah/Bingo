@@ -77,6 +77,7 @@ export default function AdminShell({
 }) {
   const canSeeTab = (tab) => {
     if (adminRole === 'print_staff') return tab.allowedRoles?.includes('print_staff');
+    if (adminRole === 'viewer') return tab.allowedRoles?.includes('viewer');
     return !tab.allowedRoles || tab.allowedRoles.includes(adminRole);
   };
 

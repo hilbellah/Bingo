@@ -6,6 +6,7 @@ import { confirmAdminAction } from './adminConfirm';
 const ROLE_LABELS = {
   super_user: 'Super user',
   admin: 'Admin',
+  viewer: 'Viewer (read-only)',
   print_staff: 'Print staff',
 };
 
@@ -199,6 +200,7 @@ export default function UsersTab() {
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
             >
               <option value="admin">Admin</option>
+              <option value="viewer">Viewer (read-only)</option>
               <option value="print_staff">Print staff</option>
               <option value="super_user">Super user</option>
             </select>
@@ -267,6 +269,7 @@ export default function UsersTab() {
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
               >
                 <option value="admin">Admin</option>
+                <option value="viewer">Viewer (read-only)</option>
                 <option value="print_staff">Print staff</option>
                 <option value="super_user">Super user</option>
               </select>
@@ -322,7 +325,7 @@ export default function UsersTab() {
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                         user.role === 'super_user' || user.is_super_user
                           ? 'bg-brand-gold/20 text-brand-blue'
-                          : user.role === 'print_staff'
+                          : ['print_staff', 'viewer'].includes(user.role)
                             ? 'bg-blue-50 text-blue-700'
                             : 'bg-gray-100 text-gray-600'
                       }`}>

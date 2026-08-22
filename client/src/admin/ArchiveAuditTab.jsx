@@ -55,10 +55,10 @@ export default function ArchiveAuditTab() {
                             className="text-xs bg-brand-blue text-white px-2 py-1 rounded hover:bg-blue-800">
                             View Bookings
                           </button>
-                          <button onClick={() => handleRestoreSession(s.id)}
+                          {handleRestoreSession && <button onClick={() => handleRestoreSession(s.id)}
                             className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700">
                             Restore
-                          </button>
+                          </button>}
                         </td>
                       </tr>
                     ))}

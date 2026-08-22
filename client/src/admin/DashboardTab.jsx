@@ -17,7 +17,7 @@ export default function DashboardTab() {
     tab,
     setTab,
     dashboard,
-    isSuperUser,
+    adminRole,
     refundRequests,
     handleApproveRefundRequest,
     handleRejectRefundRequest,
@@ -118,6 +118,8 @@ export default function DashboardTab() {
     openChairManagement(session.id);
   };
 
+  const canManageRefunds = !['viewer', 'print_staff'].includes(adminRole);
+
   return (
     <>
         {/* DASHBOARD TAB */}
@@ -127,8 +129,8 @@ export default function DashboardTab() {
               <section className="mb-6 rounded-xl border-2 border-red-300 bg-red-50 p-5 shadow-sm" aria-label="Refund approvals pending">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                   <div>
-                    <h2 className="text-lg font-bold text-red-900">Refund Approvals Pending</h2>
-                    <p className="text-sm text-red-800">No money moves and no seat is released until a different super user approves.</p>
+                    <h2 className="text-lg font-bold text-red-900">Refund Actions Pending</h2>
+                    <p className="text-sm text-red-800">These authorizations are awaiting completion or manual reconciliation.</p>
                   </div>
                   <span className="rounded-full bg-red-700 px-3 py-1 text-sm font-bold text-white">{refundRequests.length}</span>
                 </div>
@@ -146,24 +148,22 @@ export default function DashboardTab() {
                           <span className="max-w-xs rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white">Gateway reversal may have completed. Do not retry; reconcile with Authorize.Net and system support.</span>
                         ) : request.status === 'processing' ? (
                           <span className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white">Reversal is processing. Do not submit another request.</span>
-                        ) : isSuperUser ? (
+                        ) : canManageRefunds ? (
                           <div className="flex gap-2">
                             <button
                               type="button"
-                              disabled={request.requesterIsViewer}
                               onClick={() => handleApproveRefundRequest(request)}
                               className="rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
-                              title={request.requesterIsViewer ? 'A different super user must approve' : 'Approve and submit to Authorize.Net'}
-                            >Approve</button>
+                              title="Complete and submit to Authorize.Net"
+                            >Complete Refund</button>
                             <button
                               type="button"
-                              disabled={request.requesterIsViewer}
                               onClick={() => handleRejectRefundRequest(request)}
                               className="rounded-lg bg-gray-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
                             >Reject</button>
                           </div>
                         ) : (
-                          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Awaiting super-user approval</span>
+                          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">View only</span>
                         )}
                       </div>
                     </div>

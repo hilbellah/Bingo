@@ -108,6 +108,7 @@ export default function AdminDashboard() {
   const isSuperUser = sessionStorage.getItem('admin_is_super_user') === 'true';
   const adminRole = isSuperUser ? 'super_user' : (sessionStorage.getItem('admin_role') || 'admin');
   const isPrintStaff = adminRole === 'print_staff';
+  const isViewer = adminRole === 'viewer';
 
   const [tab, setTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
@@ -285,6 +286,7 @@ export default function AdminDashboard() {
     if (tab === 'chairs') loadSessions();
     if (tab === 'bulkprint') loadSessions();
     if (tab === 'users' && !isSuperUser) setTab('dashboard');
+    if (isViewer && !['dashboard', 'bookings', 'customers', 'archive'].includes(tab)) setTab('dashboard');
   }, [tab]);
 
   // Auto-print: keep refs in sync with state
@@ -884,21 +886,25 @@ export default function AdminDashboard() {
     loadDashboard(dashboardDateFrom, dashboardDateTo);
   };
 
-  // Refunds are requests only. A different super user must approve before the
-  // server contacts Authorize.Net or releases any seat.
+  // A refund keeps a persistent authorization record for audit/race safety,
+  // then the same authorized admin immediately executes it. No second person
+  // is required.
   const handleRefundBooking = async (id, refNumber) => {
-    const reason = window.prompt(`Reason for refund request ${refNumber || id}:`);
+    const reason = window.prompt(`Reason for refund ${refNumber || id}:`);
     if (!reason?.trim()) return;
     const proceed = confirmAdminAction({
-      action: `Submit refund request for ${refNumber || id}`,
+      action: `Refund ${refNumber || id}`,
       details: [`Reason: ${reason.trim()}`],
-      warning: 'No money will move and no seat will be released until a different super user approves this request.',
+      warning: 'This will immediately submit the void/refund to Authorize.Net and release the affected seats when successful. This financial action cannot be undone.',
     });
     if (!proceed) return;
 
     const result = await refundAdminBooking(token, id, reason.trim());
     if (result.ok) {
-      window.alert(result.message || 'Refund request submitted for approval.');
+      const completion = await approveRefundRequest(token, result.requestId, reason.trim());
+      window.alert(completion.ok
+        ? `Refund ${completion.action || 'reversal'} completed successfully.`
+        : `Refund could not be completed: ${completion.error || 'Unknown error'}`);
       loadRefundRequests();
       loadBookings(reportSession);
       loadTransactions(transactionFilters);
@@ -911,7 +917,7 @@ export default function AdminDashboard() {
         });
       }
     } else {
-      window.alert('Refund request failed: ' + (result.error || 'Unknown error'));
+      window.alert('Refund failed: ' + (result.error || 'Unknown error'));
     }
   };
 
@@ -920,15 +926,18 @@ export default function AdminDashboard() {
     const reason = window.prompt(`Reason for refunding ticket ${item.referenceNumber || item.id}:`);
     if (!reason?.trim()) return;
     const proceed = confirmAdminAction({
-      action: `Request refund for ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`,
+      action: `Refund ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`,
       details: [`Reason: ${reason.trim()}`],
-      warning: 'No money will move and the seat remains assigned until a different super user approves this request.',
+      warning: 'This will immediately submit the ticket refund to Authorize.Net and release its seat when successful. This financial action cannot be undone.',
     });
     if (!proceed) return;
 
     const result = await refundAdminBookingItem(token, item.id, reason.trim());
     if (result.ok) {
-      window.alert(result.message || 'Ticket refund request submitted for approval.');
+      const completion = await approveRefundRequest(token, result.requestId, reason.trim());
+      window.alert(completion.ok
+        ? `Ticket refund ${completion.action || 'reversal'} completed successfully.`
+        : `Ticket refund could not be completed: ${completion.error || 'Unknown error'}`);
       loadRefundRequests();
       loadBookings(reportSession);
       loadTransactions(transactionFilters);
@@ -941,15 +950,11 @@ export default function AdminDashboard() {
         });
       }
     } else {
-      window.alert('Ticket refund request failed: ' + (result.error || 'Unknown error'));
+      window.alert('Ticket refund failed: ' + (result.error || 'Unknown error'));
     }
   };
 
   const handleApproveRefundRequest = async (request) => {
-    if (request.requesterIsViewer) {
-      window.alert('A different super user must approve this request.');
-      return;
-    }
     // In-flight guard: the gateway round-trip can take seconds and a second
     // click on the money-moving Approve button must not fire a second POST.
     if (approvingRefundRequestRef.current) return;
@@ -971,10 +976,6 @@ export default function AdminDashboard() {
   };
 
   const handleRejectRefundRequest = async (request) => {
-    if (request.requesterIsViewer) {
-      window.alert('A different super user must review this request.');
-      return;
-    }
     const note = window.prompt('Reason for rejecting this refund request:');
     if (!note?.trim()) return;
     const result = await rejectRefundRequest(token, request.id, note.trim());
@@ -1141,7 +1142,7 @@ export default function AdminDashboard() {
 
   const adminHeaderActions = (
     <div className="flex items-center gap-4">
-            <button
+            {!isViewer && <button
               onClick={() => {
                 const next = !autoPrint;
                 if (!confirmAdminAction({
@@ -1159,7 +1160,7 @@ export default function AdminDashboard() {
             >
               <span>{autoPrint ? '\uD83D\uDFE2' : '\u26AA'}</span>
               Auto-Print {autoPrint ? 'ON' : 'OFF'}
-            </button>
+            </button>}
             <span className="text-xs font-medium text-brand-blue">{adminDisplayName}</span>
     </div>
   );
@@ -1173,8 +1174,8 @@ export default function AdminDashboard() {
     isPrintStaff,
     dashboard,
     refundRequests,
-    handleApproveRefundRequest,
-    handleRejectRefundRequest,
+    handleApproveRefundRequest: isViewer ? null : handleApproveRefundRequest,
+    handleRejectRefundRequest: isViewer ? null : handleRejectRefundRequest,
     dashboardDateFrom,
     dashboardDateTo,
     dashboardRange,
@@ -1278,12 +1279,12 @@ export default function AdminDashboard() {
     setReportSession,
     bookings,
     loadBookings,
-    handleCancelBooking,
-    handleResetSalesReporting,
-    handleRefundBooking,
-    handleRefundBookingItem,
-    handleRemoveAssignedTicket,
-    handleIssueNoShowCredit,
+    handleCancelBooking: isViewer ? null : handleCancelBooking,
+    handleResetSalesReporting: isViewer ? null : handleResetSalesReporting,
+    handleRefundBooking: isViewer ? null : handleRefundBooking,
+    handleRefundBookingItem: isViewer ? null : handleRefundBookingItem,
+    handleRemoveAssignedTicket: isViewer ? null : handleRemoveAssignedTicket,
+    handleIssueNoShowCredit: isViewer ? null : handleIssueNoShowCredit,
     handleExport,
     bulkDateFrom,
     setBulkDateFrom,
@@ -1298,7 +1299,7 @@ export default function AdminDashboard() {
     handlePrintBookingReceipt,
     deletedSessions,
     handleViewArchiveBookings,
-    handleRestoreSession,
+    handleRestoreSession: isViewer ? null : handleRestoreSession,
     archiveBookings,
     setArchiveBookings,
     auditLogs,
@@ -1327,7 +1328,7 @@ export default function AdminDashboard() {
     setSalesDrilldown,
     handlePrintSalesDrilldown,
     handleSaveSalesDrilldownCsv,
-    handleMoveBookingItemSeat,
+    handleMoveBookingItemSeat: isViewer ? null : handleMoveBookingItemSeat,
     soldModal,
     setSoldModal,
     handlePrintPurchasers,

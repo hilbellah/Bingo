@@ -437,7 +437,7 @@ export function registerAdminBookingRoutes(app, {
   });
 
   app.post('/api/admin/legacy-disabled/booking-items/:id/refund', adminAuth, (_req, res) => {
-    res.status(410).json({ error: 'Direct refunds are disabled. Submit a refund request for approval.' });
+    res.status(410).json({ error: 'This legacy refund route is disabled. Use the current audited refund action.' });
   });
 
   app.post('/api/admin/booking-items/:id/no-show-credit', adminAuth, async (req, res) => {
@@ -881,6 +881,6 @@ export function registerAdminBookingRoutes(app, {
   });
 
   app.post('/api/admin/legacy-disabled/bookings/:id/refund', adminAuth, (_req, res) => {
-    res.status(410).json({ error: 'Direct refunds are disabled. Submit a refund request for approval.' });
+    res.status(410).json({ error: 'This legacy refund route is disabled. Use the current audited refund action.' });
   });
 }

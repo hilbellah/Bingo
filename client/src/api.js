@@ -359,8 +359,8 @@ export async function deleteAdminBooking(token, id) {
   return { ok: res.ok, ...json };
 }
 
-// Submit a refund request. Authorize.Net is contacted only after a different
-// super user approves the persistent request from the admin dashboard.
+// Record a refund authorization. The admin UI immediately executes the
+// resulting request, while the persistent row preserves audit/retry safety.
 export async function refundAdminBooking(token, id, reason) {
   const res = await fetch(`${API}/admin/bookings/${id}/refund`, {
     method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ reason })

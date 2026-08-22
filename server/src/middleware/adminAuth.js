@@ -28,7 +28,12 @@ function normalizeAdminRole(dbUser, source) {
   if (source === 'env') return 'super_user';
   if (isSuperUser(dbUser?.email, source, dbUser)) return 'super_user';
   const role = String(dbUser?.role || 'admin').trim().toLowerCase();
-  return ['admin', 'print_staff'].includes(role) ? role : 'admin';
+  return ['admin', 'print_staff', 'viewer'].includes(role) ? role : 'admin';
+}
+
+function viewerCanAccess(req) {
+  const method = String(req.method || 'GET').toUpperCase();
+  return method === 'GET' || method === 'HEAD';
 }
 
 function printStaffCanAccess(req) {
@@ -82,6 +87,12 @@ export async function adminAuth(req, res, next) {
       req.adminUser = adminUser;
       if (adminUser.role === 'print_staff' && !printStaffCanAccess(req)) {
         return res.status(403).json({ error: 'Print staff access is limited to bulk print and printing settings.' });
+      }
+      // Viewer is a server-enforced read-only role. The UI also hides editing
+      // controls, but this guard is the actual security boundary and covers
+      // every current and future admin mutation routed through adminAuth.
+      if (adminUser.role === 'viewer' && !viewerCanAccess(req)) {
+        return res.status(403).json({ error: 'Viewer access is read-only.' });
       }
       return next();
     }

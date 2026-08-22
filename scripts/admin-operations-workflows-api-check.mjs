@@ -240,6 +240,45 @@ try {
   const deniedDashboard = await request('/api/admin/dashboard', { token: printStaffToken });
   assert.equal(deniedDashboard.response.status, 403);
 
+  const viewerEmail = 'viewer@example.com';
+  const viewerPassword = 'viewerpass123';
+  const createdViewer = await request('/api/admin/users', {
+    method: 'POST',
+    body: {
+      email: viewerEmail,
+      password: viewerPassword,
+      displayName: 'Read Only Viewer',
+      role: 'viewer',
+    },
+  });
+  assert.equal(createdViewer.response.status, 201);
+  assert.equal(createdViewer.data.role, 'viewer');
+
+  const viewerToken = Buffer.from(`${viewerEmail}:${viewerPassword}`).toString('base64');
+  const viewerDashboard = await request('/api/admin/dashboard', { token: viewerToken });
+  assert.equal(viewerDashboard.response.status, 200);
+  const viewerBookings = await request(`/api/admin/bookings?sessionId=${sessionId}`, { token: viewerToken });
+  assert.equal(viewerBookings.response.status, 200);
+
+  const viewerCreate = await request('/api/admin/assigned-tickets', {
+    method: 'POST',
+    token: viewerToken,
+    body: { sessionId, tableNumber: 10, chairNumber: 2, firstName: 'Blocked', lastName: 'Viewer' },
+  });
+  assert.equal(viewerCreate.response.status, 403);
+  assert.equal(viewerCreate.data.error, 'Viewer access is read-only.');
+  const viewerUpdate = await request(`/api/admin/sessions/${sessionId}`, {
+    method: 'PATCH',
+    token: viewerToken,
+    body: { is_available: false },
+  });
+  assert.equal(viewerUpdate.response.status, 403);
+  const viewerDelete = await request(`/api/admin/bookings/${bookingId}`, {
+    method: 'DELETE',
+    token: viewerToken,
+  });
+  assert.equal(viewerDelete.response.status, 403);
+
   console.log('Admin operations workflow API check passed.');
 } finally {
   await new Promise(resolve => listener.close(resolve));

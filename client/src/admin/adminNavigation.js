@@ -19,14 +19,14 @@ export const ADMIN_TABS = [
     description: 'Regular and special bingo operations',
     theme: 'amber',
     children: [
-      { id: 'dashboard', label: 'Overview', icon: 'O' },
+      { id: 'dashboard', label: 'Overview', icon: 'O', allowedRoles: ['super_user', 'admin', 'viewer'] },
       { id: 'sessions', label: 'Manage Sessions', icon: 'S' },
       { id: 'recurring', label: 'Manage Schedule', icon: 'A' },
       { id: 'chairs', label: 'Manage Chairs', icon: 'C' },
       { id: 'announcements', label: 'Manage Announcements', icon: 'N' },
       { id: 'packages', label: 'Manage Packages', icon: 'T' },
       { id: 'inventory', label: 'Manage PHD Inventory', icon: 'P' },
-      { id: 'bookings', label: 'Sales & Transactions', icon: '$' },
+      { id: 'bookings', label: 'Sales & Transactions', icon: '$', allowedRoles: ['super_user', 'admin', 'viewer'] },
     ],
   },
   {
@@ -39,7 +39,7 @@ export const ADMIN_TABS = [
       { id: 'events', label: 'Manage Events', icon: 'E' },
       { id: 'chairs', label: 'Manage Chairs', icon: 'C' },
       { id: 'announcements', label: 'Manage Announcements', icon: 'N' },
-      { id: 'bookings', label: 'Sales & Transactions', icon: '$' },
+      { id: 'bookings', label: 'Sales & Transactions', icon: '$', allowedRoles: ['super_user', 'admin', 'viewer'] },
     ],
   },
   {
@@ -49,11 +49,11 @@ export const ADMIN_TABS = [
     description: 'Combined reporting and customer tools',
     theme: 'neutral',
     children: [
-      { id: 'bookings', label: 'All Sales & Transactions', icon: '$' },
+      { id: 'bookings', label: 'All Sales & Transactions', icon: '$', allowedRoles: ['super_user', 'admin', 'viewer'] },
       { id: 'bulkprint', label: 'Bulk Print', icon: 'P', allowedRoles: ['super_user', 'admin', 'print_staff'] },
-      { id: 'customers', label: 'Customers', icon: 'U' },
+      { id: 'customers', label: 'Customers', icon: 'U', allowedRoles: ['super_user', 'admin', 'viewer'] },
       { id: 'announcements', label: 'Announcements', icon: 'N' },
-      { id: 'archive', label: 'Archive & Audit', icon: 'R' },
+      { id: 'archive', label: 'Archive & Audit', icon: 'R', allowedRoles: ['super_user', 'admin', 'viewer'] },
     ],
   },
   {

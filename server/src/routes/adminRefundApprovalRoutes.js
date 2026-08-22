@@ -1,7 +1,6 @@
 import { all, get, run, saveDb, withTransaction } from '../database.js';
-import { adminAuth, requireSuperUser } from '../middleware/adminAuth.js';
+import { adminAuth } from '../middleware/adminAuth.js';
 import { refundTransaction, verifyTransaction, voidTransaction } from '../services/payments.js';
-import { sendRefundApprovalRequestNotification } from '../services/email.js';
 import { formatCurrency, generateRef } from '../utils/format.js';
 
 function normalizeReason(value) {
@@ -123,12 +122,6 @@ export function registerAdminRefundApprovalRoutes(app, {
       bookingReference: booking.reference_number,
       amountCents,
     });
-    const approvers = await all("SELECT email FROM admin_users WHERE is_active = 1 AND (is_super_user = 1 OR role = 'super_user')");
-    const approvalEmails = approvers.map(row => row.email);
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(process.env.ADMIN_USERNAME || '')) approvalEmails.push(process.env.ADMIN_USERNAME);
-    setImmediate(() => sendRefundApprovalRequestNotification({ request, booking, item, recipients: approvalEmails }).catch(err => {
-      console.error('[email] refund approval request notification failed:', err?.message || err);
-    }));
     return { request };
   }
 
@@ -144,7 +137,7 @@ export function registerAdminRefundApprovalRoutes(app, {
       const created = await createRequest({ booking, reason, requestedBy: req.adminUser.email });
       if (created.error) return res.status(400).json({ error: created.error });
       if (created.duplicate) return res.status(409).json({ error: 'refund_request_pending', requestId: created.requestId });
-      res.status(202).json({ ok: true, approvalRequired: true, requestId: created.request.id, message: 'Refund request submitted for super-user approval. No money has moved and no seat has been released.' });
+      res.status(202).json({ ok: true, approvalRequired: false, readyToExecute: true, requestId: created.request.id, message: 'Refund authorization recorded and ready to execute.' });
     } catch (err) {
       console.error('POST /api/admin/bookings/:id/refund request failed:', err);
       if (isUniqueConflict(err)) return res.status(409).json({ error: 'refund_request_pending' });
@@ -168,7 +161,7 @@ export function registerAdminRefundApprovalRoutes(app, {
       const created = await createRequest({ booking, item, reason, requestedBy: req.adminUser.email });
       if (created.error) return res.status(400).json({ error: created.error });
       if (created.duplicate) return res.status(409).json({ error: 'refund_request_pending', requestId: created.requestId });
-      res.status(202).json({ ok: true, approvalRequired: true, requestId: created.request.id, message: 'Ticket refund request submitted for super-user approval. No money has moved and the seat remains assigned.' });
+      res.status(202).json({ ok: true, approvalRequired: false, readyToExecute: true, requestId: created.request.id, message: 'Ticket refund authorization recorded and ready to execute.' });
     } catch (err) {
       console.error('POST /api/admin/booking-items/:id/refund request failed:', err);
       if (isUniqueConflict(err)) return res.status(409).json({ error: 'refund_request_pending' });
@@ -176,14 +169,13 @@ export function registerAdminRefundApprovalRoutes(app, {
     }
   });
 
-  app.post('/api/admin/refund-requests/:id/reject', adminAuth, requireSuperUser, async (req, res) => {
+  app.post('/api/admin/refund-requests/:id/reject', adminAuth, async (req, res) => {
     try {
       const note = normalizeReason(req.body?.note);
       const result = await withTransaction(async tx => {
         const request = await tx.getForUpdate('SELECT * FROM refund_requests WHERE id = ?', [req.params.id]);
         if (!request) return { status: 404, error: 'Refund request not found' };
         if (request.status !== 'pending') return { status: 409, error: `Request is already '${request.status}'.` };
-        if (request.requested_by.toLowerCase() === req.adminUser.email.toLowerCase()) return { status: 403, error: 'A different super user must review this request.' };
         await tx.run("UPDATE refund_requests SET status = 'rejected', reviewed_by = ?, reviewed_at = ?, review_note = ? WHERE id = ? AND status = 'pending'", [req.adminUser.email, new Date().toISOString(), note, request.id]);
         return { status: 200, request };
       });
@@ -197,7 +189,7 @@ export function registerAdminRefundApprovalRoutes(app, {
     }
   });
 
-  app.post('/api/admin/refund-requests/:id/approve', adminAuth, requireSuperUser, async (req, res) => {
+  app.post('/api/admin/refund-requests/:id/approve', adminAuth, async (req, res) => {
     let claimed = null;
     let confirmedGateway = null;
     try {
@@ -205,7 +197,6 @@ export function registerAdminRefundApprovalRoutes(app, {
         const request = await tx.getForUpdate('SELECT * FROM refund_requests WHERE id = ?', [req.params.id]);
         if (!request) return { status: 404, error: 'Refund request not found' };
         if (request.status !== 'pending') return { status: 409, error: `Request is already '${request.status}'.` };
-        if (request.requested_by.toLowerCase() === req.adminUser.email.toLowerCase()) return { status: 403, error: 'A different super user must approve this request.' };
         const updated = await tx.run("UPDATE refund_requests SET status = 'processing', reviewed_by = ?, reviewed_at = ?, review_note = ?, failure_reason = NULL WHERE id = ? AND status = 'pending'", [req.adminUser.email, new Date().toISOString(), normalizeReason(req.body?.note), request.id]);
         return updated.changes === 1 ? { status: 200, request } : { status: 409, error: 'Request state changed. Refresh and try again.' };
       });
