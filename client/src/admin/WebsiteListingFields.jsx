@@ -29,6 +29,9 @@ export function emptyWebsiteListing() {
     website_detail_rows: [],
     website_prize: '',
     website_end_date: '',
+    website_show_bingo: true,
+    website_show_events: false,
+    website_show_home: false,
   };
 }
 
@@ -56,6 +59,10 @@ export function websiteListingFromSession(session = {}) {
     website_detail_rows: rows,
     website_prize: session.website_prize == null ? '' : String(session.website_prize),
     website_end_date: session.website_end_date || '',
+    // Older rows predate placement flags; treat them as Bingo page only.
+    website_show_bingo: session.website_show_bingo == null ? true : Number(session.website_show_bingo) === 1,
+    website_show_events: Number(session.website_show_events || 0) === 1,
+    website_show_home: Number(session.website_show_home || 0) === 1,
   };
 }
 
@@ -75,8 +82,17 @@ export function missingWebsiteListingFields(form) {
   if (!String(form.website_lead || '').trim()) missing.push('Lead paragraph');
   if (!String(form.website_blurb || '').trim()) missing.push('Short blurb');
   if (filledRows.length === 0) missing.push('At least one detail row');
+  if (!form.website_show_bingo && !form.website_show_events && !form.website_show_home) {
+    missing.push('At least one page to show it on');
+  }
   return missing;
 }
+
+export const WEBSITE_SURFACE_FIELDS = [
+  ['website_show_bingo', 'Bingo page', 'The main bingo page banner. On by default.'],
+  ['website_show_events', 'Events page', 'A full poster with the details table on /events/.'],
+  ['website_show_home', 'Homepage', 'A card on the front page. Use for the big draws.'],
+];
 
 function FieldLabel({ children, hint, required }) {
   return (
@@ -134,6 +150,30 @@ export default function WebsiteListingFields({
 
       {form.website_published && (
         <div className="mt-3 space-y-4 bg-fuchsia-50 rounded-lg p-4 border border-fuchsia-200">
+          {/* --- Placement --- */}
+          <div className="rounded-lg border border-fuchsia-200 bg-white/70 p-3">
+            <FieldLabel required hint="A bingo event shows on the Bingo page only unless you add it here. Use the homepage for the big draws.">
+              Show this event on
+            </FieldLabel>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {WEBSITE_SURFACE_FIELDS.map(([field, label, hint]) => (
+                <label key={field} className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!form[field]}
+                    disabled={disabled}
+                    onChange={e => set({ [field]: e.target.checked })}
+                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500"
+                  />
+                  <span>
+                    <span className="block text-sm text-gray-700">{label}</span>
+                    <span className="block text-[11px] text-gray-400 leading-snug max-w-[13rem]">{hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           {missing.length > 0 && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <span className="font-semibold">Not ready to publish yet.</span> Still needed: {missing.join(', ')}.

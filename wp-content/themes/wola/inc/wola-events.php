@@ -225,14 +225,36 @@ function wola_events_merged() {
 	return $events;
 }
 
-/** Events whose end date hasn't passed, sorted by end date. $type: 'bingo'|'poker'|null */
-function wola_events_upcoming( $type = null ) {
+/**
+ * Should this event render on the given surface?
+ *
+ * Hand-written events in the array above carry no placement flags and are
+ * ALWAYS shown, exactly as they always have been — this filter can never take
+ * one of them off a page. Only events synced from the booking app opt in per
+ * surface, defaulting to the Bingo page alone.
+ *
+ * $surface: 'bingo' | 'events' | 'home' | null (null = no filtering)
+ */
+function wola_event_shows_on( $e, $surface ) {
+	if ( ! $surface ) { return true; }
+	if ( empty( $e['source'] ) || $e['source'] !== 'booking' ) { return true; }
+	$key = 'show_' . $surface;
+	if ( ! array_key_exists( $key, $e ) ) { return true; }
+	return ! empty( $e[ $key ] );
+}
+
+/**
+ * Events whose end date hasn't passed, sorted by end date.
+ * $type: 'bingo'|'poker'|null   $surface: 'bingo'|'events'|'home'|null
+ */
+function wola_events_upcoming( $type = null, $surface = null ) {
 	$tz    = function_exists( 'wp_timezone' ) ? wp_timezone() : new DateTimeZone( 'America/Moncton' );
 	$today = ( new DateTime( 'now', $tz ) )->format( 'Y-m-d' );
 	$out   = array();
 	foreach ( wola_events_merged() as $e ) {
 		if ( $e['end'] < $today ) { continue; }
 		if ( $type && $e['type'] !== $type ) { continue; }
+		if ( ! wola_event_shows_on( $e, $surface ) ) { continue; }
 		$is_synced = ( ! empty( $e['source'] ) && $e['source'] === 'booking' );
 		if ( ! $is_synced && $e['type'] === 'bingo' && ! empty( $e['start'] ) && ! empty( $e['name'] ) ) {
 			$booking_title = ! empty( $e['booking_title'] ) ? $e['booking_title'] : $e['name'];
@@ -259,7 +281,7 @@ function wola_event_is_live( $slug ) {
 /** Biggest advertised bingo prize among upcoming events, e.g. "$15,000" */
 function wola_events_top_prize() {
 	$max = 0;
-	foreach ( wola_events_upcoming( 'bingo' ) as $e ) {
+	foreach ( wola_events_upcoming( 'bingo', 'bingo' ) as $e ) {
 		if ( ! empty( $e['prize'] ) && $e['prize'] > $max ) { $max = $e['prize']; }
 	}
 	return $max > 0 ? '$' . number_format( $max ) : '';

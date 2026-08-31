@@ -47,7 +47,19 @@ export const WEBSITE_LISTING_COLUMNS = [
   'website_detail_rows',
   'website_prize',
   'website_end_date',
+  'website_show_bingo',
+  'website_show_events',
+  'website_show_home',
   'website_updated_at',
+];
+
+// Where a published event is allowed to appear. Bingo page is the default and
+// the other two are opt-in, so a routine special bingo does not clutter the
+// homepage or the Events page unless someone deliberately puts it there.
+export const WEBSITE_SURFACES = [
+  ['website_show_bingo', 'Bingo page'],
+  ['website_show_events', 'Events page'],
+  ['website_show_home', 'Homepage'],
 ];
 
 export function slugifyEventName(value) {
@@ -272,6 +284,13 @@ export function normalizeWebsiteListing(body, current = {}, sessionType = 'regul
     merged.website_end_date = endDate;
   }
 
+  for (const [column] of WEBSITE_SURFACES) {
+    if (body[column] !== undefined) {
+      updates[column] = (body[column] === true || body[column] === 1 || body[column] === '1') ? 1 : 0;
+      merged[column] = updates[column];
+    }
+  }
+
   if (body.website_published !== undefined) {
     updates.website_published = publishRequested ? 1 : 0;
   }
@@ -331,6 +350,20 @@ export function normalizeWebsiteListing(body, current = {}, sessionType = 'regul
     if (!merged.website_slug) {
       return { error: 'Cannot publish to the website - the event needs a name to build its page anchor.' };
     }
+
+    // A brand-new session has no row yet, so the column default of 1 is not
+    // visible here. Apply the same default explicitly: bingo page unless the
+    // admin said otherwise. An explicit false stays false.
+    if (merged.website_show_bingo === undefined || merged.website_show_bingo === null) {
+      updates.website_show_bingo = 1;
+      merged.website_show_bingo = 1;
+    }
+
+    // Published but placed nowhere would be invisible with no explanation.
+    const placed = WEBSITE_SURFACES.some(([column]) => Number(merged[column] || 0) === 1);
+    if (!placed) {
+      return { error: 'Cannot publish to the website - choose at least one place to show it (Bingo page, Events page or Homepage).' };
+    }
   }
 
   updates.website_updated_at = new Date().toISOString();
@@ -383,6 +416,11 @@ export function toWebsiteFeedEntry(session, { bookingBaseUrl }) {
     link: `/events/#we-ev-${session.website_slug}`,
     book: bookUrl.toString(),
     prize: Number(session.website_prize || 0),
+    // Placement. The WordPress templates ask for one surface at a time; an
+    // event missing from that surface is skipped there and nowhere else.
+    show_bingo: Number(session.website_show_bingo ?? 1) === 1,
+    show_events: Number(session.website_show_events || 0) === 1,
+    show_home: Number(session.website_show_home || 0) === 1,
     updated_at: session.website_updated_at || null,
   };
 }

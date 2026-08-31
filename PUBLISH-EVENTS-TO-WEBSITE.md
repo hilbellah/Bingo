@@ -46,7 +46,8 @@ known good flyers keep showing.
 
    | Field | Required | Where it shows |
    |---|---|---|
-   | Flyer image | **yes** | the poster on all three pages |
+   | **Show this event on** | **yes, at least one** | Bingo page (default) / Events page / Homepage |
+   | Flyer image | **yes** | the poster on whichever pages you ticked |
    | Flyer alt text | **yes** | screen readers, and if the image fails to load |
    | Website event name | **yes** | event heading |
    | Highlighted heading | no — auto | two-tone heading; last word highlighted by default |
@@ -62,6 +63,30 @@ known good flyers keep showing.
 
 4. Save. The site updates within seconds (push) or within ten minutes (cron fallback).
 
+### Placement — where an event appears
+
+A bingo event published from the booking admin shows on the **Bingo page only**
+unless you say otherwise. Tick **Homepage** for the big draws (Bigger Bank Bingo
+and the like) and **Events page** if you want the full poster with the details
+table on `/events/`. Publishing with no page ticked is refused rather than
+creating an event nobody can see.
+
+```
+Show this event on:
+  [x] Bingo page      <- default, always on unless you untick it
+  [ ] Events page
+  [ ] Homepage        <- tick for the big draws
+```
+
+The homepage shows the **single next** upcoming event that has Homepage ticked,
+so ticking it on several events is safe — they queue by date rather than piling
+up.
+
+**The eight hand-written events in `inc/wola-events.php` are exempt.** They carry
+no placement flags, and the WordPress side treats a flagless event as "show
+everywhere", so they keep appearing exactly where they do today. Placement only
+governs events published from the booking admin.
+
 To take a flyer down early, untick the box and save — the copy is kept, so re-publishing later
 needs no retyping. Deleting or disabling the session also removes it from the site.
 Flyers auto-remove after "Show until", exactly like the hand-written ones.
@@ -75,6 +100,7 @@ The Sessions table shows a **Published** chip for events currently live on the m
 | Change | File |
 |---|---|
 | `website_*` columns on `sessions` | `server/migrations/postgres/015_website_publishing.sql`, `server/src/migrate.js` |
+| Placement columns (`website_show_*`) | `server/migrations/postgres/016_website_placement.sql` |
 | Validation, auto-fill, feed shaping | `server/src/services/websiteEvents.js` |
 | Push notifier | `server/src/services/websiteSync.js` |
 | Public feed `GET /api/website/events` | `server/src/routes/websiteEventRoutes.js` |
@@ -118,9 +144,16 @@ applied — diff against the live copies before uploading.
   above the "FEATURED EVENT (ACF)" block. It must load on every request (not only the three
   event templates) because it registers the REST endpoint and the cron job.
 
-- **`wp-content/themes/wola/inc/wola-events.php`** — adds `wola_events_merged()` and points
-  `wola_events_upcoming()` at it instead of `wola_events_all()`. **The hand-written array is
-  completely untouched.** Synced events are appended and any slug already present is skipped.
+- **`wp-content/themes/wola/inc/wola-events.php`** — adds `wola_events_merged()` and
+  `wola_event_shows_on()`, and gives `wola_events_upcoming()` a second `$surface` argument.
+  **The hand-written array is completely untouched**, and `wola_event_shows_on()` returns
+  true for any event without placement flags, so no hand-written flyer can ever be filtered
+  off a page.
+
+- **The three templates** — each call site now names its surface:
+  `bingo-redesign.php` passes `'bingo'`, `archive-events.php` passes `'events'`,
+  `home-redesign.php` passes `'home'`. One-line changes; the rest of each template is
+  untouched.
 
 ### Step 3 — add the secret to `wp-config.php`
 

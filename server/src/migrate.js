@@ -517,6 +517,11 @@ async function migrate() {
   try { await exec('ALTER TABLE sessions ADD COLUMN website_prize INTEGER'); } catch(e) {}
   try { await exec('ALTER TABLE sessions ADD COLUMN website_end_date TEXT'); } catch(e) {}
   try { await exec('ALTER TABLE sessions ADD COLUMN website_updated_at TEXT'); } catch(e) {}
+  // Placement on the marketing site: bingo page by default, the other two
+  // surfaces opt-in. Mirrors 016_website_placement.sql.
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_show_bingo INTEGER NOT NULL DEFAULT 1'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_show_events INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_show_home INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
   try { await exec('CREATE UNIQUE INDEX IF NOT EXISTS sessions_website_slug_unique ON sessions (website_slug) WHERE website_slug IS NOT NULL AND deleted_at IS NULL'); } catch(e) {}
   try { await run("UPDATE sessions SET session_type = CASE WHEN is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END WHERE session_type IS NULL OR session_type = ''"); } catch(e) {}
 

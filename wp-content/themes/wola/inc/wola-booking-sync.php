@@ -132,6 +132,11 @@ function wola_booking_sync_sanitize_event( $raw ) {
 		'link'    => '/events/#we-ev-' . $slug,
 		'book'    => $book,
 		'prize'   => isset( $raw['prize'] ) ? absint( $raw['prize'] ) : 0,
+		// Placement. Absent flags mean "Bingo page only", matching the booking
+		// app's defaults, so an older feed never lands somewhere unexpected.
+		'show_bingo'  => array_key_exists( 'show_bingo', $raw ) ? (bool) $raw['show_bingo'] : true,
+		'show_events' => ! empty( $raw['show_events'] ),
+		'show_home'   => ! empty( $raw['show_home'] ),
 	);
 }
 

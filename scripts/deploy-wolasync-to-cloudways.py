@@ -86,53 +86,35 @@ if ( file_exists( $wola_booking_sync ) ) {
     require_once $wola_booking_sync;
 }"""
 
-EVENTS_ANCHOR = (
-    "/** Events whose end date hasn't passed, sorted by end date. "
-    "$type: 'bingo'|'poker'|null */"
-)
-EVENTS_PATCH = """/**
- * The hand-written registry above PLUS any events published from the booking
- * app (see inc/wola-booking-sync.php).
- *
- * The hand-written entries always win: if a synced event carries a slug that
- * already exists above, the synced copy is discarded. Nothing the booking app
- * sends can overwrite or remove a flyer maintained by hand in this file.
- */
-function wola_events_merged() {
-\t$events = wola_events_all();
+# wola-events.php: one unambiguous block replacement rather than several small
+# anchors. Generated from the locally tested file, so what deploys is exactly
+# what the test suite ran against.
+EVENTS_ANCHOR = "/** Events whose end date hasn't passed, sorted by end date. $type: 'bingo'|'poker'|null */\nfunction wola_events_upcoming( $type = null ) {\n\t$tz    = function_exists( 'wp_timezone' ) ? wp_timezone() : new DateTimeZone( 'America/Moncton' );\n\t$today = ( new DateTime( 'now', $tz ) )->format( 'Y-m-d' );\n\t$out   = array();\n\tforeach ( wola_events_all() as $e ) {\n\t\tif ( $e['end'] < $today ) { continue; }\n\t\tif ( $type && $e['type'] !== $type ) { continue; }\n\t\tif ( $e['type'] === 'bingo' && ! empty( $e['start'] ) && ! empty( $e['name'] ) ) {"
 
-\tif ( ! function_exists( 'wola_booking_synced_events' ) ) {
-\t\treturn $events; // sync file not loaded — behave exactly as before
-\t}
+EVENTS_PATCH = "/**\n * The hand-written registry above PLUS any events published from the booking\n * app (see inc/wola-booking-sync.php).\n *\n * The hand-written entries always win: if a synced event carries a slug that\n * already exists above, the synced copy is discarded. Nothing the booking app\n * sends can overwrite or remove a flyer maintained by hand in this file.\n */\nfunction wola_events_merged() {\n\t$events = wola_events_all();\n\n\tif ( ! function_exists( 'wola_booking_synced_events' ) ) {\n\t\treturn $events; // sync file not loaded — behave exactly as before\n\t}\n\n\t$existing = array();\n\tforeach ( $events as $e ) {\n\t\tif ( ! empty( $e['slug'] ) ) { $existing[ $e['slug'] ] = true; }\n\t}\n\n\tforeach ( wola_booking_synced_events() as $synced ) {\n\t\tif ( empty( $synced['slug'] ) || isset( $existing[ $synced['slug'] ] ) ) { continue; }\n\t\t$existing[ $synced['slug'] ] = true;\n\t\t$events[] = $synced;\n\t}\n\n\treturn $events;\n}\n\n/**\n * Should this event render on the given surface?\n *\n * Hand-written events in the array above carry no placement flags and are\n * ALWAYS shown, exactly as they always have been — this filter can never take\n * one of them off a page. Only events synced from the booking app opt in per\n * surface, defaulting to the Bingo page alone.\n *\n * $surface: 'bingo' | 'events' | 'home' | null (null = no filtering)\n */\nfunction wola_event_shows_on( $e, $surface ) {\n\tif ( ! $surface ) { return true; }\n\tif ( empty( $e['source'] ) || $e['source'] !== 'booking' ) { return true; }\n\t$key = 'show_' . $surface;\n\tif ( ! array_key_exists( $key, $e ) ) { return true; }\n\treturn ! empty( $e[ $key ] );\n}\n\n/**\n * Events whose end date hasn't passed, sorted by end date.\n * $type: 'bingo'|'poker'|null   $surface: 'bingo'|'events'|'home'|null\n */\nfunction wola_events_upcoming( $type = null, $surface = null ) {\n\t$tz    = function_exists( 'wp_timezone' ) ? wp_timezone() : new DateTimeZone( 'America/Moncton' );\n\t$today = ( new DateTime( 'now', $tz ) )->format( 'Y-m-d' );\n\t$out   = array();\n\tforeach ( wola_events_merged() as $e ) {\n\t\tif ( $e['end'] < $today ) { continue; }\n\t\tif ( $type && $e['type'] !== $type ) { continue; }\n\t\tif ( ! wola_event_shows_on( $e, $surface ) ) { continue; }\n\t\t$is_synced = ( ! empty( $e['source'] ) && $e['source'] === 'booking' );\n\t\tif ( ! $is_synced && $e['type'] === 'bingo' && ! empty( $e['start'] ) && ! empty( $e['name'] ) ) {"
 
-\t$existing = array();
-\tforeach ( $events as $e ) {
-\t\tif ( ! empty( $e['slug'] ) ) { $existing[ $e['slug'] ] = true; }
-\t}
+# The top-prize headline is rendered on the Bingo page, so it counts events
+# placed there.
+EVENTS_PRIZE_ANCHOR = "foreach ( wola_events_upcoming( 'bingo' ) as $e ) {"
+EVENTS_PRIZE_PATCH = "foreach ( wola_events_upcoming( 'bingo', 'bingo' ) as $e ) {"
 
-\tforeach ( wola_booking_synced_events() as $synced ) {
-\t\tif ( empty( $synced['slug'] ) || isset( $existing[ $synced['slug'] ] ) ) { continue; }
-\t\t$existing[ $synced['slug'] ] = true;
-\t\t$events[] = $synced;
-\t}
-
-\treturn $events;
-}
-
-""" + EVENTS_ANCHOR
-
-EVENTS_LOOP_ANCHOR = "foreach ( wola_events_all() as $e ) {"
-EVENTS_LOOP_PATCH = "foreach ( wola_events_merged() as $e ) {"
-
-EVENTS_BOOK_ANCHOR = (
-    "\t\tif ( $e['type'] === 'bingo' && ! empty( $e['start'] ) "
-    "&& ! empty( $e['name'] ) ) {"
-)
-EVENTS_BOOK_PATCH = (
-    "\t\t$is_synced = ( ! empty( $e['source'] ) && $e['source'] === 'booking' );\n"
-    "\t\tif ( ! $is_synced && $e['type'] === 'bingo' && ! empty( $e['start'] ) "
-    "&& ! empty( $e['name'] ) ) {"
-)
+# Each template asks for its own surface. A bingo event published from the
+# booking app appears on the Bingo page only unless the admin ticked the
+# Events page or Homepage box. Hand-written events ignore the filter entirely.
+TEMPLATE_PATCHES = [
+    ('templates/bingo-redesign.php',
+     "foreach ( wola_events_upcoming( 'bingo' ) as $wev ) : ?>",
+     "foreach ( wola_events_upcoming( 'bingo', 'bingo' ) as $wev ) : ?>",
+     "'bingo', 'bingo'"),
+    ('archive-events.php',
+     "<?php $wi = 0; foreach ( wola_events_upcoming( 'bingo' ) as $wev ) : $walt = ( $wi % 2 === 0 ); ?>",
+     "<?php $wi = 0; foreach ( wola_events_upcoming( 'bingo', 'events' ) as $wev ) : $walt = ( $wi % 2 === 0 ); ?>",
+     "'bingo', 'events'"),
+    ('home-redesign.php',
+     "foreach ( array_slice( wola_events_upcoming( 'bingo' ), 0, 1 ) as $wev ) : ?>",
+     "foreach ( array_slice( wola_events_upcoming( 'bingo', 'home' ), 0, 1 ) as $wev ) : ?>",
+     "'bingo', 'home'"),
+]
 
 WPCONFIG_ANCHOR = "/* That's all, stop editing!"
 
@@ -318,11 +300,18 @@ def main():
             posixpath.join(theme, "inc", "wola-events.php"),
             [
                 (EVENTS_ANCHOR, EVENTS_PATCH),
-                (EVENTS_LOOP_ANCHOR, EVENTS_LOOP_PATCH),
-                (EVENTS_BOOK_ANCHOR, EVENTS_BOOK_PATCH),
+                (EVENTS_PRIZE_ANCHOR, EVENTS_PRIZE_PATCH),
             ],
             already_applied_marker="wola_events_merged",
         )
+
+        # --- 3b. the three templates, one surface each ---
+        for filename, anchor, replacement, surface in TEMPLATE_PATCHES:
+            dep.apply(
+                posixpath.join(theme, filename),
+                [(anchor, replacement)],
+                already_applied_marker=surface,
+            )
 
         # --- 4. wp-config.php ---
         dep.apply(
