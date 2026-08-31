@@ -52,6 +52,7 @@ import { registerAdminReportRoutes } from './routes/adminReportRoutes.js';
 import { registerAdminScheduleRoutes } from './routes/adminScheduleRoutes.js';
 import { registerAdminSessionRoutes } from './routes/adminSessionRoutes.js';
 import { registerAnnouncementRoutes } from './routes/announcementRoutes.js';
+import { registerWebsiteEventRoutes } from './routes/websiteEventRoutes.js';
 import { registerSeatRoutes } from './routes/seatRoutes.js';
 import { registerTicketRoutes } from './routes/ticketRoutes.js';
 import { registerSocketHandlers } from './socket.js';
@@ -169,7 +170,7 @@ async function withBookingInitiationLock(key, fn) {
   }
 }
 
-const { uploadsDir, upload, saveUploadedImage } = createUploadMiddleware(__dirname);
+const { uploadsDir, legacyUploadsDir, upload, saveUploadedImage } = createUploadMiddleware(__dirname);
 const clientBuild = path.join(__dirname, '../../client/dist');
 
 function getSafeRuntimeConfig() {
@@ -262,12 +263,20 @@ const adminLoginLimiter = rateLimit({
 });
 app.use('/api', generalLimiter);
 
-// Serve uploaded files
-app.use('/uploads', express.static(uploadsDir, {
+// Serve uploaded files. Two roots: the durable one first, then the legacy
+// in-tree directory so URLs issued before uploads moved to the persistent
+// disk keep resolving. Flyers published to wolastoqcasino.ca are served from
+// here, so a 404 would show up on the marketing site as a broken poster.
+const uploadStaticOptions = {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
-  }
-}));
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+  },
+};
+app.use('/uploads', express.static(uploadsDir, uploadStaticOptions));
+if (legacyUploadsDir && legacyUploadsDir !== uploadsDir) {
+  app.use('/uploads', express.static(legacyUploadsDir, uploadStaticOptions));
+}
 
 function setAppShellNoCache(res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -3046,6 +3055,7 @@ registerAdminRefundApprovalRoutes(app, {
 });
 
 registerAnnouncementRoutes(app, { io, upload, saveUploadedImage });
+registerWebsiteEventRoutes(app);
 
 registerAdminScheduleRoutes(app, { logAudit });
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
+import WebsiteListingFields from './WebsiteListingFields';
 
 export default function SessionsTab() {
   const {
@@ -31,6 +32,12 @@ export default function SessionsTab() {
     setSessionPkgList,
     handleSaveSessionPkgs,
     packages,
+    sessionFlyerFile,
+    sessionFlyerPreview,
+    handleSessionFlyerFileChange,
+    editFlyerFile,
+    editFlyerPreview,
+    handleEditFlyerFileChange,
   } = useAdminDashboard();
   const bingoSessions = sessions.filter(s => (s.session_type || (s.is_special_event ? 'special_bingo' : 'regular_bingo')) !== 'event');
   const currentYear = new Date().getFullYear();
@@ -241,6 +248,18 @@ export default function SessionsTab() {
                     </div>
                   </div>
                 )}
+
+                {newSession.is_special_event && (
+                  <WebsiteListingFields
+                    form={newSession}
+                    onChange={setNewSession}
+                    flyerFile={sessionFlyerFile}
+                    flyerPreview={sessionFlyerPreview}
+                    onFlyerFileChange={handleSessionFlyerFileChange}
+                    sessionDate={newSession.date}
+                    disabled={uploadingEventImage}
+                  />
+                )}
               </div>
             </div>
 
@@ -254,6 +273,7 @@ export default function SessionsTab() {
                       <th className="pb-2">Time</th>
                       <th className="pb-2">Cutoff</th>
                       <th className="pb-2">Type</th>
+                      <th className="pb-2">Website</th>
                       <th className="pb-2">Status</th>
                       <th className="pb-2">Actions</th>
                     </tr>
@@ -275,6 +295,16 @@ export default function SessionsTab() {
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-600">Auto</span>
+                          )}
+                        </td>
+                        <td className="py-2">
+                          {Number(s.website_published) === 1 ? (
+                            <span className="px-2 py-0.5 rounded-full text-xs bg-fuchsia-100 text-fuchsia-700 font-medium"
+                              title="This event's flyer is live on wolastoqcasino.ca">
+                              Published
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-300">&mdash;</span>
                           )}
                         </td>
                         <td className="py-2">
@@ -473,6 +503,18 @@ export default function SessionsTab() {
                             )}
                           </div>
                         </div>
+                      )}
+
+                      {(editForm.is_special_event || editForm.session_type === 'event') && (
+                        <WebsiteListingFields
+                          form={editForm}
+                          onChange={setEditForm}
+                          flyerFile={editFlyerFile}
+                          flyerPreview={editFlyerPreview}
+                          onFlyerFileChange={handleEditFlyerFileChange}
+                          sessionDate={editForm.date}
+                          disabled={uploadingEventImage}
+                        />
                       )}
                     </div>
 

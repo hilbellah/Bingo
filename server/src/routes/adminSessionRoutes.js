@@ -14,13 +14,17 @@ import {
 import { sendSessionRescheduleNotification } from '../services/email.js';
 import { formatCurrency } from '../utils/format.js';
 import { getLiveEventCapacity, normalizeTicketLimit } from '../services/liveEventCapacity.js';
+import { normalizeWebsiteListing, WEBSITE_LISTING_COLUMNS } from '../services/websiteEvents.js';
+import { notifyWebsiteOfEventChange } from '../services/websiteSync.js';
 
 const LOCAL_DATE_TIME_REGEX = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/;
 const TIME_REGEX = /^\d{2}:\d{2}$/;
 
 function normalizeSalesCutoffAt(value) {
   const text = String(value || '').trim();
-  if (!text) return null;
+  // Every caller reads .error/.value off the result, so a blank value must
+  // still come back as a result object rather than null.
+  if (!text) return { value: null };
   const match = text.match(LOCAL_DATE_TIME_REGEX);
   if (!match) return { error: 'sales_cutoff_at must be YYYY-MM-DDTHH:MM' };
   const cutoffAt = sessionDateTimeToUtc(match[1], match[2]);
@@ -35,9 +39,36 @@ function getSessionTypeLabel(sessionType) {
 
 function normalizeDoorsOpenTime(value) {
   const text = String(value || '').trim();
-  if (!text) return null;
+  // As above: a blank doors-open time is legitimate (it just means "not set"),
+  // and must not blow up the caller's doorsOpen.error check.
+  if (!text) return { value: null };
   if (!TIME_REGEX.test(text)) return { error: 'doors_open_time must be HH:MM (24-hour)' };
   return { value: text };
+}
+
+// The website slug is the /events/ anchor (#we-ev-<slug>) and the key the
+// WordPress side dedupes on against its hand-written registry, so two live
+// sessions must never claim the same one.
+// These SET clauses are built from object keys. The keys are literals inside
+// normalizeWebsiteListing today, but interpolating anything into SQL deserves a
+// belt as well as braces — an unrecognised column is dropped, not interpolated.
+const WEBSITE_COLUMN_ALLOWLIST = new Set(WEBSITE_LISTING_COLUMNS);
+
+function websiteColumnEntries(updates) {
+  return Object.entries(updates).filter(([column]) => {
+    if (WEBSITE_COLUMN_ALLOWLIST.has(column)) return true;
+    console.error('Refusing unexpected website listing column:', column);
+    return false;
+  });
+}
+
+async function findSlugConflict(slug, excludeSessionId = null) {
+  if (!slug) return null;
+  return get(
+    `SELECT id, date, event_title FROM sessions
+     WHERE website_slug = ? AND deleted_at IS NULL AND id <> ?`,
+    [slug, excludeSessionId || '']
+  );
 }
 
 export function registerAdminSessionRoutes(app, { io, logAudit }) {
@@ -72,6 +103,20 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         : pkgs;
       const packageValidation = validateSessionPackagesForType(sessionType, packageDrafts);
       if (!packageValidation.ok) return res.status(400).json({ error: packageValidation.error });
+
+      // Website listing is opt-in and validated before the session exists, so
+      // a rejected listing never leaves a half-created session behind.
+      const websiteListing = normalizeWebsiteListing(req.body, { date, event_title }, sessionType);
+      if (websiteListing.error) return res.status(400).json({ error: websiteListing.error });
+      // Check whenever a slug is written, not only when publishing: the
+      // database's unique index covers unpublished drafts too, so two drafts
+      // sharing a name would otherwise fail as an opaque 500.
+      if (websiteListing.updates.website_slug) {
+        const slugTaken = await findSlugConflict(websiteListing.updates.website_slug);
+        if (slugTaken) {
+          return res.status(409).json({ error: `The website link name "${websiteListing.updates.website_slug}" is already used by the event on ${slugTaken.date}. Give this event a different website name.` });
+        }
+      }
 
       const requestHour = time ? time.split(':')[0] : '18';
       const conflictGroup = getSessionConflictGroup(sessionType);
@@ -108,10 +153,23 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         }
       }
 
-      await logAudit('session_created', 'session', id, { date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, doors_open_time: doorsOpen.value, ticket_limit: ticketLimit, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url });
+      const websiteEntries = websiteColumnEntries(websiteListing.updates);
+      if (websiteEntries.length > 0) {
+        await run(
+          `UPDATE sessions SET ${websiteEntries.map(([col]) => `${col} = ?`).join(', ')} WHERE id = ?`,
+          [...websiteEntries.map(([, value]) => value), id]
+        );
+      }
+
+      await logAudit('session_created', 'session', id, { date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, doors_open_time: doorsOpen.value, ticket_limit: ticketLimit, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url, website_published: websiteListing.published, website_slug: websiteListing.updates.website_slug || null });
       await saveDb();
 
-      res.json({ id, date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, doors_open_time: doorsOpen.value, ticket_limit: ticketLimit, is_available, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url: event_image_url || null, totalChairs: chairCount });
+      if (websiteListing.published) {
+        // Best-effort: refreshes and purges the marketing site's caches.
+        notifyWebsiteOfEventChange('session_published');
+      }
+
+      res.json({ id, date, time, cutoff_time, sales_cutoff_at: salesCutoff.value, doors_open_time: doorsOpen.value, ticket_limit: ticketLimit, is_available, session_type: sessionType, is_special_event: isSpecialType, event_title, event_image_url: event_image_url || null, website_published: websiteListing.published ? 1 : 0, totalChairs: chairCount });
     } catch (err) {
       console.error('POST /api/admin/sessions failed:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -180,6 +238,35 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         updates.push('ticket_limit = ?');
         values.push(ticketLimit);
       }
+
+      // --- Website listing ---
+      // Validated against the stored row so a partial edit (swapping just the
+      // flyer, say) still enforces the "published events must be complete" rule.
+      const websiteListing = normalizeWebsiteListing(req.body, currentSession, effectiveSessionType);
+      if (websiteListing.error) return res.status(400).json({ error: websiteListing.error });
+      const wasPublished = !!Number(currentSession.website_published || 0);
+      const nextSlug = websiteListing.updates.website_slug !== undefined
+        ? websiteListing.updates.website_slug
+        : currentSession.website_slug;
+      // As in the create path: the unique index covers unpublished drafts, so
+      // any write that sets a slug must be checked, not just a publish.
+      if (nextSlug && (websiteListing.published || websiteListing.updates.website_slug !== undefined)) {
+        const slugTaken = await findSlugConflict(nextSlug, req.params.id);
+        if (slugTaken) {
+          return res.status(409).json({ error: `The website link name "${nextSlug}" is already used by the event on ${slugTaken.date}. Give this event a different website name.` });
+        }
+      }
+      // A session that stops being a special bingo / live event cannot stay on
+      // the website — there is no flyer surface for a regular session.
+      if (nextSessionType && nextSessionType !== 'special_bingo' && nextSessionType !== 'event' && wasPublished) {
+        websiteListing.updates.website_published = 0;
+        websiteListing.published = false;
+      }
+      for (const [column, value] of websiteColumnEntries(websiteListing.updates)) {
+        updates.push(`${column} = ?`);
+        values.push(value);
+      }
+
       if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
 
       if (date !== undefined || time !== undefined || nextSessionType !== null) {
@@ -249,7 +336,13 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         });
       }
 
-      res.json({ success: true, rescheduled: wasRescheduled, notifiedBookings });
+      // Ping the marketing site whenever the published state or its copy
+      // changed, including an unpublish so the flyer comes down promptly.
+      if (websiteListing.published || wasPublished) {
+        notifyWebsiteOfEventChange(websiteListing.published ? 'session_updated' : 'session_unpublished');
+      }
+
+      res.json({ success: true, rescheduled: wasRescheduled, notifiedBookings, website_published: websiteListing.published ? 1 : 0 });
     } catch (err) {
       console.error('PATCH /api/admin/sessions/:id failed:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -272,6 +365,12 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
 
       const now = new Date().toISOString();
       await run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [now, req.params.id]);
+
+      // A deleted session drops out of the public website feed; tell the
+      // marketing site so the flyer comes down instead of waiting for a purge.
+      if (Number(session.website_published || 0) === 1) {
+        notifyWebsiteOfEventChange('session_deleted');
+      }
 
       await logAudit('session_deleted', 'session', req.params.id, {
         date: session.date,

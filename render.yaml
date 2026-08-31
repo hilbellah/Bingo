@@ -88,5 +88,23 @@ services:
       # Base URL used in email ticket links and verification redirects.
       - key: PUBLIC_SITE_URL
         value: https://booking.wolastoqcasino.ca
+      # === Uploaded images (announcement art, event images, website flyers) ===
+      # Must live on the persistent disk. The old default was server/uploads,
+      # inside the source tree Render rebuilds on every deploy, so uploads
+      # disappeared at the next deploy. Event flyers published to
+      # wolastoqcasino.ca are served from here, so this must be durable.
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+      # === Marketing-site event sync (wolastoqcasino.ca) ===
+      # When an admin publishes an event to the website, the booking app pings
+      # this endpoint so WordPress re-pulls /api/website/events and purges its
+      # Breeze/Varnish caches. Optional: without it the site still picks the
+      # change up on its own scheduled pull, just not immediately.
+      - key: WEBSITE_SYNC_URL
+        value: https://www.wolastoqcasino.ca/wp-json/wola/v1/events-sync
+      # Secret - must match WOLA_BOOKING_SYNC_SECRET in the WordPress
+      # wp-config.php. Pasted in the Render dashboard, NOT committed here.
+      - key: WEBSITE_SYNC_SECRET
+        sync: false
     autoDeploy: true
     healthCheckPath: /api/sessions

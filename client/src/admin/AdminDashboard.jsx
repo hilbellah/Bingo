@@ -30,6 +30,7 @@ import {
 } from './adminPrintUtils';
 import { confirmAdminAction } from './adminConfirm';
 import { formatDateShort, formatTime, venueToday } from '../utils/formatters';
+import { emptyWebsiteListing, missingWebsiteListingFields, websiteListingFromSession } from './WebsiteListingFields';
 
 function formatPrice(cents) {
   return 'CA$' + (cents / 100).toFixed(2);
@@ -120,7 +121,7 @@ export default function AdminDashboard() {
   const [specialBingoConfig, setSpecialBingoConfig] = useState(DEFAULT_SPECIAL_BINGO_CONFIG);
   const [bookingConfig, setBookingConfig] = useState(DEFAULT_BOOKING_CONFIG);
   const [bookingConfigSaved, setBookingConfigSaved] = useState(false);
-  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages() });
+  const [newSession, setNewSession] = useState({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages(), ...emptyWebsiteListing() });
   const [newEvent, setNewEvent] = useState({ date: '', time: '19:00', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', ticket_limit: '', session_type: 'event', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultEventPackages() });
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info', start_date: '', end_date: '', image_url: '' });
@@ -129,7 +130,12 @@ export default function AdminDashboard() {
   const [editingSessionPkgs, setEditingSessionPkgs] = useState(null); // session id being edited
   const [sessionPkgList, setSessionPkgList] = useState([]);
   const [editingSession, setEditingSession] = useState(null); // session object being edited
-  const [editForm, setEditForm] = useState({ date: '', time: '', cutoff_time: '', doors_open_time: '', is_special_event: false, event_title: '', event_description: '', event_image_url: '' });
+  // Website flyer picked in the "Publish to website" panel, before upload.
+  const [sessionFlyerFile, setSessionFlyerFile] = useState(null);
+  const [sessionFlyerPreview, setSessionFlyerPreview] = useState(null);
+  const [editFlyerFile, setEditFlyerFile] = useState(null);
+  const [editFlyerPreview, setEditFlyerPreview] = useState(null);
+  const [editForm, setEditForm] = useState({ date: '', time: '', cutoff_time: '', doors_open_time: '', is_special_event: false, event_title: '', event_description: '', event_image_url: '', ...emptyWebsiteListing() });
   const [bulkDateFrom, setBulkDateFrom] = useState('');
   const [bulkDateTo, setBulkDateTo] = useState('');
   const [bulkDepartment, setBulkDepartment] = useState('all');
@@ -427,6 +433,34 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleSessionFlyerFileChange = (file) => {
+    setSessionFlyerFile(file);
+    setSessionFlyerPreview(file ? URL.createObjectURL(file) : null);
+  };
+
+  const handleEditFlyerFileChange = (file) => {
+    setEditFlyerFile(file);
+    setEditFlyerPreview(file ? URL.createObjectURL(file) : null);
+  };
+
+  // Strip the website listing off a payload that must never reach the site,
+  // and block a save that would publish an incomplete listing.
+  const prepareWebsiteListing = (payload, { flyerFile, publishable }) => {
+    if (!publishable || !payload.website_published) {
+      // Take it off the site but keep the copy. The admin form posts every
+      // field on save, so blanking the rows here would silently destroy the
+      // listing and force a full retype if they ever re-publish.
+      payload.website_published = false;
+      return { ok: true, publishing: false };
+    }
+    const missing = missingWebsiteListingFields(payload);
+    if (missing.length > 0) {
+      alert('Cannot publish to the website yet. Still missing:\n\n- ' + missing.join('\n- '));
+      return { ok: false, publishing: true };
+    }
+    return { ok: true, publishing: true, flyerFile };
+  };
+
   const handleCreateSession = async () => {
     if (!newSession.date) return;
     const payload = { ...newSession, session_type: newSession.is_special_event ? 'special_bingo' : 'regular_bingo' };
@@ -444,6 +478,7 @@ export default function AdminDashboard() {
         payload.is_special_event && payload.doors_open_time ? `Doors open: ${formatTime(payload.doors_open_time)}` : '',
         `Sales cutoff: ${payload.session_type === 'special_bingo' ? formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time) : formatTime(payload.cutoff_time)}`,
         payload.is_special_event ? `Packages: ${packageSummary(payload.packages) || 'No packages configured'}` : '',
+        payload.website_published ? 'Website: published to wolastoqcasino.ca (flyer goes live)' : '',
       ],
       warning: 'This will make the session available for booking.',
     });
@@ -455,14 +490,26 @@ export default function AdminDashboard() {
       delete payload.doors_open_time;
       delete payload.packages;
     }
+    // Only special bingo events carry a website listing; a regular session has
+    // no flyer to show.
+    const websitePlan = prepareWebsiteListing(payload, {
+      flyerFile: sessionFlyerFile,
+      publishable: payload.session_type === 'special_bingo',
+    });
+    if (!websitePlan.ok) return;
     try {
       if (payload.session_type === 'special_bingo') {
         payload.event_image_url = await resolveEventImageUrl(payload.event_image_url, sessionImageFile);
       }
+      if (websitePlan.publishing) {
+        payload.website_flyer_url = await resolveEventImageUrl(payload.website_flyer_url, sessionFlyerFile);
+      }
       await createAdminSession(token, payload);
-      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages(specialBingoConfig) });
+      setNewSession({ date: '', time: '18:30', cutoff_time: '12:00', sales_cutoff_date: '', doors_open_time: '', is_special_event: true, event_title: '', event_description: '', event_image_url: '', packages: defaultSpecialEventPackages(specialBingoConfig), ...emptyWebsiteListing() });
       setSessionImageFile(null);
       setSessionImagePreview(null);
+      setSessionFlyerFile(null);
+      setSessionFlyerPreview(null);
       loadSessions();
     } catch (err) {
       alert('Failed to create session: ' + (err?.message || 'Unknown error. Please try again.'));
@@ -615,9 +662,12 @@ export default function AdminDashboard() {
       doors_open_time: session.doors_open_time || '',
       ticket_limit: session.ticket_limit || '',
       event_image_url: session.event_image_url || '',
+      ...websiteListingFromSession(session),
     });
     setEditImageFile(null);
     setEditImagePreview(null);
+    setEditFlyerFile(null);
+    setEditFlyerPreview(null);
   };
 
   const handleSaveEdit = async () => {
@@ -635,6 +685,11 @@ export default function AdminDashboard() {
       payload.doors_open_time = '';
       payload.sales_cutoff_at = null;
     }
+    const websitePlan = prepareWebsiteListing(payload, {
+      flyerFile: editFlyerFile,
+      publishable: payload.session_type === 'special_bingo' || payload.session_type === 'event',
+    });
+    if (!websitePlan.ok) return;
     if (!confirmAdminAction({
       action: 'Save changes to this session',
       details: [
@@ -644,6 +699,7 @@ export default function AdminDashboard() {
         `Sales cutoff: ${payload.session_type === 'event' || payload.session_type === 'special_bingo' ? formatSalesCutoff(payload.sales_cutoff_at, payload.cutoff_time) : formatTime(payload.cutoff_time)}`,
         payload.session_type === 'event' ? `Ticket limit: ${payload.ticket_limit || 'Unlimited'}` : '',
         payload.event_title ? `Title: ${payload.event_title}` : '',
+        payload.website_published ? 'Website: published to wolastoqcasino.ca' : '',
       ],
       warning: payload.notify_reschedule === false
         ? 'Reschedule emails are turned off for this change.'
@@ -653,10 +709,15 @@ export default function AdminDashboard() {
       if (payload.session_type === 'event' || payload.session_type === 'special_bingo') {
         payload.event_image_url = await resolveEventImageUrl(payload.event_image_url, editImageFile);
       }
+      if (websitePlan.publishing) {
+        payload.website_flyer_url = await resolveEventImageUrl(payload.website_flyer_url, editFlyerFile);
+      }
       await updateAdminSession(token, editingSession.id, payload);
       setEditingSession(null);
       setEditImageFile(null);
       setEditImagePreview(null);
+      setEditFlyerFile(null);
+      setEditFlyerPreview(null);
       loadSessions();
     } catch (err) {
       alert('Failed to update session: ' + (err?.message || 'Unknown error'));
@@ -1197,6 +1258,12 @@ export default function AdminDashboard() {
     sessionImagePreview,
     setSessionImagePreview,
     handleCreateSession,
+    sessionFlyerFile,
+    sessionFlyerPreview,
+    handleSessionFlyerFileChange,
+    editFlyerFile,
+    editFlyerPreview,
+    handleEditFlyerFileChange,
     newEvent,
     setNewEvent,
     eventImageFile,

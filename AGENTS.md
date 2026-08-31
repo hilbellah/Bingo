@@ -1,0 +1,10 @@
+## Imported Claude Cowork project instructions
+
+## Marketing site (wolastoqcasino.ca) — CRITICAL rules for ALL agents
+
+1. **Bingo event flyers are data-driven.** All dated event banners (bingo flyers, posters) are managed in ONE file on the Cloudways server: `wp-content/themes/wola/inc/wola-events.php`. The templates `templates/bingo-redesign.php`, `archive-events.php`, and `home-redesign.php` contain `wola_events_upcoming()` loops that render them and auto-remove past events. **Never delete the `require_once .../inc/wola-events.php` lines or the WOLAEVENTS loop sections when editing or rewriting these templates.** To add/change an event, edit `inc/wola-events.php` only.
+2. **Do not rewrite theme template files from scratch.** Patch the existing live file. Full rewrites have repeatedly destroyed other agents' work (event flyers disappeared sitewide three times in July 2026).
+3. The current `templates/bingo-redesign.php` (restored 2026-07-31) is the approved design — do not replace it.
+4. Jackpot copy rule from Sir Hilbert: never state "$50,000 jackpot" flatly — always "Up to $50,000".
+5. After any theme change: purge with `wp breeze purge --cache=all && wp cache flush`, then verify the bare URL.
+6. **Events can now also come from the booking app.** `inc/wola-booking-sync.php` (loaded from `functions.php`) stores events an admin explicitly published in the booking admin, and `wola_events_merged()` in `inc/wola-events.php` appends them to the hand-written array. **The hand-written array always wins on a slug clash** — synced events can never overwrite or delete a flyer maintained by hand. Do not delete the `require_once .../inc/wola-booking-sync.php` line in `functions.php` or the `wola_events_merged()` function. Rendering makes no HTTP calls, so the booking app being down cannot blank the flyers. Full write-up: `PUBLISH-EVENTS-TO-WEBSITE.md`.

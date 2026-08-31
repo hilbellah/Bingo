@@ -499,6 +499,25 @@ async function migrate() {
   try { await exec('ALTER TABLE sessions ADD COLUMN sales_cutoff_at TEXT'); } catch(e) {}
   try { await exec('ALTER TABLE sessions ADD COLUMN doors_open_time TEXT'); } catch(e) {}
   try { await exec('ALTER TABLE sessions ADD COLUMN ticket_limit INTEGER'); } catch(e) {}
+
+  // --- Website publishing (opt-in marketing flyer + copy per session) ---
+  // Mirrors server/migrations/postgres/015_website_publishing.sql.
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_published INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_slug TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_name TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_name_hl TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_flyer_url TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_flyer_alt TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_badge TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_datefmt TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_kicker TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_lead TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_blurb TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_detail_rows TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_prize INTEGER'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_end_date TEXT'); } catch(e) {}
+  try { await exec('ALTER TABLE sessions ADD COLUMN website_updated_at TEXT'); } catch(e) {}
+  try { await exec('CREATE UNIQUE INDEX IF NOT EXISTS sessions_website_slug_unique ON sessions (website_slug) WHERE website_slug IS NOT NULL AND deleted_at IS NULL'); } catch(e) {}
   try { await run("UPDATE sessions SET session_type = CASE WHEN is_special_event = 1 THEN 'special_bingo' ELSE 'regular_bingo' END WHERE session_type IS NULL OR session_type = ''"); } catch(e) {}
 
   // Session-specific package overrides
