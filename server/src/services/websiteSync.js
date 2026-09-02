@@ -33,6 +33,21 @@ export async function notifyWebsiteOfEventChange(reason, logger = console) {
     return { ok: false, skipped: true, reason: 'not_configured' };
   }
 
+  // Two attempts with a short lead-in delay. The delay guarantees the pull
+  // WordPress makes in response can never race the DB commit this
+  // notification is about (seen live 2026-09-02: a pull landed in the same
+  // second as the save and synced zero events). The retry covers a cold
+  // Render dyno or a transient network blip.
+  let last = { ok: false, error: 'not attempted' };
+  for (const waitMs of [2000, 5000]) {
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+    last = await pushWebsiteSyncOnce(reason, logger);
+    if (last.ok) return last;
+  }
+  return last;
+}
+
+async function pushWebsiteSyncOnce(reason, logger = console) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SYNC_TIMEOUT_MS);
 
