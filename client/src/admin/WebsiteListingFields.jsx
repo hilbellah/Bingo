@@ -70,12 +70,14 @@ export function websiteListingFromSession(session = {}) {
  * Client-side mirror of the server's publish rule, so the admin sees what is
  * missing before the save round-trips. The server re-checks everything.
  */
-export function missingWebsiteListingFields(form) {
+export function missingWebsiteListingFields(form, { hasFlyerFile = false } = {}) {
   if (!form.website_published) return [];
   const rows = Array.isArray(form.website_detail_rows) ? form.website_detail_rows : [];
   const filledRows = rows.filter(r => String(r?.[0] || '').trim() && String(r?.[1] || '').trim());
   const missing = [];
-  if (!String(form.website_flyer_url || '').trim()) missing.push('Flyer image');
+  // A freshly selected flyer is still a File at validation time — it only
+  // becomes a URL after the upload that runs post-validation. Either counts.
+  if (!String(form.website_flyer_url || '').trim() && !hasFlyerFile) missing.push('Flyer image');
   if (!String(form.website_flyer_alt || '').trim()) missing.push('Flyer alt text');
   if (!String(form.website_name || '').trim()) missing.push('Website event name');
   if (!String(form.website_kicker || '').trim()) missing.push('Kicker');
@@ -117,7 +119,7 @@ export default function WebsiteListingFields({
 }) {
   const set = (patch) => onChange({ ...form, ...patch });
   const rows = Array.isArray(form.website_detail_rows) ? form.website_detail_rows : [];
-  const missing = missingWebsiteListingFields(form);
+  const missing = missingWebsiteListingFields(form, { hasFlyerFile: !!flyerFile });
 
   const setRow = (index, position, value) => {
     const next = rows.map((row, i) => {

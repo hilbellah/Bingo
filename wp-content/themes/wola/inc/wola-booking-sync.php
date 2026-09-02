@@ -216,7 +216,19 @@ function wola_booking_sync_purge_caches() {
 	if ( class_exists( 'Breeze_PurgeVarnish' ) ) {
 		$varnish = new Breeze_PurgeVarnish();
 		if ( method_exists( $varnish, 'purge_cache' ) ) {
-			$varnish->purge_cache();
+			// Cloudways Breeze: purge_cache( $url ) — a "?breeze" query triggers a
+			// full-domain Varnish PURGE. Older builds take no argument. Best-effort.
+			// (Fixed 2026-09-01 after a live ArgumentCountError; keep in sync with prod.)
+			try {
+				$ref = new ReflectionMethod( $varnish, 'purge_cache' );
+				if ( $ref->getNumberOfRequiredParameters() > 0 ) {
+					$varnish->purge_cache( home_url( '/?breeze' ) );
+				} else {
+					$varnish->purge_cache();
+				}
+			} catch ( Throwable $wola_purge_err ) {
+				// purging is best-effort; the 10-minute cron will still refresh pages
+			}
 		}
 	}
 	if ( function_exists( 'wp_cache_flush' ) ) {

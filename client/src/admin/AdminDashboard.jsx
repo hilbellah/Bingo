@@ -453,7 +453,7 @@ export default function AdminDashboard() {
       payload.website_published = false;
       return { ok: true, publishing: false };
     }
-    const missing = missingWebsiteListingFields(payload);
+    const missing = missingWebsiteListingFields(payload, { hasFlyerFile: !!flyerFile });
     if (missing.length > 0) {
       alert('Cannot publish to the website yet. Still missing:\n\n- ' + missing.join('\n- '));
       return { ok: false, publishing: true };
