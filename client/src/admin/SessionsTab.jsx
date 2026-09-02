@@ -260,6 +260,16 @@ export default function SessionsTab() {
                     disabled={uploadingEventImage}
                   />
                 )}
+                {/* Bottom save button — after the long publish panel, so nobody
+                    has to scroll back to the top row to submit. */}
+                {newSession.is_special_event && (
+                  <div className="mt-4 border-t pt-4">
+                    <button onClick={handleCreateSession} disabled={uploadingEventImage}
+                      className="bg-brand-gold text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-brand-gold/90 disabled:opacity-40">
+                      {uploadingEventImage ? 'Uploading...' : 'Add Special Bingo'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

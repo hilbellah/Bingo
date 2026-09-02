@@ -331,7 +331,8 @@ export default function WebsiteListingFields({
 
           {/* --- Detail rows --- */}
           <div>
-            <FieldLabel required hint="The details table on the Events page. One row per line item.">Event details</FieldLabel>
+            <FieldLabel required hint="The small facts table shown next to the flyer on the website. Each row is one line: a short label on the left (Ticket, Doors, Prizes, Online Sales) and the detail on the right. Add a row per fact players need.">Event details</FieldLabel>
+            <p className="text-xs text-gray-400 mb-2">Example: &ldquo;Ticket&rdquo; &rarr; &ldquo;$100 &mdash; 9 UP Booklet, Early Bird &amp; Meal&rdquo; &middot; &ldquo;Doors&rdquo; &rarr; &ldquo;12:00 PM&rdquo; &middot; &ldquo;Prizes&rdquo; &rarr; &ldquo;$10,000 Full Card&rdquo;</p>
             {rows.length === 0 && (
               <p className="text-xs text-gray-400 mb-2">No rows yet — add Ticket, Doors Open, Online Sales, and anything else players need.</p>
             )}
@@ -342,14 +343,14 @@ export default function WebsiteListingFields({
                   disabled={disabled}
                   onChange={e => setRow(i, 0, e.target.value)}
                   className="w-40 px-2 py-1.5 border rounded text-sm"
-                  placeholder="Ticket"
+                  placeholder="Label — e.g. Ticket, Doors, Prizes"
                 />
                 <input
                   value={row?.[1] ?? ''}
                   disabled={disabled}
                   onChange={e => setRow(i, 1, e.target.value)}
                   className="flex-1 px-2 py-1.5 border rounded text-sm"
-                  placeholder="$150 — 9 UP Book, 1 Early Bird &amp; 1 Meal Ticket"
+                  placeholder="Detail — e.g. $100 — 9 UP Booklet, 1 Early Bird &amp; Meal Ticket"
                 />
                 <button
                   type="button"
