@@ -271,6 +271,11 @@ const uploadStaticOptions = {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'public, max-age=86400');
+    // Helmet's default Cross-Origin-Resource-Policy is same-origin, which
+    // makes browsers refuse to render these images on wolastoqcasino.ca —
+    // exactly where published event flyers are embedded. Uploads are public
+    // content; let any origin display them.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   },
 };
 app.use('/uploads', express.static(uploadsDir, uploadStaticOptions));
