@@ -1305,8 +1305,6 @@ export default function AdminDashboard() {
     refundRequests,
     handleApproveRefundRequest: isViewer ? null : handleApproveRefundRequest,
     handleRejectRefundRequest: isViewer ? null : handleRejectRefundRequest,
->>>>END
-
     dashboardDateFrom,
     dashboardDateTo,
     dashboardRange,
