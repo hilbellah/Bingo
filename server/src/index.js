@@ -46,6 +46,7 @@ import {
 } from './services/phdInventory.js';
 import { registerAdminBookingRoutes } from './routes/adminBookingRoutes.js';
 import { registerAdminRefundApprovalRoutes } from './routes/adminRefundApprovalRoutes.js';
+import { registerAdminPaymentReviewRoutes } from './routes/adminPaymentReviewRoutes.js';
 import { registerAdminBulkTicketRoutes } from './routes/adminBulkTicketRoutes.js';
 import { registerAdminCustomerRoutes } from './routes/adminCustomerRoutes.js';
 import { registerAdminReportRoutes } from './routes/adminReportRoutes.js';
@@ -64,13 +65,16 @@ import {
 } from './startup.js';
 import { createUploadMiddleware } from './uploads.js';
 import { formatCurrency, formatVenueDate, generateRef } from './utils/format.js';
-import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode } from './services/email.js';
+import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode, sendPaymentReviewAlert } from './services/email.js';
 import {
   createHostedPaymentPage,
   getHostedPaymentRedirectUrl,
+  listSettledTransactions,
+  listUnsettledTransactions,
   verifyTransaction,
   verifyWebhookSignature,
 } from './services/payments.js';
+import { createPaymentReconciler, startPaymentReconciliation } from './services/paymentReconciliation.js';
 import {
   getBookingConfig,
   normalizeSpecialBingoConfig,
@@ -121,6 +125,14 @@ const HOLD_MINUTES = HOLD_CONFIG.holdMinutes;
 const PAYMENT_FAILURE_HOLD_MINUTES = HOLD_CONFIG.paymentFailureHoldMinutes;
 const CHECKOUT_SERVICE_FEE_CENTS = 200;
 const EVENT_HST_RATE_BASIS_POINTS = 1500;
+// While a customer is on the card form or the "confirming your payment" page,
+// their status poll keeps the seat hold alive (see keepCheckoutHoldAlive) so a
+// slow gateway cannot expire the hold under them. Capped so an abandoned tab
+// cannot block a seat all day.
+const CHECKOUT_HEARTBEAT_MAX_MINUTES = (() => {
+  const configured = Number(process.env.CHECKOUT_HEARTBEAT_MAX_MINUTES || 90);
+  return Number.isFinite(configured) && configured > 0 ? Math.min(Math.floor(configured), 240) : 90;
+})();
 const startTime = Date.now();
 const bookingInitiationLocks = new Map();
 
@@ -836,7 +848,46 @@ async function quarantineRejectedApprovedPayment({ booking, transactionId, authC
     transactionId,
     rejection,
   });
+  notifyPaymentReview({ bookingId: booking.id, rejection, transactionId });
   return { ok: false, paymentRejected: true, requiresReview: true, rejection };
+}
+
+// Super users get an email for every quarantined or duplicate payment. Until
+// the 2026-09-04 incident the only signal was a socket event nobody rendered,
+// and customers found out before staff did.
+async function getSuperUserEmails() {
+  try {
+    const rows = await all(
+      "SELECT email FROM admin_users WHERE is_active = 1 AND (is_super_user = 1 OR role = 'super_user')"
+    );
+    return rows.map(row => String(row.email || '').trim().toLowerCase()).filter(email => email.includes('@'));
+  } catch (err) {
+    console.error('[payments] could not load super user emails:', err?.message || err);
+    return [];
+  }
+}
+
+function notifyPaymentReview({ bookingId, rejection, transactionId, kind = 'payment_review' }) {
+  setImmediate(async () => {
+    try {
+      const booking = await get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+      if (!booking) return;
+      const session = await get('SELECT * FROM sessions WHERE id = ?', [booking.session_id]);
+      const seats = await all(
+        `SELECT bi.first_name, bi.last_name, s.table_number, s.chair_number, s.status
+         FROM booking_items bi JOIN seats s ON s.id = bi.seat_id
+         WHERE bi.booking_id = ? ORDER BY bi.id`,
+        [bookingId]
+      );
+      const recipients = await getSuperUserEmails();
+      const result = await sendPaymentReviewAlert({ booking, session, seats, rejection, transactionId, kind, recipients });
+      await logPaymentEvent(bookingId, 'review_alert_email', 'server', {
+        kind, rejection, transactionId, ok: !!result?.ok, error: result?.error || null, recipients: recipients.length,
+      });
+    } catch (err) {
+      console.error('[payments] payment review alert failed:', err?.message || err);
+    }
+  });
 }
 
 async function markBookingPaid({ bookingId, transactionId = null, authCode = null, source = 'instant', verifiedTransaction = null, paymentServices = null }) {
@@ -883,6 +934,28 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
       [...seatIds, bookingId]
     );
 
+    // Seat ownership at the moment the payment is applied. A payment can
+    // arrive after the 20-minute hold lapsed (2026-09-04: gateway webhooks an
+    // hour late). If the seat is still free — vacant, or a lapsed hold the
+    // sweeper has not cleared yet — the paying customer keeps it. Only a seat
+    // that someone else is actively holding or has bought is a real conflict.
+    const reclaimedSeatIds = [];
+    let seatRejection = null;
+    if (seats.length !== seatIds.length) {
+      seatRejection = 'seat_hold_expired_or_released';
+    } else {
+      for (const seat of seats) {
+        if (seat.status === 'sold') { seatRejection = 'seat_hold_expired_or_released'; break; }
+        if (Number(seat.is_disabled) === 1) { seatRejection = 'seat_disabled'; break; }
+        const heldByThisCustomer = seat.status === 'held'
+          && (!booking.checkout_holder_id || seat.held_by === booking.checkout_holder_id);
+        if (heldByThisCustomer) continue;
+        const holdActive = seat.status === 'held' && (!seat.held_until || seat.held_until > completedAt);
+        if (holdActive) { seatRejection = 'seat_held_by_another_customer'; break; }
+        reclaimedSeatIds.push(seat.id);
+      }
+    }
+
     let rejection = null;
     if (booking.payment_status !== 'pending') rejection = `booking_status_${booking.payment_status}`;
     // The gateway-verified amount must match what this booking currently
@@ -892,8 +965,7 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
       && Number.isFinite(Number(verifiedTransaction.amountCents))
       && Number(verifiedTransaction.amountCents) !== Number(booking.total_amount)) rejection = 'payment_amount_mismatch';
     else if (conflicts.length > 0) rejection = 'seat_owned_by_another_paid_booking';
-    else if (seats.length !== seatIds.length || seats.some(seat => seat.status !== 'held')) rejection = 'seat_hold_expired_or_released';
-    else if (booking.checkout_holder_id && seats.some(seat => seat.held_by !== booking.checkout_holder_id)) rejection = 'seat_held_by_another_customer';
+    else if (seatRejection) rejection = seatRejection;
 
     if (rejection) {
       if (transactionId) {
@@ -916,7 +988,7 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
     for (const item of items) {
       await tx.run(`UPDATE seats SET status = 'sold', held_by = NULL, held_until = NULL WHERE id = ?`, [item.seat_id]);
     }
-    return { ok: true, booking, items };
+    return { ok: true, booking, items, reclaimedSeatIds };
   });
 
   if (!claim.ok) {
@@ -939,6 +1011,7 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
         transactionId,
         rejection: claim.rejection,
       });
+      notifyPaymentReview({ bookingId, rejection: claim.rejection, transactionId, kind: 'duplicate_payment' });
       return { ok: false, paymentRejected: true, requiresReview: true, rejection: claim.rejection };
     }
     if (claim.rejection === 'booking_already_paid_by_another_transaction') {
@@ -961,6 +1034,7 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
         transactionId,
         rejection: claim.rejection,
       });
+      notifyPaymentReview({ bookingId, rejection: claim.rejection, transactionId, kind: 'duplicate_payment' });
       return { ok: false, paymentRejected: true, requiresReview: true, rejection: claim.rejection };
     }
     if (transactionId && claim.booking) {
@@ -1098,6 +1172,21 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
   await saveDb();
 
   await logPaymentEvent(bookingId, 'approved', source, { transactionId, authCode });
+  if (claim.reclaimedSeatIds?.length) {
+    // The hold had lapsed but nobody else had taken the seat. Record it so a
+    // late gateway signal is visible in the audit trail instead of silent.
+    await logPaymentEvent(bookingId, 'late_payment_seat_reclaimed', source, {
+      transactionId,
+      seatIds: claim.reclaimedSeatIds,
+    });
+    await logAudit('late_payment_seat_reclaimed', 'booking', bookingId, {
+      referenceNumber: booking.reference_number,
+      transactionId,
+      seatIds: claim.reclaimedSeatIds,
+      source,
+    });
+    console.warn(`[bookings] late payment for ${booking.reference_number} reclaimed ${claim.reclaimedSeatIds.length} lapsed seat(s) (source=${source})`);
+  }
   await logAudit('booking_paid', 'booking', bookingId, {
     referenceNumber: booking.reference_number,
     sessionId: booking.session_id,
@@ -1112,7 +1201,7 @@ async function markBookingPaid({ bookingId, transactionId = null, authCode = nul
     console.error('[email] unexpected error:', err);
   }));
 
-  return { ok: true };
+  return { ok: true, reclaimedSeats: claim.reclaimedSeatIds?.length || 0 };
 }
 
 // Idempotently mark a 'pending' booking as 'failed' (decline / error path).
@@ -2183,10 +2272,25 @@ app.post('/api/bookings/:id/edit', bookingLimiter, async (req, res) => {
 app.get('/api/bookings/:id/status', async (req, res) => {
   try {
     const booking = await get(
-      'SELECT id, reference_number, payment_status, total_amount, payment_failure_reason, ticket_access_token FROM bookings WHERE id = ?',
+      `SELECT id, reference_number, payment_status, total_amount, payment_failure_reason, ticket_access_token,
+              checkout_holder_id, payment_attempted_at, created_at, hosted_token
+       FROM bookings WHERE id = ?`,
       [req.params.id]
     );
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (booking.payment_status === 'pending') {
+      // The customer is still on the card form or waiting for confirmation:
+      // keep their seats held, and ask the gateway directly whether the
+      // payment already went through instead of waiting for the webhook.
+      try {
+        await keepCheckoutHoldAlive(booking);
+      } catch (err) {
+        console.error('[bookings] hold heartbeat failed:', err?.message || err);
+      }
+      if (booking.hosted_token) {
+        paymentReconciler.requestReconciliation({ reason: 'status_poll', minGapMs: 20000 });
+      }
+    }
     res.json({
       bookingId: booking.id,
       referenceNumber: booking.reference_number,
@@ -2271,7 +2375,7 @@ async function reconcilePaymentReturn(booking, transactionId) {
   if (booking.payment_status === 'paid'
     && (!booking.transaction_id || booking.transaction_id === transactionId)) return;
 
-  const verify = await verifyTransaction(transactionId);
+  const verify = await testablePaymentServices.verifyTransaction(transactionId);
   if (!verify.ok) {
     await logPaymentEvent(booking.id, 'return_verify_error', 'authorize_net_browser', {
       transactionId,
@@ -2429,6 +2533,43 @@ app.all('/payment/return', async (req, res) => {
   }
 });
 
+// Card form reported success inside the embedded iframe. The client sends the
+// transaction id here (keepalive fetch) before it navigates, so confirmation
+// does not depend on the follow-up /payment/return navigation completing or
+// on the webhook. Nothing is trusted from the browser: the id is verified
+// server-to-server against the gateway before the booking changes.
+app.post('/api/bookings/:id/payment-result', bookingLimiter, async (req, res) => {
+  try {
+    const booking = await get('SELECT * FROM bookings WHERE id = ?', [req.params.id]);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    const transactionId = firstString(req.body?.transId, req.body?.transactionId);
+    await logPaymentEvent(booking.id, 'returned', 'authorize_net_iframe', {
+      method: 'POST',
+      transactionId: transactionId || null,
+    });
+    if (transactionId) {
+      try {
+        await reconcilePaymentReturn(booking, transactionId);
+      } catch (err) {
+        console.error('[payments] iframe payment-result reconciliation failed:', err?.message || err);
+        await logPaymentEvent(booking.id, 'return_verify_error', 'authorize_net_iframe', {
+          transactionId,
+          error: err?.message || String(err),
+        });
+      }
+    } else if (booking.hosted_token) {
+      // No transaction id in the gateway message: fall back to asking the
+      // gateway directly rather than waiting for the webhook.
+      paymentReconciler.requestReconciliation({ reason: 'payment_result', minGapMs: 0 });
+    }
+    const updated = await get('SELECT payment_status FROM bookings WHERE id = ?', [booking.id]);
+    res.json({ bookingId: booking.id, status: updated?.payment_status || booking.payment_status });
+  } catch (err) {
+    console.error('POST /api/bookings/:id/payment-result failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.all('/payment/cancel', async (req, res) => {
   try {
     const booking = await findBookingForPaymentReturn(req);
@@ -2471,12 +2612,109 @@ app.all('/payment/cancel', async (req, res) => {
 // Test-only seam: lets API checks stub gateway calls (webhook verification,
 // hosted-page token creation), mirroring the paymentServices injection used
 // by the refund approval routes. No-op outside NODE_ENV=test.
-const testablePaymentServices = { verifyTransaction, createHostedPaymentPage };
+const testablePaymentServices = {
+  verifyTransaction,
+  createHostedPaymentPage,
+  listUnsettledTransactions,
+  listSettledTransactions,
+};
 export function __setPaymentServicesForTesting(overrides = {}) {
   if (process.env.NODE_ENV !== 'test') {
     throw new Error('__setPaymentServicesForTesting is test-only');
   }
   Object.assign(testablePaymentServices, overrides);
+}
+
+// Webhook-independent confirmation: asks the gateway which pending bookings
+// have an approved transaction and completes them via markBookingPaid. Runs
+// on a timer (see start()) and on demand from the customer's status poll.
+const paymentReconciler = createPaymentReconciler({
+  paymentServices: testablePaymentServices,
+  markBookingPaid,
+  logger,
+});
+function reconcilePendingPayments(options = {}) {
+  return paymentReconciler.reconcilePendingPayments(options);
+}
+
+// Keep the seats of an in-flight checkout held while the customer is still
+// on the page. Called from the status poll (every 2s per waiting customer);
+// writes only when the hold has less than HOLD_MINUTES - 1 left, so it costs
+// one UPDATE a minute per checkout at most.
+async function keepCheckoutHoldAlive(booking) {
+  const startedAt = new Date(booking.payment_attempted_at || booking.created_at || 0).getTime();
+  if (!Number.isFinite(startedAt) || Date.now() - startedAt > CHECKOUT_HEARTBEAT_MAX_MINUTES * 60 * 1000) {
+    return { extended: 0, capped: true };
+  }
+  const nowIso = new Date().toISOString();
+  const target = holdExpiresAt(HOLD_MINUTES);
+  const refreshBelow = holdExpiresAt(Math.max(1, HOLD_MINUTES - 1));
+  const holderId = String(booking.checkout_holder_id || '').trim();
+  const holderClause = holderId ? 'AND held_by = ?' : '';
+  const params = holderId ? [target, booking.id, nowIso, refreshBelow, holderId] : [target, booking.id, nowIso, refreshBelow];
+  const result = await run(
+    `UPDATE seats SET held_until = ?
+     WHERE id IN (SELECT seat_id FROM booking_items WHERE booking_id = ?)
+       AND status = 'held'
+       AND held_until IS NOT NULL
+       AND held_until > ?
+       AND held_until < ?
+       ${holderClause}`,
+    params
+  );
+  return { extended: Number(result?.changes || 0) };
+}
+
+// Staff "Confirm seat" for a quarantined payment whose seat is still free.
+// Returns the booking to 'pending' and re-runs the exact paid transition, so
+// every guard (amount, conflicts, holds) applies and the customer receives
+// the normal confirmation email. If the seat is taken it re-quarantines.
+async function confirmReviewedPayment({ bookingId, adminEmail = 'admin', paymentServices = testablePaymentServices }) {
+  const booking = await get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+  if (!booking) return { ok: false, error: 'booking_not_found' };
+  if (booking.payment_status !== 'payment_review') {
+    return { ok: false, error: 'not_in_review', message: `Booking is ${booking.payment_status}, not awaiting review.` };
+  }
+  if (!booking.transaction_id) return { ok: false, error: 'no_transaction', message: 'No gateway transaction is recorded on this booking.' };
+
+  const verify = await paymentServices.verifyTransaction(booking.transaction_id);
+  if (!verify.ok) return { ok: false, error: 'verify_failed', message: `Authorize.Net lookup failed: ${verify.error || 'unknown error'}` };
+  if (!verify.approved || verify.invoiceNumber !== booking.reference_number) {
+    return { ok: false, error: 'transaction_not_approved', message: 'Authorize.Net does not show an approved charge for this booking.' };
+  }
+  const reversedStatuses = ['voided', 'refundSettledSuccessfully', 'refundPendingSettlement', 'declined', 'expired'];
+  if (reversedStatuses.includes(String(verify.status || ''))) {
+    return { ok: false, error: 'transaction_reversed', message: `This charge is ${verify.status} at Authorize.Net; nothing to confirm.` };
+  }
+
+  const flipped = await run(
+    "UPDATE bookings SET payment_status = 'pending', payment_failure_reason = NULL WHERE id = ? AND payment_status = 'payment_review'",
+    [bookingId]
+  );
+  if (Number(flipped?.changes || 0) !== 1) return { ok: false, error: 'state_changed', message: 'Booking changed state during confirmation; reload and retry.' };
+  await logPaymentEvent(bookingId, 'review_confirm_attempt', 'admin', { by: adminEmail, transactionId: booking.transaction_id });
+
+  const result = await markBookingPaid({
+    bookingId,
+    transactionId: booking.transaction_id,
+    authCode: verify.authCode || booking.auth_code || null,
+    source: 'admin_review_confirmed',
+    verifiedTransaction: verify,
+  });
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.rejection || result.error || 'seat_unavailable',
+      message: `Could not confirm: ${result.rejection || result.error || 'seat unavailable'}. The booking stays in review.`,
+      requiresReview: true,
+    };
+  }
+  await logAudit('payment_review_confirmed', 'booking', bookingId, {
+    referenceNumber: booking.reference_number,
+    transactionId: booking.transaction_id,
+    by: adminEmail,
+  });
+  return { ok: true, referenceNumber: booking.reference_number, reclaimedSeats: result.reclaimedSeats || 0 };
 }
 
 async function processAuthorizeNetWebhook({ rawBody, sigHeader, event }) {
@@ -3059,6 +3297,8 @@ registerAdminRefundApprovalRoutes(app, {
   markBookingVoided,
 });
 
+registerAdminPaymentReviewRoutes(app, { io, logAudit, logPaymentEvent, confirmReviewedPayment });
+
 registerAnnouncementRoutes(app, { io, upload, saveUploadedImage });
 registerWebsiteEventRoutes(app);
 
@@ -3103,6 +3343,7 @@ async function start() {
   });
 
   await startMaintenanceTasks(io, { reconcileReversedBookingSeats }, logger);
+  startPaymentReconciliation(paymentReconciler, { logger });
   registerGracefulShutdown({ server, logger });
 }
 
@@ -3116,6 +3357,9 @@ export {
   markBookingRefunded,
   markBookingVoided,
   reconcileReversedBookingSeats,
+  reconcilePendingPayments,
+  confirmReviewedPayment,
+  keepCheckoutHoldAlive,
 };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {

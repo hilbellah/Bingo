@@ -554,3 +554,24 @@ Participants:
 
 **Last Updated**: April 3, 2026  
 **Review Frequency**: Monthly or after each incident
+
+---
+
+## 7. Customer Charged But No Reservation (P1)
+
+**Symptom:** A customer (or Authorize.Net) shows a captured payment, but the booking is not on the seat map / the customer has no ticket email.
+
+**Where to look first:** Admin Dashboard -> red "Payments Needing Attention" panel. Every payment the site could not attach to a seat (status `payment_review`) and every duplicate charge is listed there, and super users receive an "ACTION: Paid booking has no seat" email when it happens.
+
+**Resolve:**
+1. Panel says the seat is free -> press **Confirm seat**. The payment is re-verified with Authorize.Net, the seat is marked sold, and the customer gets the normal ticket email. Done.
+2. Panel says the seat is taken -> move the customer to another seat in Chair Management (assigned ticket) and refund through the refund workflow, or refund the payment through the refund workflow. Tell the customer which.
+3. "Charged twice" rows -> refund the extra transaction through the refund workflow, then press **Mark refunded**.
+
+**Never** refund or void directly in the Authorize.Net dashboard; the seat records will not follow.
+
+**If the panel is empty but the customer insists they paid:** run in the DB
+`SELECT reference_number, payment_status, transaction_id, created_at FROM bookings WHERE LOWER(email) = LOWER('<email>') ORDER BY created_at DESC;`
+and check `payment_events` for that booking. A `pending` booking with `hosted_token` set and no `webhook`/`reconciled_from_gateway` event within 2 minutes means the gateway has not reported the charge yet; the reconciliation poller retries every 60 s for 72 h. Check the Render logs for `[reconcile]` warnings (gateway list failing) and Authorize.Net's status page.
+
+**Background:** see `docs/INCIDENT-2026-09-04-LATE-PAYMENT-WEBHOOKS.md` (six payments on 2026-09-04 whose webhooks arrived an hour late).

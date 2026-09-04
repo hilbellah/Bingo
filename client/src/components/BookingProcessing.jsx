@@ -294,7 +294,7 @@ export default function BookingProcessing({ bookingId }) {
         <div className="w-20 h-20 bg-gradient-to-br from-red-400 to-red-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-white text-3xl font-bold">!</div>
         <h1 className="text-3xl font-bold text-brand-blue text-center">Payment Needs Review</h1>
         <p className="text-gray-600 text-center mt-2">
-          Do not submit another payment or book this seat again. Your payment was received after this checkout was no longer valid, and staff must complete the void/refund review. No duplicate ticket has been issued.
+          Your payment was received, but we could not attach it to your seat automatically. Do not pay again or book this seat again. Staff have been notified and will either confirm your seat or arrange a refund - contact the bingo office with your booking reference if you have not heard from us.
         </p>
       </CenteredCard>
     );
@@ -312,7 +312,7 @@ export default function BookingProcessing({ bookingId }) {
       </h1>
       <p className="text-gray-600 text-center mt-3">
         {slowMode
-          ? "Your payment is being processed. We'll email you a confirmation when it completes. Check spam or junk if you do not see it. You can safely close this window."
+          ? "We're confirming your payment with the card processor. Your seat stays reserved while this page is open. If you were charged, do not pay again - we'll email your confirmation as soon as the payment is verified (check spam or junk), or contact the bingo office with your booking reference."
           : 'This usually takes just a few seconds. Please do not close this window.'}
       </p>
     </CenteredCard>

@@ -690,3 +690,41 @@ export async function updateAdminSessionPhdInventory(token, sessionId, data) {
   if (!res.ok) throw new Error(json.error || 'Failed to update session PHD stock');
   return json;
 }
+
+// The embedded Authorize.Net form reported a completed transaction. Hand the
+// id to the server right away (keepalive survives the page navigating on to
+// /payment/return) so confirmation never depends on the webhook arriving.
+export async function postPaymentResult(bookingId, transId) {
+  const res = await fetch(`${API}/bookings/${encodeURIComponent(bookingId)}/payment-result`, {
+    method: 'POST',
+    keepalive: true,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transId: transId || '' })
+  });
+  let data = null;
+  try { data = await res.json(); } catch { /* non-JSON body */ }
+  return data || { error: `HTTP ${res.status}` };
+}
+
+// Admin: payments that arrived but could not be attached to a seat, plus
+// duplicate charges awaiting a refund.
+export async function fetchPaymentReviews(token) {
+  const res = await fetch(`${API}/admin/payment-reviews`, { headers: adminHeaders(token) });
+  return readJson(res, 'Could not load payment reviews');
+}
+
+export async function confirmPaymentReview(token, bookingId) {
+  const res = await fetch(`${API}/admin/payment-reviews/${encodeURIComponent(bookingId)}/confirm`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify({})
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, ...json };
+}
+
+export async function resolveDuplicateCharge(token, eventId, note = '') {
+  const res = await fetch(`${API}/admin/payment-reviews/duplicates/${encodeURIComponent(eventId)}/resolve`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ note })
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, ...json };
+}

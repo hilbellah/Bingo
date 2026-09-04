@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, refundAdminBooking, refundAdminBookingItem, fetchRefundRequests, approveRefundRequest, rejectRefundRequest, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
+  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, refundAdminBooking, refundAdminBookingItem, fetchRefundRequests, approveRefundRequest, rejectRefundRequest, fetchPaymentReviews, confirmPaymentReview, resolveDuplicateCharge, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -114,6 +114,7 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState('dashboard');
   const [dashboard, setDashboard] = useState(null);
   const [refundRequests, setRefundRequests] = useState([]);
+  const [paymentReviews, setPaymentReviews] = useState({ reviews: [], duplicates: [] });
   const [sessions, setSessions] = useState([]);
   const [packages, setPackages] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -236,9 +237,13 @@ export default function AdminDashboard() {
   }, []);
 
   const loadRefundRequests = () => fetchRefundRequests(token).then(setRefundRequests).catch(() => setRefundRequests([]));
+  const loadPaymentReviews = () => fetchPaymentReviews(token)
+    .then(data => setPaymentReviews({ reviews: data?.reviews || [], duplicates: data?.duplicates || [] }))
+    .catch(() => setPaymentReviews({ reviews: [], duplicates: [] }));
   const loadDashboard = (from, to) => Promise.all([
     fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard),
     loadRefundRequests(),
+    loadPaymentReviews(),
   ]);
   // Latest-render loadDashboard for the socket effect: its deps are [token],
   // so without the ref a 'booking:new' event refetches with the MOUNT-time
@@ -340,14 +345,18 @@ export default function AdminDashboard() {
 
     socket.on('refund_request:created', loadRefundRequests);
     socket.on('refund_request:updated', loadRefundRequests);
-
-
+    // A payment that could not be attached to its seat, or a duplicate
+    // charge. Reload the attention panel so it appears without a refresh.
+    socket.on('booking:payment_review', loadPaymentReviews);
+    socket.on('booking:payment_review_resolved', loadPaymentReviews);
 
     return () => {
       socket.emit('leave:admin-receipts');
       socket.off('admin:receipts:unauthorized');
       socket.off('refund_request:created', loadRefundRequests);
       socket.off('refund_request:updated', loadRefundRequests);
+      socket.off('booking:payment_review', loadPaymentReviews);
+      socket.off('booking:payment_review_resolved', loadPaymentReviews);
       socket.disconnect();
     };
   }, [token]);
@@ -1044,6 +1053,43 @@ export default function AdminDashboard() {
     loadRefundRequests();
   };
 
+  // A customer paid but the seat could not be attached automatically (late
+  // gateway signal after the hold lapsed). When the seat is still free this
+  // completes the booking exactly as a normal payment would.
+  const handleConfirmPaymentReview = async (review) => {
+    if (!confirmAdminAction({
+      action: `Confirm seat for ${review.bookingReference}`,
+      details: [
+        `Customer: ${review.customerName || review.email}`,
+        `Already paid: ${review.amountFormatted} (transaction ${review.transactionId})`,
+        `Seats: ${(review.seats || []).map(s => `Table ${s.tableNumber} Chair ${s.chairNumber}`).join(', ')}`,
+      ],
+      warning: 'The payment is re-verified with Authorize.Net, the seat is marked sold, and the customer receives the normal confirmation email. No new charge is made.',
+    })) return;
+    const result = await confirmPaymentReview(token, review.id);
+    window.alert(result.ok
+      ? `Booking ${review.bookingReference} confirmed. The customer has been emailed their tickets.`
+      : `Could not confirm: ${result.message || result.error || 'Unknown error'}`);
+    loadPaymentReviews();
+    loadDashboard();
+  };
+
+  const handleResolveDuplicateCharge = async (dup) => {
+    if (!confirmAdminAction({
+      action: `Mark duplicate charge ${dup.duplicateTransactionId || ''} as handled`,
+      details: [
+        `Booking ${dup.bookingReference} - ${dup.customerName || dup.email}`,
+        `Extra charge: ${dup.amountFormatted}`,
+        `Original (keeps the seat): ${dup.originalTransactionId || 'unknown'}`,
+      ],
+      warning: 'Only do this after the extra charge has actually been refunded or voided in Authorize.Net. This does not move money and does not touch the seat.',
+    })) return;
+    const note = window.prompt('Refund/void reference or note:') || '';
+    const result = await resolveDuplicateCharge(token, dup.id, note);
+    window.alert(result.ok ? 'Duplicate charge marked as handled.' : `Could not update: ${result.message || result.error || 'Unknown error'}`);
+    loadPaymentReviews();
+  };
+
   const handleRemoveAssignedTicket = async (item, booking) => {
     const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
     const seatLabel = `Table ${item.tableNumber}, Seat ${item.chairNumber}`;
@@ -1237,6 +1283,9 @@ export default function AdminDashboard() {
     refundRequests,
     handleApproveRefundRequest: isViewer ? null : handleApproveRefundRequest,
     handleRejectRefundRequest: isViewer ? null : handleRejectRefundRequest,
+    paymentReviews,
+    handleConfirmPaymentReview: isViewer ? null : handleConfirmPaymentReview,
+    handleResolveDuplicateCharge: isViewer ? null : handleResolveDuplicateCharge,
     dashboardDateFrom,
     dashboardDateTo,
     dashboardRange,

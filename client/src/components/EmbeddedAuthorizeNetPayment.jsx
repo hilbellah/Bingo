@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchBookingStatus } from '../api';
+import { fetchBookingStatus, postPaymentResult } from '../api';
 
 const STATUS_POLL_INTERVAL_MS = 2000;
 
@@ -77,6 +77,10 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
 
         if (message.action === 'transactResponse' || message.action === 'transactionResponse') {
           setStatusText('Payment received. Confirming your booking...');
+          // Tell the server directly (keepalive) before navigating, so the
+          // booking is confirmed even if the navigation is interrupted or
+          // the gateway's webhook is late. Server verifies the id itself.
+          postPaymentResult(payment.bookingId, message.transactionId).catch(() => {});
           const params = new URLSearchParams({ bookingId: payment.bookingId });
           if (message.transactionId) params.set('transId', message.transactionId);
           navigateTo(`/payment/return?${params.toString()}`);

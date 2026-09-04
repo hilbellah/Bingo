@@ -99,6 +99,10 @@ Set in `server/.env`:
 | `DATABASE_URL` | `./bingo.db` | SQLite database file path |
 | `SESSION_HOLD_MINUTES` | `20` | Seat hold duration in minutes, capped by the server at 20 |
 | `PAYMENT_FAILURE_HOLD_MINUTES` | `5` | Hold duration after failed, cancelled, or errored booking attempts, capped by the server at 5 |
+| `CHECKOUT_HEARTBEAT_MAX_MINUTES` | `90` | Longest an open checkout/confirming page can keep extending its seat hold (max 240) |
+| `PAYMENT_RECONCILE_INTERVAL_MS` | `60000` | How often the server asks Authorize.Net which pending bookings were paid (webhook-independent) |
+| `PAYMENT_RECONCILE_DISABLED` | unset | Set to `1` to stop the gateway reconciliation poller (emergency only) |
+| `PAYMENT_REVIEW_EMAILS` | unset | Extra recipients for "paid booking has no seat" alerts; active super users always receive them |
 | `PORT` | `3001` | API server port |
 
 ## Working From Another Device

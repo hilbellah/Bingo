@@ -597,3 +597,160 @@ export async function voidTransaction(transId) {
     }
   });
 }
+
+// ---------- 6) Transaction lists (webhook-independent reconciliation) ----------
+//
+// The 2026-09-04 incident: Authorize.Net generated six authcapture webhooks
+// ~60 minutes late. Confirmation depended entirely on that webhook, so six
+// customers were charged while their 20-minute seat hold silently expired.
+// These list calls let the server ASK the gateway which of our pending
+// bookings have actually been paid, instead of waiting to be told.
+//
+// Both return { ok, transactions: [{ transId, invoiceNumber, submitTimeUTC,
+// status, firstName, lastName }] }. Amounts are not in the summary type —
+// callers verify each candidate with verifyTransaction() before acting.
+
+function summaryToTransaction(summary) {
+  return {
+    transId: summary?.getTransId?.() ? String(summary.getTransId()) : null,
+    invoiceNumber: summary?.getInvoiceNumber?.() || null,
+    submitTimeUTC: summary?.getSubmitTimeUTC?.() || null,
+    status: summary?.getTransactionStatus?.() || null,
+    firstName: summary?.getFirstName?.() || null,
+    lastName: summary?.getLastName?.() || null,
+  };
+}
+
+function buildListSorting() {
+  const sorting = new APIContracts.TransactionListSorting();
+  sorting.setOrderBy(APIContracts.TransactionListOrderFieldEnum.SUBMITTIMEUTC);
+  sorting.setOrderDescending(true);
+  return sorting;
+}
+
+function buildListPaging(limit, offset) {
+  const paging = new APIContracts.Paging();
+  paging.setLimit(limit);
+  paging.setOffset(offset);
+  return paging;
+}
+
+/**
+ * Transactions captured but not yet settled (settlement runs once a day),
+ * which covers every payment made since the last batch closed. One page of
+ * 1000 sorted newest-first is far more than a day's bingo sales.
+ */
+export async function listUnsettledTransactions({ limit = 1000, offset = 1 } = {}) {
+  let merchantAuth;
+  try {
+    merchantAuth = getMerchantAuth();
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+
+  return withGatewayReadTimeout('unsettled_transaction_list', resolve => {
+    const req = new APIContracts.GetUnsettledTransactionListRequest();
+    req.setMerchantAuthentication(merchantAuth);
+    req.setStatus(APIContracts.TransactionGroupStatusEnum.ANY);
+    req.setSorting(buildListSorting());
+    req.setPaging(buildListPaging(limit, offset));
+
+    const ctrl = new APIControllers.GetUnsettledTransactionListController(req.getJSON());
+    ctrl.setEnvironment(getEndpointConst());
+    ctrl.execute(() => {
+      try {
+        const apiResponse = ctrl.getResponse();
+        if (!apiResponse) return resolve({ ok: false, error: 'no_response' });
+        const response = new APIContracts.GetUnsettledTransactionListResponse(apiResponse);
+        if (response.getMessages().getResultCode() !== APIContracts.MessageTypeEnum.OK) {
+          const msg = response.getMessages().getMessage()[0];
+          return resolve({ ok: false, error: `${msg.getCode()}: ${msg.getText()}` });
+        }
+        const transactions = (response.getTransactions()?.getTransaction?.() || []).map(summaryToTransaction);
+        return resolve({ ok: true, transactions, total: Number(response.getTotalNumInResultSet?.() || transactions.length) });
+      } catch (err) {
+        console.error('[payments] listUnsettledTransactions exception:', err?.message || err);
+        return resolve({ ok: false, error: err?.message || String(err) });
+      }
+    });
+  });
+}
+
+function toAnetDate(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  return d.toISOString().slice(0, 19);
+}
+
+/**
+ * Transactions in settled batches between the two dates (inclusive). Used
+ * as the slower fallback for a pending booking whose payment slipped past a
+ * settlement before we saw it. Each batch costs one extra API call.
+ */
+export async function listSettledTransactions({ firstSettlementDate, lastSettlementDate = new Date(), maxBatches = 10 } = {}) {
+  if (!firstSettlementDate) return { ok: false, error: 'listSettledTransactions: firstSettlementDate required' };
+  let merchantAuth;
+  try {
+    merchantAuth = getMerchantAuth();
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+
+  const batches = await withGatewayReadTimeout('settled_batch_list', resolve => {
+    const req = new APIContracts.GetSettledBatchListRequest();
+    req.setMerchantAuthentication(merchantAuth);
+    req.setIncludeStatistics(false);
+    req.setFirstSettlementDate(toAnetDate(firstSettlementDate));
+    req.setLastSettlementDate(toAnetDate(lastSettlementDate));
+    const ctrl = new APIControllers.GetSettledBatchListController(req.getJSON());
+    ctrl.setEnvironment(getEndpointConst());
+    ctrl.execute(() => {
+      try {
+        const apiResponse = ctrl.getResponse();
+        if (!apiResponse) return resolve({ ok: false, error: 'no_response' });
+        const response = new APIContracts.GetSettledBatchListResponse(apiResponse);
+        if (response.getMessages().getResultCode() !== APIContracts.MessageTypeEnum.OK) {
+          const msg = response.getMessages().getMessage()[0];
+          return resolve({ ok: false, error: `${msg.getCode()}: ${msg.getText()}` });
+        }
+        const list = response.getBatchList()?.getBatch?.() || [];
+        return resolve({
+          ok: true,
+          batches: list.map(b => ({ batchId: String(b.getBatchId?.() || ''), settlementTimeUTC: b.getSettlementTimeUTC?.() || null })).filter(b => b.batchId),
+        });
+      } catch (err) {
+        return resolve({ ok: false, error: err?.message || String(err) });
+      }
+    });
+  });
+  if (!batches.ok) return batches;
+
+  const transactions = [];
+  for (const batch of batches.batches.slice(-maxBatches)) {
+    const page = await withGatewayReadTimeout('settled_transaction_list', resolve => {
+      const req = new APIContracts.GetTransactionListRequest();
+      req.setMerchantAuthentication(merchantAuth);
+      req.setBatchId(batch.batchId);
+      req.setSorting(buildListSorting());
+      req.setPaging(buildListPaging(1000, 1));
+      const ctrl = new APIControllers.GetTransactionListController(req.getJSON());
+      ctrl.setEnvironment(getEndpointConst());
+      ctrl.execute(() => {
+        try {
+          const apiResponse = ctrl.getResponse();
+          if (!apiResponse) return resolve({ ok: false, error: 'no_response' });
+          const response = new APIContracts.GetTransactionListResponse(apiResponse);
+          if (response.getMessages().getResultCode() !== APIContracts.MessageTypeEnum.OK) {
+            const msg = response.getMessages().getMessage()[0];
+            return resolve({ ok: false, error: `${msg.getCode()}: ${msg.getText()}` });
+          }
+          return resolve({ ok: true, transactions: (response.getTransactions()?.getTransaction?.() || []).map(summaryToTransaction) });
+        } catch (err) {
+          return resolve({ ok: false, error: err?.message || String(err) });
+        }
+      });
+    });
+    if (!page.ok) return { ok: false, error: `batch ${batch.batchId}: ${page.error}` };
+    transactions.push(...page.transactions);
+  }
+  return { ok: true, transactions, batchCount: batches.batches.length };
+}

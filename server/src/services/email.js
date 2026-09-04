@@ -985,3 +985,72 @@ async function sendViaPostmark({ token, to, bcc, subject, html, text, booking })
     return { ok: false, status: 0, error: err?.message || String(err) };
   }
 }
+
+// Staff alert for a payment that arrived but could not be attached to its seat
+// (late webhook after the hold lapsed, seat taken meanwhile, amount mismatch,
+// or a second charge on an already-paid booking). Until 2026-09-04 these only
+// surfaced as a socket event nobody listened to; customers found out first.
+export async function sendPaymentReviewAlert({ booking, session, seats = [], rejection, transactionId, kind = 'payment_review', recipients: explicitRecipients = [] }) {
+  const configuredRecipients = (process.env.PAYMENT_REVIEW_EMAILS || process.env.REFUND_APPROVAL_EMAILS || process.env.SUPER_ADMIN_EMAILS || process.env.EMAIL_BCC || '')
+    .split(',')
+    .map(value => value.trim());
+  const recipients = [...new Set([...explicitRecipients, ...configuredRecipients]
+    .map(value => String(value || '').trim().toLowerCase())
+    .filter(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))];
+  if (recipients.length === 0) {
+    console.warn('[email] payment review alert has no admin recipient; the case remains visible in the dashboard.');
+    return { ok: false, status: 0, error: 'no_admin_recipient' };
+  }
+
+  const adminUrl = `${(process.env.PUBLIC_SITE_URL || 'https://booking.wolastoqcasino.ca').replace(/\/$/, '')}/admin/dashboard`;
+  const amount = formatPriceDollars(booking.total_amount);
+  const customer = [booking.customer_first_name, booking.customer_last_name].filter(Boolean).join(' ').trim() || booking.email || 'Unknown customer';
+  const when = session ? `${session.date} ${session.time}${session.event_title ? ` - ${session.event_title}` : ''}` : 'Unknown session';
+  const seatText = seats.length
+    ? seats.map(s => `Table ${s.table_number} Chair ${s.chair_number} (${s.first_name} ${s.last_name}) - seat now ${s.status}`).join('; ')
+    : 'No seats recorded';
+  const isDuplicate = kind === 'duplicate_payment';
+  const subject = isDuplicate
+    ? `ACTION: Duplicate charge needs refund - ${booking.reference_number}`
+    : `ACTION: Paid booking has no seat - ${booking.reference_number}`;
+  const headline = isDuplicate ? 'Customer was charged twice' : 'Customer paid but the seat was not confirmed';
+  const instruction = isDuplicate
+    ? `The booking is already paid by its original transaction. Refund transaction ${transactionId} from the Admin Dashboard's review panel (or void it in Authorize.Net if it has not settled). Do not release the seat.`
+    : `Open the Admin Dashboard review panel. If the seat is still free, press "Confirm seat" and the booking completes and the customer gets their confirmation email. If the seat is taken, arrange another seat or refund through the approval workflow.`;
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.5">
+    <h2 style="color:#b91c1c">${escapeHtml(headline)}</h2>
+    <p>${escapeHtml(instruction)}</p>
+    <table cellpadding="6" style="border-collapse:collapse">
+      <tr><td><strong>Booking</strong></td><td>${escapeHtml(booking.reference_number)}</td></tr>
+      <tr><td><strong>Customer</strong></td><td>${escapeHtml(customer)}${booking.email ? ` &lt;${escapeHtml(booking.email)}&gt;` : ''}</td></tr>
+      <tr><td><strong>Session</strong></td><td>${escapeHtml(when)}</td></tr>
+      <tr><td><strong>Seats</strong></td><td>${escapeHtml(seatText)}</td></tr>
+      <tr><td><strong>Amount</strong></td><td>${escapeHtml(amount)}</td></tr>
+      <tr><td><strong>Transaction</strong></td><td>${escapeHtml(transactionId || 'unknown')}</td></tr>
+      <tr><td><strong>Reason</strong></td><td>${escapeHtml(rejection || 'unknown')}</td></tr>
+    </table>
+    <p><a href="${escapeHtml(adminUrl)}" style="display:inline-block;background:#b91c1c;color:white;padding:10px 16px;border-radius:6px;text-decoration:none">Open Admin Dashboard</a></p>
+  </body></html>`;
+  const text = [
+    headline, '', instruction, '',
+    `Booking: ${booking.reference_number}`,
+    `Customer: ${customer}${booking.email ? ` <${booking.email}>` : ''}`,
+    `Session: ${when}`,
+    `Seats: ${seatText}`,
+    `Amount: ${amount}`,
+    `Transaction: ${transactionId || 'unknown'}`,
+    `Reason: ${rejection || 'unknown'}`,
+    '', `Dashboard: ${adminUrl}`,
+  ].join('\n');
+  const to = recipients[0];
+  const bcc = recipients.slice(1);
+  const emailBooking = { referenceNumber: booking.reference_number };
+
+  const postmarkToken = process.env.POSTMARK_SERVER_TOKEN;
+  if (postmarkToken) return sendViaPostmark({ token: postmarkToken, to, bcc, subject, html, text, booking: emailBooking });
+  const transporter = getGmailTransporter();
+  if (transporter) return sendViaGmail({ transporter, to, bcc, subject, html, text, booking: emailBooking });
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) return sendViaResend({ apiKey, to, bcc, subject, html, text, booking: emailBooking });
+  return { ok: false, status: 0, error: 'no_provider_configured' };
+}
