@@ -205,6 +205,9 @@ function getSafeRuntimeConfig() {
       HOLD_CONFIG.configuredPaymentFailureHoldMinutes !== HOLD_CONFIG.paymentFailureHoldMinutes,
     emailProvider,
     paymentEnvironment: process.env.ANET_ENV || 'sandbox',
+    // Counters only (no booking or gateway data): lets ops confirm the
+    // webhook-independent reconciler is running and talking to the gateway.
+    paymentReconciliation: paymentReconciler.getStats(),
   };
 }
 
