@@ -2,16 +2,6 @@ import React from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { formatLocalDateStr, venueToday } from '../utils/formatters';
 
-function seatStateLabel(state) {
-  switch (state) {
-    case 'free': return 'seat is free';
-    case 'sold_to_someone_else': return 'seat now sold to someone else';
-    case 'held_by_someone_else': return 'seat held by another customer right now';
-    case 'disabled': return 'seat disabled';
-    default: return state || 'unknown';
-  }
-}
-
 function getReceiptBadge(receipt) {
   if (receipt.sessionType === 'event' || receipt.notificationType === 'live_event_ticket') {
     return { label: 'Live Event', className: 'bg-blue-100 text-blue-800 border-blue-200' };
@@ -31,9 +21,6 @@ export default function DashboardTab() {
     refundRequests,
     handleApproveRefundRequest,
     handleRejectRefundRequest,
-    paymentReviews,
-    handleConfirmPaymentReview,
-    handleResolveDuplicateCharge,
     dashboardDateFrom,
     dashboardDateTo,
     dashboardRange,
@@ -138,78 +125,6 @@ export default function DashboardTab() {
         {/* DASHBOARD TAB */}
         {tab === 'dashboard' && dashboard && (
           <div>
-            {((paymentReviews?.reviews?.length || 0) + (paymentReviews?.duplicates?.length || 0)) > 0 && (
-              <section className="mb-6 rounded-xl border-2 border-red-500 bg-red-50 p-5 shadow-sm" aria-label="Payments needing attention">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                  <div>
-                    <h2 className="text-lg font-bold text-red-900">Payments Needing Attention</h2>
-                    <p className="text-sm text-red-800">These customers were charged, but the site could not finish their booking on its own. Resolve each one today so nobody arrives without a seat.</p>
-                  </div>
-                  <span className="rounded-full bg-red-700 px-3 py-1 text-sm font-bold text-white">
-                    {(paymentReviews?.reviews?.length || 0) + (paymentReviews?.duplicates?.length || 0)}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {(paymentReviews?.reviews || []).map(review => (
-                    <div key={review.id} className="rounded-lg border border-red-200 bg-white p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="font-bold text-brand-blue">{review.bookingReference} · {review.customerName || review.email}</p>
-                          <p className="text-sm text-gray-700">
-                            {review.amountFormatted} paid · Transaction {review.transactionId} · {review.sessionDate} {review.sessionTime}{review.eventTitle ? ` · ${review.eventTitle}` : ''}
-                          </p>
-                          <p className="mt-1 text-sm text-gray-700">
-                            <strong>Seats:</strong> {(review.seats || []).map(s => `Table ${s.tableNumber} Chair ${s.chairNumber} - ${seatStateLabel(s.state)}`).join('; ')}
-                          </p>
-                          {review.email && <p className="text-sm text-gray-500">{review.email}</p>}
-                          <p className="mt-1 text-xs text-gray-500">Why: {review.reason}</p>
-                        </div>
-                        {canManageRefunds && handleConfirmPaymentReview ? (
-                          review.canConfirm ? (
-                            <button
-                              type="button"
-                              onClick={() => handleConfirmPaymentReview(review)}
-                              className="rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white"
-                              title="Re-verify with Authorize.Net, mark the seat sold and email the customer"
-                            >Confirm seat</button>
-                          ) : (
-                            <span className="max-w-xs rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white">
-                              Seat is no longer free. Move the customer to another seat in Chair Management, or refund through the refund workflow. Do not leave this unresolved.
-                            </span>
-                          )
-                        ) : (
-                          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">View only</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {(paymentReviews?.duplicates || []).map(dup => (
-                    <div key={dup.id} className="rounded-lg border border-amber-300 bg-white p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="font-bold text-brand-blue">{dup.bookingReference} · {dup.customerName || dup.email} · charged twice</p>
-                          <p className="text-sm text-gray-700">
-                            Extra charge {dup.amountFormatted} (transaction {dup.duplicateTransactionId || 'unknown'}) must be refunded. The original transaction {dup.originalTransactionId || 'unknown'} keeps the seat.
-                          </p>
-                          {dup.email && <p className="text-sm text-gray-500">{dup.email}</p>}
-                          <p className="mt-1 text-xs text-gray-500">{dup.sessionDate} {dup.sessionTime}{dup.eventTitle ? ` · ${dup.eventTitle}` : ''}</p>
-                        </div>
-                        {canManageRefunds && handleResolveDuplicateCharge ? (
-                          <button
-                            type="button"
-                            onClick={() => handleResolveDuplicateCharge(dup)}
-                            className="rounded-lg bg-gray-700 px-3 py-2 text-sm font-semibold text-white"
-                            title="Mark as handled after refunding the extra charge in Authorize.Net"
-                          >Mark refunded</button>
-                        ) : (
-                          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">View only</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
             {refundRequests?.length > 0 && (
               <section className="mb-6 rounded-xl border-2 border-red-300 bg-red-50 p-5 shadow-sm" aria-label="Refund approvals pending">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-4">

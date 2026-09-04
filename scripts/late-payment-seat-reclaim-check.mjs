@@ -200,6 +200,24 @@ try {
   listing = await (await fetch(`${baseUrl}/api/admin/payment-reviews`, { headers: { Authorization: `Basic ${adminToken}` } })).json();
   assert.equal(listing.duplicates.some(d => d.id === 'dup-evt-1'), false);
 
+  // 6b) A review handled another way can be cleared with a note; the booking
+  //     keeps its status and the note lands in the audit trail.
+  const handledSeat = await makeSeat({ status: 'held', heldBy: 'holder-taken', heldUntil: minutesFromNow(10) });
+  const handledBooking = await makeBooking({ seatId: handledSeat, holderId: 'holder-handled' });
+  const handledResult = await markBookingPaid({
+    bookingId: handledBooking.id, transactionId: 'tx-handled', authCode: 'OK', source: 'test',
+    verifiedTransaction: verified(handledBooking.ref, 'tx-handled'),
+  });
+  assert.equal(handledResult.requiresReview, true);
+  const noNote = await fetch(`${baseUrl}/api/admin/payment-reviews/${handledBooking.id}/dismiss`, { method: 'POST', headers: { Authorization: `Basic ${adminToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ note: '   ' }) });
+  assert.equal(noNote.status, 400, 'dismiss must require a note');
+  const dismissed = await fetch(`${baseUrl}/api/admin/payment-reviews/${handledBooking.id}/dismiss`, { method: 'POST', headers: { Authorization: `Basic ${adminToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ note: 'Reseated customer at T45/5 with promo ticket' }) });
+  assert.equal(dismissed.status, 200);
+  listing = await (await fetch(`${baseUrl}/api/admin/payment-reviews`, { headers: { Authorization: `Basic ${adminToken}` } })).json();
+  assert.equal(listing.reviews.some(r => r.id === handledBooking.id), false, 'dismissed review must leave the notification list');
+  assert.equal((await get('SELECT payment_status FROM bookings WHERE id = ?', [handledBooking.id])).payment_status, 'payment_review');
+  assert.ok(await get("SELECT id FROM audit_log WHERE action = 'payment_review_dismissed' AND entity_id = ?", [handledBooking.id]));
+
   // 7) The browser can hand the transaction id straight to the server.
   const iframeSeat = await makeSeat({ status: 'held', heldBy: 'holder-iframe', heldUntil: minutesFromNow(10) });
   const iframeBooking = await makeBooking({ seatId: iframeSeat, holderId: 'holder-iframe' });

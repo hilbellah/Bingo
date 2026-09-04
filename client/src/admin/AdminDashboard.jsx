@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, refundAdminBooking, refundAdminBookingItem, fetchRefundRequests, approveRefundRequest, rejectRefundRequest, fetchPaymentReviews, confirmPaymentReview, resolveDuplicateCharge, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
+  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, refundAdminBooking, refundAdminBookingItem, fetchRefundRequests, approveRefundRequest, rejectRefundRequest, fetchPaymentReviews, confirmPaymentReview, dismissPaymentReview, resolveDuplicateCharge, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -19,6 +19,7 @@ import {
 import { fetchSeats } from '../api';
 import AdminDashboardContent from './AdminDashboardContent';
 import AdminShell from './AdminShell';
+import NotificationsBell from './NotificationsBell';
 import {
   printAutoBookingReceipt,
   printDailySalesReceipt as printDailySalesReceiptDocument,
@@ -1074,6 +1075,18 @@ export default function AdminDashboard() {
     loadDashboard();
   };
 
+  // Handled another way (customer reseated, refunded outside the panel,
+  // etc.). Records the note in the audit trail and clears the notification.
+  const handleDismissPaymentReview = async (review) => {
+    const note = window.prompt(
+      `Mark ${review.bookingReference} as handled.\n\nDescribe what was done for the customer (required, kept in the audit log):`
+    );
+    if (!note?.trim()) return;
+    const result = await dismissPaymentReview(token, review.id, note.trim());
+    window.alert(result.ok ? 'Marked as handled.' : `Could not update: ${result.message || result.error || 'Unknown error'}`);
+    loadPaymentReviews();
+  };
+
   const handleResolveDuplicateCharge = async (dup) => {
     if (!confirmAdminAction({
       action: `Mark duplicate charge ${dup.duplicateTransactionId || ''} as handled`,
@@ -1249,6 +1262,15 @@ export default function AdminDashboard() {
 
   const adminHeaderActions = (
     <div className="flex items-center gap-4">
+            {!isPrintStaff && (
+              <NotificationsBell
+                items={paymentReviews}
+                canManage={!isViewer}
+                onConfirm={handleConfirmPaymentReview}
+                onDismiss={handleDismissPaymentReview}
+                onResolveDuplicate={handleResolveDuplicateCharge}
+              />
+            )}
             {!isViewer && <button
               onClick={() => {
                 const next = !autoPrint;
@@ -1283,9 +1305,8 @@ export default function AdminDashboard() {
     refundRequests,
     handleApproveRefundRequest: isViewer ? null : handleApproveRefundRequest,
     handleRejectRefundRequest: isViewer ? null : handleRejectRefundRequest,
-    paymentReviews,
-    handleConfirmPaymentReview: isViewer ? null : handleConfirmPaymentReview,
-    handleResolveDuplicateCharge: isViewer ? null : handleResolveDuplicateCharge,
+>>>>END
+
     dashboardDateFrom,
     dashboardDateTo,
     dashboardRange,

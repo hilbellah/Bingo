@@ -31,6 +31,15 @@ async function loadReviewBookings() {
     FROM bookings b
     JOIN sessions s ON s.id = b.session_id
     WHERE b.payment_status = 'payment_review'
+      -- Staff can clear a case they handled another way (reseated, refunded
+      -- elsewhere). The dismissal must post-date the current review entry so
+      -- a later re-quarantine of the same booking shows up again.
+      AND NOT EXISTS (
+        SELECT 1 FROM payment_events d
+        WHERE d.booking_id = b.id
+          AND d.event_type = 'payment_review_dismissed'
+          AND d.created_at >= COALESCE(b.payment_completed_at, b.created_at)
+      )
     ORDER BY b.created_at DESC
     LIMIT 100
   `);
@@ -156,6 +165,31 @@ export function registerAdminPaymentReviewRoutes(app, { io, logAudit, logPayment
       res.json({ success: true, referenceNumber: result.referenceNumber, reclaimedSeats: result.reclaimedSeats || 0 });
     } catch (err) {
       console.error('POST /api/admin/payment-reviews/:bookingId/confirm failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // "Mark handled": the case was resolved outside the one-click path (customer
+  // reseated, refunded, or contacted). Booking status is left untouched - the
+  // payment stays visible as payment_review in reports - but the note goes to
+  // the audit trail and the notification clears.
+  app.post('/api/admin/payment-reviews/:bookingId/dismiss', adminAuth, async (req, res) => {
+    if (forbidViewer(req, res)) return;
+    try {
+      const note = String(req.body?.note || '').trim().slice(0, 1000);
+      if (!note) return res.status(400).json({ error: 'note_required', message: 'Describe how the case was handled.' });
+      const booking = await get("SELECT id, reference_number, payment_status FROM bookings WHERE id = ?", [req.params.bookingId]);
+      if (!booking) return res.status(404).json({ error: 'booking_not_found' });
+      if (booking.payment_status !== 'payment_review') {
+        return res.status(409).json({ error: 'not_in_review', message: `Booking is ${booking.payment_status}; nothing to dismiss.` });
+      }
+      const resolvedBy = req.adminUser?.email || req.adminUser?.username || 'admin';
+      await logPaymentEvent(booking.id, 'payment_review_dismissed', 'admin', { note, resolvedBy });
+      await logAudit('payment_review_dismissed', 'booking', booking.id, { referenceNumber: booking.reference_number, note, resolvedBy });
+      io.to('admin:receipts').emit('booking:payment_review_resolved', { bookingId: booking.id });
+      res.json({ success: true });
+    } catch (err) {
+      console.error('POST /api/admin/payment-reviews/:bookingId/dismiss failed:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   });

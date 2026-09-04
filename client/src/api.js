@@ -728,3 +728,11 @@ export async function resolveDuplicateCharge(token, eventId, note = '') {
   const json = await res.json().catch(() => ({}));
   return { ok: res.ok, ...json };
 }
+
+export async function dismissPaymentReview(token, bookingId, note) {
+  const res = await fetch(`${API}/admin/payment-reviews/${encodeURIComponent(bookingId)}/dismiss`, {
+    method: 'POST', headers: adminHeaders(token), body: JSON.stringify({ note })
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, ...json };
+}
