@@ -56,6 +56,39 @@ for (const file of sqlFiles) {
 }
 assert.match(read('server/src/index.js'), /AS "isMyHold"/, 'The seat map must return isMyHold with its case preserved on Postgres.');
 
+// The Postgres adapter rewrites every `?` to a positional `$n`, including one
+// inside a quoted SQL literal, which would silently corrupt the query on
+// production only. Flag any `'...?...'` literal inside a SQL-looking string.
+// A SQL string literal is a single-quoted segment INSIDE the JS string. When
+// the JS string is backtick- or double-quoted the literal appears as '...';
+// when the JS string is single-quoted it appears escaped as \'...\'.
+function hasQuestionMarkInsideSqlLiteral(line) {
+  // Walk the literals in order so the gap between two literals ('a' ... 'b')
+  // is never mistaken for a literal itself.
+  const jsStrings = [...line.matchAll(/`[^`]*`|"[^"]*"/g)].map(m => m[0]);
+  for (const segment of jsStrings) {
+    for (const literal of segment.matchAll(/'([^']*)'/g)) {
+      if (literal[1].includes('?')) return true;
+    }
+  }
+  for (const literal of line.matchAll(/\\'([^'\\]*)\\'/g)) {
+    if (literal[1].includes('?')) return true;
+  }
+  return false;
+}
+for (const file of sqlFiles) {
+  const source = fs.readFileSync(file, 'utf8');
+  const suspects = source.split('\n')
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter(({ line }) => /\b(SELECT|INSERT|UPDATE|DELETE|WHERE|LIKE)\b/.test(line) && !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .filter(({ line }) => hasQuestionMarkInsideSqlLiteral(line));
+  assert.deepEqual(
+    suspects.map(({ number }) => number),
+    [],
+    `${path.relative(repoRoot, file)} has a literal ? inside a quoted SQL string on line(s) ${suspects.map(s => s.number).join(', ')} — the Postgres placeholder translator would corrupt it.`
+  );
+}
+
 const seatRoutes = read('server/src/routes/seatRoutes.js');
 assert.match(seatRoutes, /WHERE id = \? AND status = 'held' AND held_by = \?/, 'Seat unlock must remain conditional on current held state and holder.');
 
