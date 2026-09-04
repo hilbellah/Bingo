@@ -1791,7 +1791,7 @@ app.get('/api/sessions/:sessionId/seats', async (req, res) => {
     const holderId = String(req.query.holderId || '').trim();
     const seats = await all(`
       SELECT s.id, s.table_number, s.chair_number, s.status, s.is_disabled,
-             CASE WHEN s.status = 'held' AND s.held_by = ? THEN 1 ELSE 0 END as isMyHold
+             CASE WHEN s.status = 'held' AND s.held_by = ? THEN 1 ELSE 0 END AS "isMyHold"
       FROM seats s
       WHERE s.session_id = ?
       ORDER BY s.table_number ASC, s.chair_number ASC

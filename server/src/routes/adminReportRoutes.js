@@ -169,11 +169,11 @@ export function registerAdminReportRoutes(app) {
 
       const seatMetrics = await get(
         `SELECT
-          COUNT(DISTINCT CASE WHEN st.is_disabled = 0 THEN st.table_number END) as totalTables,
-          COUNT(CASE WHEN st.is_disabled = 0 THEN 1 END) as totalChairs,
-          COUNT(CASE WHEN st.status = 'vacant' AND st.is_disabled = 0 THEN 1 END) as availableChairs,
-          COUNT(CASE WHEN st.status = 'sold' THEN 1 END) as soldChairs,
-          COUNT(CASE WHEN st.status = 'held' THEN 1 END) as heldChairs
+          COUNT(DISTINCT CASE WHEN st.is_disabled = 0 THEN st.table_number END) AS "totalTables",
+          COUNT(CASE WHEN st.is_disabled = 0 THEN 1 END) AS "totalChairs",
+          COUNT(CASE WHEN st.status = 'vacant' AND st.is_disabled = 0 THEN 1 END) AS "availableChairs",
+          COUNT(CASE WHEN st.status = 'sold' THEN 1 END) AS "soldChairs",
+          COUNT(CASE WHEN st.status = 'held' THEN 1 END) AS "heldChairs"
         FROM seats st
         JOIN sessions s ON st.session_id = s.id
         WHERE s.date >= ? AND s.date <= ? AND s.deleted_at IS NULL`, [dateFrom, dateTo]

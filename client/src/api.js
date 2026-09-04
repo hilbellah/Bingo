@@ -25,7 +25,13 @@ export async function fetchSeats(sessionId, holderId = '') {
   if (holderId) params.set('holderId', holderId);
   const qs = params.toString() ? `?${params.toString()}` : '';
   const res = await fetch(`${API}/sessions/${sessionId}/seats${qs}`);
-  return res.json();
+  const seats = await res.json();
+  // Defensive: Postgres lower-cases unquoted SQL aliases. The server now
+  // quotes "isMyHold", but a lower-cased key must never again make the client
+  // treat its own held seat as someone else's (2026-09-04 event checkout bug).
+  return Array.isArray(seats)
+    ? seats.map(seat => ({ ...seat, isMyHold: Number(seat.isMyHold ?? seat.ismyhold ?? 0) === 1 }))
+    : seats;
 }
 
 export async function fetchAdminSeats(token, sessionId) {
