@@ -1054,3 +1054,53 @@ export async function sendPaymentReviewAlert({ booking, session, seats = [], rej
   if (apiKey) return sendViaResend({ apiKey, to, bcc, subject, html, text, booking: emailBooking });
   return { ok: false, status: 0, error: 'no_provider_configured' };
 }
+
+// Result of the gateway-vs-bookings audit (paymentAudit.js). Sent to super
+// users whenever a captured charge has no confirmed seat, review or refund
+// behind it - the 2026-09-04 failure shape - so it is caught within hours
+// even if every other signal was missed.
+export async function sendPaymentAuditAlert({ anomalies = [], critical = [], transactionsChecked = 0, windowHours = 48, recipients: explicitRecipients = [] }) {
+  const configuredRecipients = (process.env.PAYMENT_REVIEW_EMAILS || process.env.REFUND_APPROVAL_EMAILS || process.env.SUPER_ADMIN_EMAILS || process.env.EMAIL_BCC || '')
+    .split(',')
+    .map(value => value.trim());
+  const recipients = [...new Set([...explicitRecipients, ...configuredRecipients]
+    .map(value => String(value || '').trim().toLowerCase())
+    .filter(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))];
+  if (recipients.length === 0) return { ok: false, status: 0, error: 'no_admin_recipient' };
+
+  const adminUrl = `${(process.env.PUBLIC_SITE_URL || 'https://booking.wolastoqcasino.ca').replace(/\/$/, '')}/admin/dashboard`;
+  const subject = critical.length > 0
+    ? `ACTION: ${critical.length} payment(s) captured with no confirmed seat`
+    : `Payment audit clean - ${transactionsChecked} transactions checked`;
+  const describe = a => {
+    const who = a.customer ? `${a.customer}${a.email ? ` <${a.email}>` : ''}` : 'unknown customer';
+    const amount = Number.isFinite(Number(a.amountCents)) ? formatPriceDollars(a.amountCents) : '';
+    switch (a.kind) {
+      case 'charge_on_unconfirmed_booking': return `Charge ${a.transId} on ${a.invoiceNumber} (${who}, ${amount}) but the booking is ${a.bookingStatus} - customer has no seat.`;
+      case 'charge_without_booking': return `Charge ${a.transId} references ${a.invoiceNumber}, which matches no booking.`;
+      case 'unrecorded_second_charge': return `Second charge ${a.transId} on ${a.invoiceNumber} (${who}, ${amount}); booking already paid by ${a.originalTransactionId}. Needs a refund.`;
+      case 'awaiting_staff_review': return `${a.invoiceNumber} (${who}, ${amount}) is waiting in the dashboard notifications for staff.`;
+      default: return `${a.kind}: ${a.invoiceNumber} / ${a.transId}`;
+    }
+  };
+  const rows = anomalies.map(a => `<li${CRITICAL_KINDS.has(a.kind) ? ' style="color:#b91c1c;font-weight:bold"' : ''}>${escapeHtml(describe(a))}</li>`).join('');
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.5">
+    <h2 style="color:${critical.length ? '#b91c1c' : '#1a3a5c'}">${escapeHtml(subject)}</h2>
+    <p>The booking system compared every transaction Authorize.Net captured in the last ${windowHours} hours (${transactionsChecked} transactions) against its bookings.</p>
+    ${anomalies.length ? `<ul>${rows}</ul>` : '<p>Every captured charge is attached to a confirmed, reviewed or refunded booking.</p>'}
+    ${critical.length ? '<p><strong>Red items mean a customer was charged and has no seat.</strong> Open the dashboard notifications bell: confirm the seat if it is free, otherwise reseat or refund the customer today.</p>' : ''}
+    <p><a href="${escapeHtml(adminUrl)}" style="display:inline-block;background:#1a3a5c;color:white;padding:10px 16px;border-radius:6px;text-decoration:none">Open Admin Dashboard</a></p>
+  </body></html>`;
+  const text = [subject, '', `${transactionsChecked} transactions checked over ${windowHours}h.`, '', ...anomalies.map(a => `- ${describe(a)}`), '', `Dashboard: ${adminUrl}`].join('\n');
+  const to = recipients[0];
+  const bcc = recipients.slice(1);
+  const emailBooking = { referenceNumber: 'payment-audit' };
+  const postmarkToken = process.env.POSTMARK_SERVER_TOKEN;
+  if (postmarkToken) return sendViaPostmark({ token: postmarkToken, to, bcc, subject, html, text, booking: emailBooking });
+  const transporter = getGmailTransporter();
+  if (transporter) return sendViaGmail({ transporter, to, bcc, subject, html, text, booking: emailBooking });
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) return sendViaResend({ apiKey, to, bcc, subject, html, text, booking: emailBooking });
+  return { ok: false, status: 0, error: 'no_provider_configured' };
+}
+const CRITICAL_KINDS = new Set(['charge_on_unconfirmed_booking', 'charge_without_booking', 'unrecorded_second_charge']);

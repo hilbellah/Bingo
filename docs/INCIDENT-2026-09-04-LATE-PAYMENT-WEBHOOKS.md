@@ -43,6 +43,9 @@ The other 16 payments that afternoon received their webhook in 0.2-2.6 minutes, 
 | 4 | **Browser hands over the transaction id.** The card form's success message now POSTs `transId` to `/api/bookings/:id/payment-result` (keepalive) before navigating; the server verifies it with the gateway. | `EmbeddedAuthorizeNetPayment.jsx`, `index.js` |
 | 5 | **Staff alerting + one-click fix.** Every quarantine or duplicate charge emails all active super users (plus `PAYMENT_REVIEW_EMAILS`), and the admin dashboard shows a red "Payments Needing Attention" panel with a **Confirm seat** button (re-verifies with Authorize.Net, marks the seat sold, sends the normal confirmation email) and a **Mark refunded** button for duplicates. | `email.js` (`sendPaymentReviewAlert`), `routes/adminPaymentReviewRoutes.js`, `AdminDashboard.jsx`, `DashboardTab.jsx` |
 | 6 | Customer-facing copy on the confirming/review pages now says the seat stays reserved, not to pay again, and what happens next. | `BookingProcessing.jsx` |
+| 7 | **Gateway-side audit.** Every 6 h the server pulls every transaction Authorize.Net captured in the last 48 h (unsettled + settled) and checks each against bookings: booking exists, is confirmed/reviewed/refunded, transaction id matches. Critical anomalies (charge with no confirmed seat, charge on cancelled/failed booking, unflagged second charge) are emailed to super users and recorded in `audit_log`. | `server/src/services/paymentAudit.js`, `email.js` (`sendPaymentAuditAlert`) |
+| 8 | **`/health/payments`** for external monitoring: 503 when the reconciler or audit is failing or a critical anomaly is open; `attention` (200) while staff reviews are outstanding. Point an uptime monitor at it. | `index.js` |
+| 9 | Admin **notifications bell** (header) replaces the overview block; **Mark handled** (note required, audit-logged) clears a case resolved another way. | `NotificationsBell.jsx`, `adminPaymentReviewRoutes.js` |
 
 Tests: `scripts/late-payment-seat-reclaim-check.mjs` (reclaim, heartbeat, admin confirm, duplicate list, browser payment-result) and `scripts/payment-reconciliation-check.mjs` (confirm without webhook, settled fallback, idempotency, gateway outage). Both are in `npm run test:api`.
 
@@ -57,6 +60,10 @@ Tests: `scripts/late-payment-seat-reclaim-check.mjs` (reclaim, heartbeat, admin 
 | `PAYMENT_RECONCILE_SETTLED_INTERVAL_MS` | `1800000` | How often settled batches are scanned |
 | `CHECKOUT_HEARTBEAT_MAX_MINUTES` | `90` | Longest an open checkout tab can keep extending its hold (max 240) |
 | `PAYMENT_REVIEW_EMAILS` | unset | Extra alert recipients (comma-separated); active super users always receive alerts |
+| `PAYMENT_AUDIT_INTERVAL_MS` | `21600000` | Gateway-side audit cadence (min 15 min) |
+| `PAYMENT_AUDIT_WINDOW_HOURS` | `48` | Audit look-back window |
+| `PAYMENT_AUDIT_ALWAYS_EMAIL` | unset | `1` = email a summary after every audit, not only on anomalies |
+| `PAYMENT_AUDIT_DISABLED` | unset | `1` = stop the audit (emergency only) |
 
 ## Remediation for the affected customers (do in the admin dashboard after deploy)
 

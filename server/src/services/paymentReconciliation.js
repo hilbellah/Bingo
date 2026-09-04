@@ -65,7 +65,7 @@ export function createPaymentReconciler({
   let running = null;
   let lastRunAt = 0;
   let lastSettledScanAt = 0;
-  const stats = { runs: 0, confirmed: 0, reviewed: 0, errors: 0, lastError: null, lastRunAt: null };
+  const stats = { runs: 0, confirmed: 0, reviewed: 0, errors: 0, lastError: null, lastErrorAt: null, lastRunAt: null };
 
   async function loadPendingCandidates() {
     const lookbackHours = parseNumber(process.env.PAYMENT_RECONCILE_LOOKBACK_HOURS, DEFAULT_LOOKBACK_HOURS);
@@ -155,6 +155,7 @@ export function createPaymentReconciler({
     if (!unsettled.ok) {
       stats.errors += 1;
       stats.lastError = unsettled.error || 'unsettled_list_failed';
+      stats.lastErrorAt = new Date(now()).toISOString();
       logger.warn?.(`[reconcile] unsettled transaction list failed (${reason}): ${stats.lastError}`);
       return { candidates: candidates.length, confirmed: 0, error: stats.lastError };
     }
@@ -198,6 +199,7 @@ export function createPaymentReconciler({
       } else {
         stats.errors += 1;
         stats.lastError = settled.error || 'settled_list_failed';
+        stats.lastErrorAt = new Date(now()).toISOString();
         logger.warn?.(`[reconcile] settled transaction scan failed: ${stats.lastError}`);
       }
     }
@@ -216,6 +218,7 @@ export function createPaymentReconciler({
       .catch(err => {
         stats.errors += 1;
         stats.lastError = err?.message || String(err);
+        stats.lastErrorAt = new Date(now()).toISOString();
         logger.error?.(`[reconcile] run failed: ${stats.lastError}`);
         return { candidates: 0, confirmed: 0, error: stats.lastError };
       })

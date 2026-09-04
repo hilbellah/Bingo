@@ -103,6 +103,10 @@ Set in `server/.env`:
 | `PAYMENT_RECONCILE_INTERVAL_MS` | `60000` | How often the server asks Authorize.Net which pending bookings were paid (webhook-independent) |
 | `PAYMENT_RECONCILE_DISABLED` | unset | Set to `1` to stop the gateway reconciliation poller (emergency only) |
 | `PAYMENT_REVIEW_EMAILS` | unset | Extra recipients for "paid booking has no seat" alerts; active super users always receive them |
+| `PAYMENT_AUDIT_INTERVAL_MS` | `21600000` | How often the gateway-side audit compares every captured charge to bookings (min 15 min) |
+| `PAYMENT_AUDIT_WINDOW_HOURS` | `48` | How far back the audit looks |
+| `PAYMENT_AUDIT_ALWAYS_EMAIL` | unset | Set to `1` to email super users a summary after every audit, not just when something is wrong |
+| `PAYMENT_AUDIT_DISABLED` | unset | Set to `1` to stop the audit (emergency only) |
 | `PORT` | `3001` | API server port |
 
 ## Working From Another Device

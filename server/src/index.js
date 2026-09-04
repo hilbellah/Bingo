@@ -65,7 +65,7 @@ import {
 } from './startup.js';
 import { createUploadMiddleware } from './uploads.js';
 import { formatCurrency, formatVenueDate, generateRef } from './utils/format.js';
-import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode, sendPaymentReviewAlert } from './services/email.js';
+import { sendBookingConfirmation, sendBookingRefundNotification, sendEmailVerificationCode, sendPaymentAuditAlert, sendPaymentReviewAlert } from './services/email.js';
 import {
   createHostedPaymentPage,
   getHostedPaymentRedirectUrl,
@@ -75,6 +75,7 @@ import {
   verifyWebhookSignature,
 } from './services/payments.js';
 import { createPaymentReconciler, startPaymentReconciliation } from './services/paymentReconciliation.js';
+import { createGatewayAuditor, startGatewayAudit } from './services/paymentAudit.js';
 import {
   getBookingConfig,
   normalizeSpecialBingoConfig,
@@ -2640,6 +2641,53 @@ function reconcilePendingPayments(options = {}) {
   return paymentReconciler.reconcilePendingPayments(options);
 }
 
+// Gateway-side audit: every charge Authorize.Net captured must map to a
+// booking that is confirmed, under review, or refunded. Runs every 6h and
+// emails super users when a charge has nothing behind it.
+const gatewayAuditor = createGatewayAuditor({
+  paymentServices: testablePaymentServices,
+  sendAlert: sendPaymentAuditAlert,
+  getRecipients: getSuperUserEmails,
+  logger,
+});
+function runGatewayAudit(options = {}) {
+  return gatewayAuditor.runGatewayAudit(options);
+}
+
+// Machine-readable payments health for an external uptime monitor. 503 only
+// for things a person must act on or that mean the safety net is down:
+// captured money with no seat, or the gateway checks failing repeatedly.
+// Open staff reviews are 'attention' (200) - they are a task, not an outage.
+app.get('/health/payments', async (req, res) => {
+  const problems = [];
+  const reconciler = paymentReconciler.getStats();
+  const audit = gatewayAuditor.getState();
+  const nowMs = Date.now();
+  const recent = iso => iso && (nowMs - new Date(iso).getTime()) < 15 * 60 * 1000;
+  if (recent(reconciler.lastErrorAt)) problems.push(`gateway reconciliation failing: ${reconciler.lastError}`);
+  if (reconciler.lastRunAt === null && nowMs - startTime > 10 * 60 * 1000 && process.env.PAYMENT_RECONCILE_DISABLED !== '1') {
+    problems.push('gateway reconciliation has not run since boot');
+  }
+  if (audit.criticalCount > 0) problems.push(`${audit.criticalCount} critical payment anomaly(ies) from the gateway audit`);
+  if (recent(audit.lastErrorAt)) problems.push(`gateway audit failing: ${audit.lastError}`);
+  let openReviews = 0;
+  try {
+    const row = await get("SELECT COUNT(*) as n FROM bookings WHERE payment_status = 'payment_review'");
+    openReviews = Number(row?.n || 0);
+  } catch (err) {
+    problems.push(`database check failed: ${err?.message || err}`);
+  }
+  const status = problems.length > 0 ? 'error' : openReviews > 0 ? 'attention' : 'ok';
+  res.status(status === 'error' ? 503 : 200).json({
+    status,
+    timestamp: new Date().toISOString(),
+    problems,
+    openReviews,
+    reconciler,
+    audit: { lastRunAt: audit.lastRunAt, lastError: audit.lastError, transactionsChecked: audit.transactionsChecked, criticalCount: audit.criticalCount, anomalyCount: audit.anomalies.length },
+  });
+});
+
 // Keep the seats of an in-flight checkout held while the customer is still
 // on the page. Called from the status poll (every 2s per waiting customer);
 // writes only when the hold has less than HOLD_MINUTES - 1 left, so it costs
@@ -3347,6 +3395,7 @@ async function start() {
 
   await startMaintenanceTasks(io, { reconcileReversedBookingSeats }, logger);
   startPaymentReconciliation(paymentReconciler, { logger });
+  startGatewayAudit(gatewayAuditor, { logger });
   registerGracefulShutdown({ server, logger });
 }
 
@@ -3361,6 +3410,7 @@ export {
   markBookingVoided,
   reconcileReversedBookingSeats,
   reconcilePendingPayments,
+  runGatewayAudit,
   confirmReviewedPayment,
   keepCheckoutHoldAlive,
 };
