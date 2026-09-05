@@ -1,5 +1,8 @@
 # Wolastoq Bingo - System Architecture & Design
 
+> **Status (2026-09-05):** this document dates from May 2026 and describes the server as a single `index.js`.
+> The current code map, delivery process and safety rules are in `CLAUDE.md`; payment incident history is in `docs/INCIDENT-*.md`.
+
 **Comprehensive technical documentation for developers, architects, and operators**
 
 ---
@@ -505,9 +508,9 @@ Recommended:
 ## Contact & Support
 
 **Technical Questions**: Contact CTO  
-**Deployment Issues**: See PRODUCTION-DEPLOYMENT.md  
-**Monitoring**: See MONITORING-SETUP.md  
-**On-Call Response**: See ON-CALL-TEAM-TRAINING.md  
+**Deployment Issues**: See docs/history/PRODUCTION-DEPLOYMENT.md  
+**Monitoring**: See docs/history/MONITORING-SETUP.md  
+**On-Call Response**: See docs/history/ON-CALL-TEAM-TRAINING.md  
 **Incident Troubleshooting**: See INCIDENT-RUNBOOKS.md
 
 ---
