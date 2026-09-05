@@ -82,6 +82,7 @@ TEST_DB_DRIVER=postgres DATABASE_URL_POSTGRES=postgres://bingo:bingo@localhost:5
 |---|---|
 | API server (Express, checkout routes, webhook, admin) | `server/src/index.js` (still large), `server/src/routes/*`, `server/src/services/*` |
 | Payment state machine (paid / failed / cancelled / refunded / voided, seat transitions, confirmation emails) | `server/src/services/bookingPayments.js` |
+| Customer checkout (`/api/bookings/*`, `/payment/return`, `/payment/cancel`, status poll + hold heartbeat) | `server/src/routes/checkoutRoutes.js` |
 | Payment gateway (Authorize.Net Accept Hosted) | `server/src/services/payments.js` |
 | Webhook-independent payment confirmation | `server/src/services/paymentReconciliation.js` (poller), `paymentAudit.js` (6-hourly gateway audit) |
 | Admin payment attention panel (bell icon) | `server/src/routes/adminPaymentReviewRoutes.js`, `client/src/admin/NotificationsBell.jsx` |
