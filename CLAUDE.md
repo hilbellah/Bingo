@@ -80,7 +80,10 @@ TEST_DB_DRIVER=postgres DATABASE_URL_POSTGRES=postgres://bingo:bingo@localhost:5
 
 | Area | Location |
 |---|---|
-| API server (Express, checkout routes, webhook, admin) | `server/src/index.js` (still large), `server/src/routes/*`, `server/src/services/*` |
+| API server (Express app, middleware, public read APIs, health, service wiring) | `server/src/index.js` (~1,300 lines); every route family lives in `server/src/routes/*`, business logic in `server/src/services/*` |
+| Authorize.Net webhook (`/api/webhooks/authorize-net`, deferred re-verification) | `server/src/routes/webhookRoutes.js` |
+| Admin sign-in + admin user management | `server/src/routes/adminAuthRoutes.js` |
+| Admin settings (receipt / special bingo config) + PHD inventory admin | `server/src/routes/adminSettingsRoutes.js` |
 | Payment state machine (paid / failed / cancelled / refunded / voided, seat transitions, confirmation emails) | `server/src/services/bookingPayments.js` |
 | Customer checkout (`/api/bookings/*`, `/payment/return`, `/payment/cancel`, status poll + hold heartbeat) | `server/src/routes/checkoutRoutes.js` |
 | Payment gateway (Authorize.Net Accept Hosted) | `server/src/services/payments.js` |
