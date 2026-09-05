@@ -25,6 +25,15 @@ const serverFile = relative => pathToFileURL(path.join(repoRoot, 'server', 'src'
 export const driver = process.env.TEST_DB_DRIVER === 'postgres' ? 'postgres' : 'sqlite';
 process.env.DB_DRIVER = driver;
 
+// Checks must never depend on gateway credentials or the network. Locally,
+// server/.env used to supply sandbox Authorize.Net keys so /api/bookings/
+// initiate silently called the real sandbox; CI has no .env and got a 502.
+// The payments module returns this token verbatim when NODE_ENV=test, before
+// it ever looks at credentials. Scripts that set their own value keep it.
+if (!process.env.ANET_TEST_HOSTED_PAYMENT_TOKEN) {
+  process.env.ANET_TEST_HOSTED_PAYMENT_TOKEN = 'test-hosted-payment-token';
+}
+
 if (driver === 'postgres') {
   const connectionString = process.env.DATABASE_URL_POSTGRES || '';
   let host = '';
