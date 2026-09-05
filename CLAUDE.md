@@ -77,6 +77,15 @@ TEST_DB_DRIVER=postgres DATABASE_URL_POSTGRES=postgres://bingo:bingo@localhost:5
 
 ---
 
+### Repository hygiene (enforced by `npm run check:hygiene`, part of `npm run check`)
+- The repository root is an **allowlist** (see `scripts/repo-hygiene-check.mjs`): package files, `render.yaml`, and the handful of current documents. Anything else there fails CI.
+- Never commit data, archives, office documents, logs or scratch: `*.db`, `*.zip`, `*.docx`, `*.log`, `*.bak`, `tmp-*`, files over 1 MB, or anything under `server/uploads/`, `backups/`, `tmp/`, `_attic/`.
+- **`_attic/` is the one place for everything that is not the app**: old backups, reference screenshots, one-off investigation scripts, reports that have been delivered, marketing-site scratch, abandoned experiments. It is gitignored. Put things there instead of the root; Sir Hilbert reviews and deletes from it - agents never delete from it.
+- Documents that are still current live in the root (short list above) or `docs/`; superseded ones go to `docs/history/` with `git mv`.
+- Investigation scripts that turn out to be worth keeping get a proper name under `scripts/`, a test, and a line in `package.json`; otherwise they go to `_attic/investigation-scripts/`.
+- One branch per change (`fix/`, `feat/`, `refactor/`, `chore/`), fast-forward merged after CI is green and Sir Hilbert says go; the branch is deleted the same day (`git branch -d`, never `-D`).
+- `git status` on `main` should be empty. If it is not, the stray files go to `_attic/` or get a home - they are never left in the root.
+
 ## 3. Where things are
 
 | Area | Location |

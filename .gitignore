@@ -4,3 +4,21 @@ dist/
 .env
 exports/
 dev-server*.log
+
+# Runtime data and local state - never source
+server/uploads/
+backups/
+*.log
+*.zip
+__pycache__/
+.codex/
+tmp/
+
+# Office documents and reports are shared outside git (see CLAUDE.md)
+*.docx
+*.xlsx
+*.pptx
+
+# The one place for artefacts, old backups, screenshots and served-their-purpose
+# documents. Review and delete at leisure; nothing in here is needed by the app.
+_attic/
