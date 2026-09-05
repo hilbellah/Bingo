@@ -27,8 +27,10 @@ export default [
       // Real bugs: keep as errors.
       'no-undef': 'error',
       'react-hooks/rules-of-hooks': 'error',
-      // Hygiene: warnings until the backlog is cleared.
-      'no-unused-vars': ['warn', { args: 'none', ignoreRestSiblings: true, varsIgnorePattern: '^_' }],
+      // Hygiene: warnings until the backlog is cleared. 'React' stays imported
+      // by convention although the automatic JSX runtime no longer needs it;
+      // unused catch parameters are fine.
+      'no-unused-vars': ['warn', { args: 'none', caughtErrors: 'none', ignoreRestSiblings: true, varsIgnorePattern: '^_|^React$' }],
       'react-hooks/exhaustive-deps': 'warn',
       // React Compiler-era advisories (plugin v7). Useful signal, but this is
       // a React 18 app without the compiler, so they stay advisory.
