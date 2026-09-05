@@ -51,7 +51,7 @@ If you are unsure whether something counts as a change: it does.
   - `?` placeholders are translated positionally — never put a literal `?` inside a SQL string.
   - When a bug reproduces only in production, `curl` the live API and check the JSON key names first.
 - Money is stored as **integer cents** everywhere.
-- Every payment transition goes through `markBookingPaid` / `markBookingRefunded` / `markBookingVoided` in `server/src/index.js`. Do not add new paths that change `payment_status` or seat `status` directly.
+- Every payment transition goes through `markBookingPaid` / `markBookingRefunded` / `markBookingVoided` in `server/src/services/bookingPayments.js`. Do not add new paths that change `payment_status` or seat `status` directly.
 - Add or extend a test in `scripts/*-check.mjs` for any behaviour you change, and register it in `package.json` → `test:api`.
 
 ### Running the checks against Postgres (what production runs)
@@ -80,7 +80,8 @@ TEST_DB_DRIVER=postgres DATABASE_URL_POSTGRES=postgres://bingo:bingo@localhost:5
 
 | Area | Location |
 |---|---|
-| API server (Express, all booking + payment logic) | `server/src/index.js` (large), `server/src/routes/*`, `server/src/services/*` |
+| API server (Express, checkout routes, webhook, admin) | `server/src/index.js` (still large), `server/src/routes/*`, `server/src/services/*` |
+| Payment state machine (paid / failed / cancelled / refunded / voided, seat transitions, confirmation emails) | `server/src/services/bookingPayments.js` |
 | Payment gateway (Authorize.Net Accept Hosted) | `server/src/services/payments.js` |
 | Webhook-independent payment confirmation | `server/src/services/paymentReconciliation.js` (poller), `paymentAudit.js` (6-hourly gateway audit) |
 | Admin payment attention panel (bell icon) | `server/src/routes/adminPaymentReviewRoutes.js`, `client/src/admin/NotificationsBell.jsx` |
