@@ -183,8 +183,26 @@ export function createBookingPaymentService({ io, logAudit, holdMinutes, payment
         }
       }
 
+      // A payment can land after the customer cancelled the checkout, or after an
+
+
+      // earlier declined attempt on the same card form. With no transaction
+
+
+      // recorded yet the money is the customer's intent: treat those bookings like
+
+
+      // pending ones and let the seat checks decide.
+
+
+      const reclaimableStatus = booking.payment_status === 'pending'
+      || (['cancelled', 'failed'].includes(booking.payment_status) && !booking.transaction_id);
+
+
       let rejection = null;
-      if (booking.payment_status !== 'pending') rejection = `booking_status_${booking.payment_status}`;
+
+
+      if (!reclaimableStatus) rejection = `booking_status_${booking.payment_status}`;
       // The gateway-verified amount must match what this booking currently
       // charges. A stale hosted-payment page can complete at an outdated total
       // after the reusable-checkout path rebuilt the booking's line items.
@@ -208,7 +226,7 @@ export function createBookingPaymentService({ io, logAudit, holdMinutes, payment
       const updated = await tx.run(
         `UPDATE bookings SET payment_status = 'paid', transaction_id = ?, auth_code = ?,
            payment_completed_at = ?, payment_failure_reason = NULL
-         WHERE id = ? AND payment_status = 'pending'`,
+         WHERE id = ? AND (payment_status = 'pending' OR (payment_status IN ('cancelled', 'failed') AND transaction_id IS NULL))`,
         [transactionId, authCode, completedAt, bookingId]
       );
       if (updated.changes !== 1) return { ok: false, rejection: 'payment_state_changed', booking };
@@ -414,6 +432,18 @@ export function createBookingPaymentService({ io, logAudit, holdMinutes, payment
       });
       console.warn(`[bookings] late payment for ${booking.reference_number} reclaimed ${claim.reclaimedSeatIds.length} lapsed seat(s) (source=${source})`);
     }
+    if (claim.booking.payment_status !== 'pending') {
+
+      // The customer had cancelled (or a first attempt was declined) and then
+
+      // paid anyway; the seat was still free so the money kept it.
+
+      await logPaymentEvent(bookingId, 'payment_after_' + claim.booking.payment_status + '_reclaimed', source, { transactionId, priorStatus: claim.booking.payment_status });
+
+      console.warn(`[bookings] payment for ${booking.reference_number} arrived after status ${claim.booking.payment_status}; seat was free so the booking is paid (source=${source})`);
+
+    }
+
     await logAudit('booking_paid', 'booking', bookingId, {
       referenceNumber: booking.reference_number,
       sessionId: booking.session_id,

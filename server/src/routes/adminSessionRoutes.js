@@ -3,6 +3,7 @@ import { all, get, run, saveDb, withTransaction } from '../database.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { archivePastSessions } from '../services/sessionArchive.js';
 import { releaseExpiredHolds } from '../services/holds.js';
+import { canOverrideCheckoutGuard, checkoutGuardResponse, findInFlightCheckouts } from '../services/checkoutGuards.js';
 import { sessionDateTimeToUtc } from '../services/sessionBookingStatus.js';
 import {
   getSessionConflictGroup,
@@ -363,6 +364,10 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         WHERE b.session_id = ?
       `, [req.params.id]);
 
+      const inFlight = await findInFlightCheckouts({ sessionId: req.params.id });
+      if (inFlight.length > 0 && !canOverrideCheckoutGuard(req)) return res.status(409).json(checkoutGuardResponse(inFlight, 'Cannot delete this session'));
+      if (inFlight.length > 0) await logAudit('checkout_guard_overridden', 'session', req.params.id, { action: 'delete_session', by: req.adminUser?.email, bookings: inFlight.map(x => x.referenceNumber) });
+
       const now = new Date().toISOString();
       await run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [now, req.params.id]);
 
@@ -470,6 +475,11 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       if (is_disabled !== undefined) {
         const seat = await get('SELECT * FROM seats WHERE id = ?', [req.params.id]);
         if (!seat) return res.status(404).json({ error: 'Seat not found' });
+        if (is_disabled) {
+          const inFlight = await findInFlightCheckouts({ seatIds: [seat.id] });
+          if (inFlight.length > 0 && !canOverrideCheckoutGuard(req)) return res.status(409).json(checkoutGuardResponse(inFlight, 'Cannot disable this seat'));
+          if (inFlight.length > 0) await logAudit('checkout_guard_overridden', 'seat', seat.id, { action: 'disable_seat', by: req.adminUser?.email, bookings: inFlight.map(x => x.referenceNumber) });
+        }
         await run('UPDATE seats SET is_disabled = ? WHERE id = ?', [is_disabled ? 1 : 0, req.params.id]);
         io.to(`session:${seat.session_id}`).emit('seats:refresh');
       }
@@ -500,6 +510,11 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         [session.id, tableNumber]
       );
       if (seats.length === 0) return res.status(404).json({ error: 'Table seats not found' });
+      if (is_disabled) {
+        const inFlight = await findInFlightCheckouts({ seatIds: seats.map(seat => seat.id) });
+        if (inFlight.length > 0 && !canOverrideCheckoutGuard(req)) return res.status(409).json(checkoutGuardResponse(inFlight, `Cannot disable table ${tableNumber}`));
+        if (inFlight.length > 0) await logAudit('checkout_guard_overridden', 'session', session.id, { action: 'disable_table', tableNumber, by: req.adminUser?.email, bookings: inFlight.map(x => x.referenceNumber) });
+      }
 
       const editableSeats = seats.filter(seat => seat.status !== 'sold');
       if (editableSeats.length === 0) {
@@ -570,6 +585,11 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
         [session.id, ...uniqueSeatIds]
       );
       if (seats.length === 0) return res.status(404).json({ error: 'Selected seats were not found for this session' });
+      if (is_disabled) {
+        const inFlight = await findInFlightCheckouts({ seatIds: seats.map(seat => seat.id) });
+        if (inFlight.length > 0 && !canOverrideCheckoutGuard(req)) return res.status(409).json(checkoutGuardResponse(inFlight, 'Cannot disable the selected seats'));
+        if (inFlight.length > 0) await logAudit('checkout_guard_overridden', 'session', session.id, { action: 'disable_seats_bulk', by: req.adminUser?.email, bookings: inFlight.map(x => x.referenceNumber) });
+      }
 
       const editableSeats = seats.filter(seat => seat.status !== 'sold');
       if (editableSeats.length === 0) {

@@ -107,6 +107,11 @@ Set in `server/.env`:
 | `PAYMENT_AUDIT_WINDOW_HOURS` | `48` | How far back the audit looks |
 | `PAYMENT_AUDIT_ALWAYS_EMAIL` | unset | Set to `1` to email super users a summary after every audit, not just when something is wrong |
 | `PAYMENT_AUDIT_DISABLED` | unset | Set to `1` to stop the audit (emergency only) |
+| `CHECKOUT_HOLD_MINUTES` | `30` | Seat hold once a customer reaches the card form (browsing holds stay `SESSION_HOLD_MINUTES`); never below the browsing hold, max 120 |
+| `CHECKOUT_INFLIGHT_WINDOW_MINUTES` | `30` | How long after reaching the card form a checkout blocks admin seat actions (disable/assign/move/delete); super users can override with `?force=1` |
+| `CHECKOUT_PROTECT_MINUTES` | `60` | When the gateway is unreachable twice in a row, in-flight checkout seats are held for this long (re-applied each failed cycle) |
+| `CHECKOUT_STALE_HOURS` | `168` | A checkout that reached the card form is never auto-cancelled before this (a late payment can still claim it) |
+| `REVIEW_ESCALATION_HOURS` | `2` | A payment waiting for staff review longer than this turns `/health/payments` red and is re-emailed by the audit |
 | `PORT` | `3001` | API server port |
 
 ## Working From Another Device

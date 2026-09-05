@@ -17,7 +17,10 @@ import { v4 as uuid } from 'uuid';
 
 const APPROVED_STATUSES = new Set(['capturedPendingSettlement', 'settledSuccessfully', 'authorizedPendingCapture']);
 const MONEY_ACCOUNTED_STATUSES = new Set(['paid', 'partially_refunded', 'refunded', 'voided', 'payment_review']);
-const DEFAULT_WINDOW_HOURS = 48;
+const DEFAULT_WINDOW_HOURS = 24 * 7;
+// A quarantined payment nobody has acted on for this long is itself an
+// incident: it gets emailed again and turns /health/payments red.
+export const REVIEW_ESCALATION_HOURS = Number(process.env.REVIEW_ESCALATION_HOURS || 2);
 const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 // Anomaly kinds, most severe first. "critical" means money was taken and no
@@ -30,7 +33,7 @@ function parseNumber(value, fallback) {
 }
 
 export function createGatewayAuditor({ paymentServices, sendAlert, getRecipients, logger = console, now = () => Date.now() }) {
-  const state = { lastRunAt: null, lastError: null, lastErrorAt: null, anomalies: [], transactionsChecked: 0, runs: 0 };
+  const state = { lastRunAt: null, lastError: null, lastErrorAt: null, anomalies: [], transactionsChecked: 0, runs: 0, staleReviewCount: 0 };
   let running = null;
 
   async function collectGatewayTransactions(windowHours) {
@@ -58,7 +61,7 @@ export function createGatewayAuditor({ paymentServices, sendAlert, getRecipients
       if (!invoice) continue; // non-booking transactions (manual terminal sales etc.)
       const base = { transId: tx.transId, invoiceNumber: invoice, submitTimeUTC: tx.submitTimeUTC || null, gatewayStatus: tx.status || null };
       const booking = await get(
-        'SELECT id, reference_number, payment_status, transaction_id, total_amount, customer_first_name, customer_last_name, email FROM bookings WHERE reference_number = ?',
+        'SELECT id, reference_number, payment_status, transaction_id, total_amount, customer_first_name, customer_last_name, email, payment_completed_at FROM bookings WHERE reference_number = ?',
         [invoice]
       );
       if (!booking) {
@@ -86,11 +89,13 @@ export function createGatewayAuditor({ paymentServices, sendAlert, getRecipients
         continue;
       }
       if (booking.payment_status === 'payment_review') {
-        anomalies.push({ kind: 'awaiting_staff_review', ...base, ...who });
+        const waitingMs = booking.payment_completed_at ? now() - new Date(booking.payment_completed_at).getTime() : 0;
+        anomalies.push({ kind: 'awaiting_staff_review', ...base, ...who, waitingHours: Math.round(waitingMs / 36e5 * 10) / 10 });
       }
     }
 
     const critical = anomalies.filter(a => CRITICAL_ANOMALIES.has(a.kind));
+    const staleReviews = anomalies.filter(a => a.kind === 'awaiting_staff_review' && a.waitingHours >= REVIEW_ESCALATION_HOURS);
     state.lastRunAt = new Date(now()).toISOString();
     state.anomalies = anomalies;
     state.transactionsChecked = transactions.length;
@@ -100,14 +105,15 @@ export function createGatewayAuditor({ paymentServices, sendAlert, getRecipients
     await run(
       `INSERT INTO audit_log (id, action, entity_type, entity_id, details, created_at)
        VALUES (?, 'gateway_payment_audit', 'payments', 'scheduled_audit', ?, ?)`,
-      [uuid(), JSON.stringify({ reason, windowHours, transactionsChecked: transactions.length, anomalyCount: anomalies.length, criticalCount: critical.length, anomalies: anomalies.slice(0, 50) }), state.lastRunAt]
+      [uuid(), JSON.stringify({ reason, windowHours, transactionsChecked: transactions.length, anomalyCount: anomalies.length, criticalCount: critical.length, staleReviewCount: staleReviews.length, anomalies: anomalies.slice(0, 50) }), state.lastRunAt]
     );
 
     const alwaysEmail = process.env.PAYMENT_AUDIT_ALWAYS_EMAIL === '1';
-    if ((critical.length > 0 || alwaysEmail) && typeof sendAlert === 'function') {
+    state.staleReviewCount = staleReviews.length;
+    if ((critical.length > 0 || staleReviews.length > 0 || alwaysEmail) && typeof sendAlert === 'function') {
       try {
         const recipients = typeof getRecipients === 'function' ? await getRecipients() : [];
-        await sendAlert({ anomalies, critical, transactionsChecked: transactions.length, windowHours, recipients });
+        await sendAlert({ anomalies, critical, staleReviews, transactionsChecked: transactions.length, windowHours, recipients });
       } catch (err) {
         logger.error?.(`[audit] alert email failed: ${err?.message || err}`);
       }

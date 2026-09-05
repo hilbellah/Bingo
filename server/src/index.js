@@ -70,7 +70,8 @@ import {
   verifyWebhookSignature,
 } from './services/payments.js';
 import { createPaymentReconciler, startPaymentReconciliation } from './services/paymentReconciliation.js';
-import { createGatewayAuditor, startGatewayAudit } from './services/paymentAudit.js';
+import { createGatewayAuditor, startGatewayAudit, REVIEW_ESCALATION_HOURS } from './services/paymentAudit.js';
+import { protectInFlightCheckoutHolds } from './services/checkoutGuards.js';
 import { createBookingPaymentService } from './services/bookingPayments.js';
 import {
   getBookingConfig,
@@ -129,6 +130,14 @@ const EVENT_HST_RATE_BASIS_POINTS = 1500;
 const CHECKOUT_HEARTBEAT_MAX_MINUTES = (() => {
   const configured = Number(process.env.CHECKOUT_HEARTBEAT_MAX_MINUTES || 90);
   return Number.isFinite(configured) && configured > 0 ? Math.min(Math.floor(configured), 240) : 90;
+})();
+// Once a customer reaches the card form their seats stay held for this long
+// (browsing holds stay HOLD_MINUTES). Margin for the moment they close the tab
+// before the payment signal arrives. Never shorter than the browsing hold.
+const CHECKOUT_HOLD_MINUTES = (() => {
+  const configured = Number(process.env.CHECKOUT_HOLD_MINUTES || 30);
+  const value = Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 30;
+  return Math.min(Math.max(value, HOLD_MINUTES), 120);
 })();
 const startTime = Date.now();
 const bookingInitiationLocks = new Map();
@@ -202,6 +211,7 @@ function getSafeRuntimeConfig() {
       HOLD_CONFIG.configuredPaymentFailureHoldMinutes !== HOLD_CONFIG.paymentFailureHoldMinutes,
     emailProvider,
     paymentEnvironment: process.env.ANET_ENV || 'sandbox',
+    checkoutHoldMinutes: CHECKOUT_HOLD_MINUTES,
     // Counters only (no booking or gateway data): lets ops confirm the
     // webhook-independent reconciler is running and talking to the gateway.
     paymentReconciliation: paymentReconciler.getStats(),
@@ -1122,6 +1132,13 @@ const paymentReconciler = createPaymentReconciler({
   paymentServices: testablePaymentServices,
   markBookingPaid,
   logger,
+  // Gateway unreachable twice in a row: keep in-flight checkouts' seats off
+  // the market until we can see payments again.
+  protectCheckouts: async options => {
+    const result = await protectInFlightCheckoutHolds(options);
+    if (result.reheld > 0) io.emit('seats:refresh');
+    return result;
+  },
 });
 function reconcilePendingPayments(options = {}) {
   return paymentReconciler.reconcilePendingPayments(options);
@@ -1158,8 +1175,16 @@ app.get('/health/payments', async (req, res) => {
   if (recent(audit.lastErrorAt)) problems.push(`gateway audit failing: ${audit.lastError}`);
   let openReviews = 0;
   try {
-    const row = await get("SELECT COUNT(*) as n FROM bookings WHERE payment_status = 'payment_review'");
+    // Reviews staff have explicitly marked handled do not count.
+    const openReviewSql = `FROM bookings b WHERE b.payment_status = 'payment_review'
+      AND NOT EXISTS (SELECT 1 FROM payment_events d WHERE d.booking_id = b.id AND d.event_type = 'payment_review_dismissed'
+                      AND d.created_at >= COALESCE(b.payment_completed_at, b.created_at))`;
+    const row = await get(`SELECT COUNT(*) as n, MIN(b.payment_completed_at) as oldest ${openReviewSql}`);
     openReviews = Number(row?.n || 0);
+    if (row?.oldest && nowMs - new Date(row.oldest).getTime() > REVIEW_ESCALATION_HOURS * 3600 * 1000) {
+      problems.push(`a payment has been waiting for staff review for more than ${REVIEW_ESCALATION_HOURS}h - a customer is charged with no confirmed seat`);
+    }
+    if (reconciler.degraded) problems.push('gateway unreachable - degraded mode, in-flight checkout seats are being protected');
   } catch (err) {
     problems.push(`database check failed: ${err?.message || err}`);
   }
@@ -1181,7 +1206,7 @@ const { keepCheckoutHoldAlive } = registerCheckoutRoutes(app, {
   io,
   adminAuth,
   bookingLimiter,
-  HOLD_MINUTES,
+  CHECKOUT_HOLD_MINUTES,
   PAYMENT_FAILURE_HOLD_MINUTES,
   CHECKOUT_SERVICE_FEE_CENTS,
   CHECKOUT_HEARTBEAT_MAX_MINUTES,

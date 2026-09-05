@@ -315,12 +315,17 @@ export async function expireStalePendingBookings({ dryRun = false, now = new Dat
   const staleHours = getStalePendingHours();
   const nowIso = now.toISOString();
   const cutoffIso = new Date(now.getTime() - staleHours * 60 * 60 * 1000).toISOString();
+  // A booking whose customer reached the card form may still be paid for by a
+  // very late gateway signal; keep it (and its money trail) for a week.
+  const cardFormStaleHours = Math.max(staleHours, Number(process.env.CHECKOUT_STALE_HOURS || 24 * 7) || 24 * 7);
+  const cardFormCutoffIso = new Date(now.getTime() - cardFormStaleHours * 60 * 60 * 1000).toISOString();
   const candidates = await all(`
     SELECT b.id, b.reference_number, b.created_at, b.payment_attempted_at
     FROM bookings b
     WHERE b.payment_status = 'pending'
       AND NULLIF(TRIM(COALESCE(b.transaction_id, '')), '') IS NULL
       AND COALESCE(b.payment_attempted_at, b.created_at) < ?
+      AND (b.hosted_token IS NULL OR COALESCE(b.payment_attempted_at, b.created_at) < ?)
       AND NOT EXISTS (
         SELECT 1 FROM payment_events pe
         WHERE pe.booking_id = b.id AND pe.event_type != 'initiated'
@@ -337,7 +342,7 @@ export async function expireStalePendingBookings({ dryRun = false, now = new Dat
       )
     ORDER BY COALESCE(b.payment_attempted_at, b.created_at), b.id
     LIMIT ?
-  `, [cutoffIso, nowIso, MAX_STALE_PENDING_BATCH]);
+  `, [cutoffIso, cardFormCutoffIso, nowIso, MAX_STALE_PENDING_BATCH]);
 
   const candidateIds = candidates.map(row => row.id);
   logger.info('Stale pending booking cleanup preflight', {
@@ -365,6 +370,7 @@ export async function expireStalePendingBookings({ dryRun = false, now = new Dat
       AND payment_status = 'pending'
       AND NULLIF(TRIM(COALESCE(transaction_id, '')), '') IS NULL
       AND COALESCE(payment_attempted_at, created_at) < ?
+      AND (hosted_token IS NULL OR COALESCE(payment_attempted_at, created_at) < ?)
       AND NOT EXISTS (
         SELECT 1 FROM payment_events pe
         WHERE pe.booking_id = bookings.id AND pe.event_type != 'initiated'
@@ -379,7 +385,7 @@ export async function expireStalePendingBookings({ dryRun = false, now = new Dat
           AND s.held_until IS NOT NULL
           AND s.held_until > ?
       )
-  `, [...candidateIds, cutoffIso, nowIso]);
+  `, [...candidateIds, cutoffIso, cardFormCutoffIso, nowIso]);
 
   const expired = Number(updateResult.changes || 0);
   await run(

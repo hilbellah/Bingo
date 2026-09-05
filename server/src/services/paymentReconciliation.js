@@ -47,7 +47,7 @@ const IGNORED_STATUSES = new Set([
   'authorizedPendingRelease',
 ]);
 
-const DEFAULT_LOOKBACK_HOURS = 72;
+const DEFAULT_LOOKBACK_HOURS = 24 * 7;
 const DEFAULT_MIN_AGE_SECONDS = 20;
 const DEFAULT_SETTLED_SCAN_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -59,13 +59,39 @@ function parseNumber(value, fallback) {
 export function createPaymentReconciler({
   paymentServices,
   markBookingPaid,
+  protectCheckouts = null,
   logger = console,
   now = () => Date.now(),
 }) {
   let running = null;
   let lastRunAt = 0;
   let lastSettledScanAt = 0;
-  const stats = { runs: 0, confirmed: 0, reviewed: 0, errors: 0, lastError: null, lastErrorAt: null, lastRunAt: null };
+  const stats = { runs: 0, confirmed: 0, reviewed: 0, errors: 0, lastError: null, lastErrorAt: null, lastRunAt: null, consecutiveFailures: 0, degraded: false, lastProtection: null };
+
+  // Two consecutive failures to reach the gateway means we are blind to
+  // payments. Until we can see again, in-flight checkouts must keep their
+  // seats (see checkoutGuards.protectInFlightCheckoutHolds); re-applied on
+  // every failed cycle so the extension keeps rolling forward.
+  async function noteGatewayFailure(reason) {
+    stats.consecutiveFailures += 1;
+    if (stats.consecutiveFailures < 2 || typeof protectCheckouts !== 'function') return;
+    if (!stats.degraded) logger.error?.(`[reconcile] gateway unreachable ${stats.consecutiveFailures}x in a row - entering degraded mode, protecting in-flight checkout seats (${reason})`);
+    stats.degraded = true;
+    try {
+      const protection = await protectCheckouts({ reason: `gateway_degraded: ${stats.lastError || reason}` });
+      stats.lastProtection = { ...protection, at: new Date(now()).toISOString() };
+      if (protection.extended || protection.reheld) {
+        logger.warn?.(`[reconcile] degraded mode: extended ${protection.extended} hold(s), re-held ${protection.reheld} released seat(s) until ${protection.until}`);
+      }
+    } catch (err) {
+      logger.error?.(`[reconcile] could not protect in-flight checkouts: ${err?.message || err}`);
+    }
+  }
+  function noteGatewaySuccess() {
+    if (stats.degraded) logger.info?.('[reconcile] gateway reachable again - leaving degraded mode');
+    stats.consecutiveFailures = 0;
+    stats.degraded = false;
+  }
 
   async function loadPendingCandidates() {
     const lookbackHours = parseNumber(process.env.PAYMENT_RECONCILE_LOOKBACK_HOURS, DEFAULT_LOOKBACK_HOURS);
@@ -157,8 +183,10 @@ export function createPaymentReconciler({
       stats.lastError = unsettled.error || 'unsettled_list_failed';
       stats.lastErrorAt = new Date(now()).toISOString();
       logger.warn?.(`[reconcile] unsettled transaction list failed (${reason}): ${stats.lastError}`);
+      await noteGatewayFailure(reason);
       return { candidates: candidates.length, confirmed: 0, error: stats.lastError };
     }
+    noteGatewaySuccess();
 
     let byInvoice = indexByInvoice(unsettled.transactions);
     let confirmed = 0;
@@ -215,11 +243,12 @@ export function createPaymentReconciler({
     if (running) return running;
     running = Promise.resolve()
       .then(() => runOnce(options))
-      .catch(err => {
+      .catch(async err => {
         stats.errors += 1;
         stats.lastError = err?.message || String(err);
         stats.lastErrorAt = new Date(now()).toISOString();
         logger.error?.(`[reconcile] run failed: ${stats.lastError}`);
+        await noteGatewayFailure('exception');
         return { candidates: 0, confirmed: 0, error: stats.lastError };
       })
       .finally(() => {

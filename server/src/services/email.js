@@ -670,7 +670,7 @@ export async function sendRefundApprovalRequestNotification({ request, booking, 
       <tr><td><strong>Reason</strong></td><td>${escapeHtml(request.reason || 'No reason supplied')}</td></tr>
     </table>
     <p><a href="${escapeHtml(adminUrl)}" style="display:inline-block;background:#1a3a5c;color:white;padding:10px 16px;border-radius:6px;text-decoration:none">Review in Admin Dashboard</a></p>
-    <p style="color:#6b7280;font-size:13px">A different super user must approve the request before Authorize.Net is contacted.</p>
+    <p style="color:#6b7280;font-size:13px">A super user must complete the request in the Admin Dashboard before Authorize.Net is contacted.</p>
   </body></html>`;
   const text = [
     'Refund approval required', '',
@@ -1059,7 +1059,7 @@ export async function sendPaymentReviewAlert({ booking, session, seats = [], rej
 // users whenever a captured charge has no confirmed seat, review or refund
 // behind it - the 2026-09-04 failure shape - so it is caught within hours
 // even if every other signal was missed.
-export async function sendPaymentAuditAlert({ anomalies = [], critical = [], transactionsChecked = 0, windowHours = 48, recipients: explicitRecipients = [] }) {
+export async function sendPaymentAuditAlert({ anomalies = [], critical = [], staleReviews = [], transactionsChecked = 0, windowHours = 48, recipients: explicitRecipients = [] }) {
   const configuredRecipients = (process.env.PAYMENT_REVIEW_EMAILS || process.env.REFUND_APPROVAL_EMAILS || process.env.SUPER_ADMIN_EMAILS || process.env.EMAIL_BCC || '')
     .split(',')
     .map(value => value.trim());
@@ -1071,7 +1071,9 @@ export async function sendPaymentAuditAlert({ anomalies = [], critical = [], tra
   const adminUrl = `${(process.env.PUBLIC_SITE_URL || 'https://booking.wolastoqcasino.ca').replace(/\/$/, '')}/admin/dashboard`;
   const subject = critical.length > 0
     ? `ACTION: ${critical.length} payment(s) captured with no confirmed seat`
-    : `Payment audit clean - ${transactionsChecked} transactions checked`;
+    : staleReviews.length > 0
+      ? `REMINDER: ${staleReviews.length} payment(s) still waiting for staff review`
+      : `Payment audit clean - ${transactionsChecked} transactions checked`;
   const describe = a => {
     const who = a.customer ? `${a.customer}${a.email ? ` <${a.email}>` : ''}` : 'unknown customer';
     const amount = Number.isFinite(Number(a.amountCents)) ? formatPriceDollars(a.amountCents) : '';
@@ -1079,7 +1081,7 @@ export async function sendPaymentAuditAlert({ anomalies = [], critical = [], tra
       case 'charge_on_unconfirmed_booking': return `Charge ${a.transId} on ${a.invoiceNumber} (${who}, ${amount}) but the booking is ${a.bookingStatus} - customer has no seat.`;
       case 'charge_without_booking': return `Charge ${a.transId} references ${a.invoiceNumber}, which matches no booking.`;
       case 'unrecorded_second_charge': return `Second charge ${a.transId} on ${a.invoiceNumber} (${who}, ${amount}); booking already paid by ${a.originalTransactionId}. Needs a refund.`;
-      case 'awaiting_staff_review': return `${a.invoiceNumber} (${who}, ${amount}) is waiting in the dashboard notifications for staff.`;
+      case 'awaiting_staff_review': return `${a.invoiceNumber} (${who}, ${amount}) has been waiting in the dashboard notifications for ${a.waitingHours ?? '?'} hour(s) - a customer is charged with no confirmed seat until someone acts.`;
       default: return `${a.kind}: ${a.invoiceNumber} / ${a.transId}`;
     }
   };
@@ -1089,6 +1091,7 @@ export async function sendPaymentAuditAlert({ anomalies = [], critical = [], tra
     <p>The booking system compared every transaction Authorize.Net captured in the last ${windowHours} hours (${transactionsChecked} transactions) against its bookings.</p>
     ${anomalies.length ? `<ul>${rows}</ul>` : '<p>Every captured charge is attached to a confirmed, reviewed or refunded booking.</p>'}
     ${critical.length ? '<p><strong>Red items mean a customer was charged and has no seat.</strong> Open the dashboard notifications bell: confirm the seat if it is free, otherwise reseat or refund the customer today.</p>' : ''}
+    ${!critical.length && staleReviews.length ? '<p><strong>These have waited too long.</strong> Open the dashboard notifications bell and resolve each one now: Confirm seat, reseat, refund, or Mark handled.</p>' : ''}
     <p><a href="${escapeHtml(adminUrl)}" style="display:inline-block;background:#1a3a5c;color:white;padding:10px 16px;border-radius:6px;text-decoration:none">Open Admin Dashboard</a></p>
   </body></html>`;
   const text = [subject, '', `${transactionsChecked} transactions checked over ${windowHours}h.`, '', ...anomalies.map(a => `- ${describe(a)}`), '', `Dashboard: ${adminUrl}`].join('\n');

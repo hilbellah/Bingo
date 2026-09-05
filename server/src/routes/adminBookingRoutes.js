@@ -3,6 +3,7 @@ import { all, get, run, saveDb, withTransaction } from '../database.js';
 import { adminAuth, requireSuperUser } from '../middleware/adminAuth.js';
 import { formatCurrency, generateRef } from '../utils/format.js';
 import { getLiveEventCapacity, withSessionCapacityLock } from '../services/liveEventCapacity.js';
+import { canOverrideCheckoutGuard, checkoutGuardResponse, findInFlightCheckouts } from '../services/checkoutGuards.js';
 
 function csvCell(value) {
   let text = String(value ?? '');
@@ -536,6 +537,13 @@ export function registerAdminBookingRoutes(app, {
       if (!seat) return res.status(404).json({ error: `Seat T${tableNumber}-C${chairNumber} was not found.` });
       if (seat.is_disabled) return res.status(409).json({ error: `Seat T${tableNumber}-C${chairNumber} is disabled.` });
       if (seat.status !== 'vacant') return res.status(409).json({ error: `Seat T${tableNumber}-C${chairNumber} is currently ${seat.status}.` });
+      {
+        // Vacant, but a customer may still be paying for it (hold lapsed while
+        // they were on the card form). Their payment would land on a sold seat.
+        const inFlight = await findInFlightCheckouts({ seatIds: [seat.id] });
+        if (inFlight.length > 0 && !canOverrideCheckoutGuard(req)) return res.status(409).json(checkoutGuardResponse(inFlight, `Cannot assign a ticket to T${tableNumber}-C${chairNumber}`));
+        if (inFlight.length > 0) await logAudit('checkout_guard_overridden', 'seat', seat.id, { action: 'assigned_ticket', by: req.adminUser?.email, bookings: inFlight.map(x => x.referenceNumber) });
+      }
 
       const pkg = await get(`
         SELECT id, name FROM session_packages WHERE session_id = ? AND type = 'required' ORDER BY sort_order ASC LIMIT 1
@@ -798,6 +806,8 @@ export function registerAdminBookingRoutes(app, {
         item.old_chair_number = oldSeat.chair_number;
         if (targetSeat.is_disabled) return { status: 409, body: { error: `Seat T${tableNumber}-C${chairNumber} is disabled.` } };
         if (targetSeat.status !== 'vacant') return { status: 409, body: { error: `Seat T${tableNumber}-C${chairNumber} is currently ${targetSeat.status}.` } };
+        const inFlightOnTarget = await findInFlightCheckouts({ seatIds: [targetSeat.id] });
+        if (inFlightOnTarget.length > 0 && !canOverrideCheckoutGuard(req)) return { status: 409, body: checkoutGuardResponse(inFlightOnTarget, `Cannot move a ticket onto T${tableNumber}-C${chairNumber}`) };
         const activeOwner = await tx.get(`
           SELECT COUNT(*) as count
           FROM booking_items active_item

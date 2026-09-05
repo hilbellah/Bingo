@@ -19,7 +19,7 @@ export function registerCheckoutRoutes(app, {
   io,
   adminAuth,
   bookingLimiter,
-  HOLD_MINUTES,
+  CHECKOUT_HOLD_MINUTES,
   PAYMENT_FAILURE_HOLD_MINUTES,
   CHECKOUT_SERVICE_FEE_CENTS,
   CHECKOUT_HEARTBEAT_MAX_MINUTES,
@@ -267,7 +267,7 @@ export function registerCheckoutRoutes(app, {
           };
         }
         if (reusable) {
-          const refreshedHoldUntil = holdExpiresAt(HOLD_MINUTES);
+          const refreshedHoldUntil = holdExpiresAt(CHECKOUT_HOLD_MINUTES);
           for (const att of attendees) {
             await run('UPDATE seats SET held_until = ? WHERE id = ?', [refreshedHoldUntil, att.seatId]);
           }
@@ -415,7 +415,7 @@ export function registerCheckoutRoutes(app, {
 
           // Refresh held_until so seats survive the hosted-page detour.
           // This gives the customer a fresh hold window from clicking Confirm.
-          const newHoldUntil = holdExpiresAt(HOLD_MINUTES);
+          const newHoldUntil = holdExpiresAt(CHECKOUT_HOLD_MINUTES);
           for (const att of attendees) {
             await run('UPDATE seats SET held_until = ? WHERE id = ?', [newHoldUntil, att.seatId]);
           }
@@ -739,7 +739,7 @@ export function registerCheckoutRoutes(app, {
 
   // Keep the seats of an in-flight checkout held while the customer is still
   // on the page. Called from the status poll (every 2s per waiting customer);
-  // writes only when the hold has less than HOLD_MINUTES - 1 left, so it costs
+  // writes only when the hold has less than CHECKOUT_HOLD_MINUTES - 1 left, so it costs
   // one UPDATE a minute per checkout at most.
   async function keepCheckoutHoldAlive(booking) {
     const startedAt = new Date(booking.payment_attempted_at || booking.created_at || 0).getTime();
@@ -747,8 +747,8 @@ export function registerCheckoutRoutes(app, {
       return { extended: 0, capped: true };
     }
     const nowIso = new Date().toISOString();
-    const target = holdExpiresAt(HOLD_MINUTES);
-    const refreshBelow = holdExpiresAt(Math.max(1, HOLD_MINUTES - 1));
+    const target = holdExpiresAt(CHECKOUT_HOLD_MINUTES);
+    const refreshBelow = holdExpiresAt(Math.max(1, CHECKOUT_HOLD_MINUTES - 1));
     const holderId = String(booking.checkout_holder_id || '').trim();
     const holderClause = holderId ? 'AND held_by = ?' : '';
     const params = holderId ? [target, booking.id, nowIso, refreshBelow, holderId] : [target, booking.id, nowIso, refreshBelow];
