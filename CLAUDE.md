@@ -53,6 +53,7 @@ If you are unsure whether something counts as a change: it does.
 - Money is stored as **integer cents** everywhere.
 - Every payment transition goes through `markBookingPaid` / `markBookingRefunded` / `markBookingVoided` in `server/src/services/bookingPayments.js`. Do not add new paths that change `payment_status` or seat `status` directly.
 - Add or extend a test in `scripts/*-check.mjs` for any behaviour you change, and register it in `package.json` → `test:api`.
+- Run `npm run lint:client` after touching the React apps. Lint **errors** (undefined variables, hooks after an early return) are real bugs and must be fixed; **warnings** are the known backlog (unused imports, effect dependencies) — reduce them, never add to them. CI runs the lint as advisory (`continue-on-error`), so a green check does not mean lint passed.
 
 ### Running the checks against Postgres (what production runs)
 CI does this automatically (`.github/workflows/check.yml`, job "postgres"). Locally, with Docker:

@@ -126,7 +126,13 @@ export default function App() {
   if (paymentRoute) {
     return <BookingProcessing bookingId={paymentRoute.bookingId} />;
   }
+  return <BookingApp />;
+}
 
+// The full booking flow. Its own component so the payment-return short-circuit
+// in App is not an early return ahead of these hooks (rules-of-hooks); App's
+// paymentRoute never changes after mount, so BookingApp mounts exactly once.
+function BookingApp() {
   const holderId = useRef(generateHolderId()).current;
   const socketRef = useSocket();
 

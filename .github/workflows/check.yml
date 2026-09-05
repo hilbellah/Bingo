@@ -39,6 +39,12 @@ jobs:
       - run: npm run check
         env:
           NODE_ENV: test
+      # Client lint is advisory for now: it reports undefined variables, unused
+      # imports and hook-dependency mistakes, but cannot block a deploy until
+      # the existing warnings are worked off.
+      - run: npm run lint
+        working-directory: client
+        continue-on-error: true
 
   postgres:
     name: api + hold checks (Postgres)

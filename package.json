@@ -12,6 +12,7 @@
     "check:migrations": "node scripts/migration-integrity-check.mjs",
     "check:safety": "node scripts/safety-invariants-check.mjs",
     "check:syntax": "node scripts/check-syntax.mjs",
+    "lint:client": "cd client && npm run lint",
     "audit:prod": "cd client && npm audit --omit=dev && cd ../server && npm audit --omit=dev",
     "smoke": "node scripts/smoke-check.mjs",
     "test:holds": "node scripts/hold-config-check.mjs && node scripts/stale-pending-cleanup-check.mjs",

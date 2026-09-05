@@ -28,6 +28,7 @@ export default function SessionsTab() {
     handleEditSessionPkgs,
     handleDeleteSession,
     editingSessionPkgs,
+    setEditingSessionPkgs,
     sessionPkgList,
     setSessionPkgList,
     handleSaveSessionPkgs,
