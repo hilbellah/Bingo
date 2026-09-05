@@ -1,0 +1,86 @@
+# Runs the full check suite on every push and pull request, twice:
+#   1. on SQLite (what the checks always ran on)
+#   2. on a real Postgres - production's database. Postgres lower-cases
+#      unquoted aliases, is strict about GROUP BY, case-sensitive in LIKE...
+#      the 2026-09-04 event-ticket outage was a Postgres-only bug that a
+#      SQLite-only suite could not see.
+# Render is configured to deploy `main` only after this workflow passes.
+name: check
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sqlite:
+    name: full check (SQLite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+            client/package-lock.json
+      - run: npm ci
+      - run: npm ci --include=dev
+        working-directory: client
+      - run: npm ci
+        working-directory: server
+      - run: npm run check
+        env:
+          NODE_ENV: test
+
+  postgres:
+    name: api + hold checks (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bingo
+          POSTGRES_PASSWORD: bingo
+          POSTGRES_DB: bingo_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U bingo -d bingo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      TEST_DB_DRIVER: postgres
+      DATABASE_URL_POSTGRES: postgres://bingo:bingo@localhost:5432/bingo_test
+      PGSSL: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+            client/package-lock.json
+      - run: npm ci
+      - run: npm ci --include=dev
+        working-directory: client
+      - run: npm ci
+        working-directory: server
+      # The client build is needed because several API checks serve the
+      # built app shell; receipts/smoke/holds/api are the DB-touching checks.
+      - run: npm run build
+      - run: npm run test:receipts
+      - run: npm run smoke
+      - run: npm run test:holds
+      - run: npm run test:api

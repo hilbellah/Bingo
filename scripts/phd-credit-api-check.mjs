@@ -18,13 +18,12 @@ process.env.PAYMENT_FAILURE_HOLD_MINUTES = '5';
 process.env.ANET_ENV = 'sandbox';
 
 const databaseUrl = pathToFileURL(path.join(repoRoot, 'server/src/database.js'));
-const migrateUrl = pathToFileURL(path.join(repoRoot, 'server/src/migrate.js'));
 const appUrl = pathToFileURL(path.join(repoRoot, 'server/src/index.js'));
 
-const { migrate } = await import(migrateUrl);
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, all, get, run, saveDb } = await import(databaseUrl);
 
-await migrate();
+await prepareTestDatabase();
 await getDb();
 
 const creditPkg = await get("SELECT * FROM packages WHERE id = 'pkg-regular-optional-phd-credit'");

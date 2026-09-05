@@ -17,13 +17,12 @@ process.env.ADMIN_USERNAME = 'admin@example.com';
 process.env.ADMIN_PASSWORD = 'password123';
 
 const databaseUrl = pathToFileURL(path.join(repoRoot, 'server/src/database.js'));
-const migrateUrl = pathToFileURL(path.join(repoRoot, 'server/src/migrate.js'));
 const appUrl = pathToFileURL(path.join(repoRoot, 'server/src/index.js'));
 
-const { migrate } = await import(migrateUrl);
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, run, saveDb } = await import(databaseUrl);
 
-await migrate();
+await prepareTestDatabase();
 await getDb();
 
 const cutoffAt = '2026-06-07T00:00:00.000Z';

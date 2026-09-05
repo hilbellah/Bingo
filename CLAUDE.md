@@ -54,6 +54,14 @@ If you are unsure whether something counts as a change: it does.
 - Every payment transition goes through `markBookingPaid` / `markBookingRefunded` / `markBookingVoided` in `server/src/index.js`. Do not add new paths that change `payment_status` or seat `status` directly.
 - Add or extend a test in `scripts/*-check.mjs` for any behaviour you change, and register it in `package.json` → `test:api`.
 
+### Running the checks against Postgres (what production runs)
+CI does this automatically (`.github/workflows/check.yml`, job "postgres"). Locally, with Docker:
+```
+docker run -d --name bingo-test-pg -p 5433:5432 -e POSTGRES_USER=bingo -e POSTGRES_PASSWORD=bingo -e POSTGRES_DB=bingo_test postgres:16
+TEST_DB_DRIVER=postgres DATABASE_URL_POSTGRES=postgres://bingo:bingo@localhost:5433/bingo_test PGSSL=disable NODE_ENV=test npm run test:api
+```
+`scripts/lib/test-db.mjs` drops and recreates the schema for every check script and refuses any host that is not local/CI (never `*.render.com`). Any check that passes on SQLite but fails here is a production bug - fix the code, not the test, unless the test itself used SQLite-only SQL.
+
 ### Before you say "done"
 - `npm run check` passes (build, migrations, safety invariants, syntax, all API checks, audit).
 - Do not report success on the strength of a piped command — check the exit code of the build and the tests themselves.

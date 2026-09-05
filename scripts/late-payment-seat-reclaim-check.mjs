@@ -24,9 +24,9 @@ process.env.GMAIL_APP_PASSWORD = '';
 process.env.RESEND_API_KEY = '';
 process.env.SESSION_HOLD_MINUTES = '20';
 
-const { migrate } = await import(pathToFileURL(path.join(repoRoot, 'server/src/migrate.js')));
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, get, all, run, saveDb } = await import(pathToFileURL(path.join(repoRoot, 'server/src/database.js')));
-await migrate();
+await prepareTestDatabase();
 await getDb();
 
 const sessionId = 'reclaim-session';

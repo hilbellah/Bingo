@@ -22,9 +22,9 @@ process.env.GMAIL_USER = '';
 process.env.GMAIL_APP_PASSWORD = '';
 process.env.RESEND_API_KEY = '';
 
-const { migrate } = await import(pathToFileURL(path.join(repoRoot, 'server/src/migrate.js')));
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, get, run, saveDb } = await import(pathToFileURL(path.join(repoRoot, 'server/src/database.js')));
-await migrate();
+await prepareTestDatabase();
 await getDb();
 
 const sessionId = 'audit-session';

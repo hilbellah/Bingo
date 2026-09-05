@@ -31,13 +31,12 @@ process.env.GMAIL_APP_PASSWORD = '';
 process.env.RESEND_API_KEY = '';
 
 const databaseUrl = pathToFileURL(path.join(repoRoot, 'server/src/database.js'));
-const migrateUrl = pathToFileURL(path.join(repoRoot, 'server/src/migrate.js'));
 const appUrl = pathToFileURL(path.join(repoRoot, 'server/src/index.js'));
 
-const { migrate } = await import(migrateUrl);
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, all, get, run, saveDb } = await import(databaseUrl);
 
-await migrate();
+await prepareTestDatabase();
 await getDb();
 
 const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);

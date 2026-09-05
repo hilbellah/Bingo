@@ -12,7 +12,7 @@ process.env.DATABASE_URL = dbPath;
 process.env.SKIP_LEGACY_DB_COPY = '1';
 process.env.SKIP_RENDER_DISK_CHECK = '1';
 
-const { migrate } = await import(pathToFileURL(path.join(repoRoot, 'server/src/migrate.js')));
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { all, get, getDb, run } = await import(pathToFileURL(path.join(repoRoot, 'server/src/database.js')));
 const {
   closeGeneratedSessionsWithoutActiveSchedule,
@@ -26,10 +26,13 @@ function assert(condition, message) {
 }
 
 async function futureSundaySessions() {
+  // SQLite's date('now') is a date CAST on Postgres (text >= date fails), so
+  // the test computes today itself; the app's own queries never use it.
+  const today = new Date().toISOString().slice(0, 10);
   return all(`
     SELECT id, date, time, is_available
     FROM sessions
-    WHERE date >= date('now')
+    WHERE date >= '${today}'
       AND strftime('%w', date) = '0'
       AND is_special_event = 0
       AND COALESCE(session_type, 'regular_bingo') = 'regular_bingo'
@@ -39,7 +42,7 @@ async function futureSundaySessions() {
 }
 
 try {
-  await migrate();
+  await prepareTestDatabase();
   await getDb();
   await ensureFutureSessions();
 

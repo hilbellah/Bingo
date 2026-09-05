@@ -29,6 +29,15 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const { Pool } = pg;
 
+// Return integer-like aggregates as JavaScript numbers, the way SQLite does.
+// By default node-postgres hands back BIGINT (COUNT, SUM of integers) and
+// NUMERIC as strings, so `row.count === 0` is false and `sold + held`
+// concatenates. The codebase was written against SQLite's numbers; this keeps
+// production behaving the same way. Values here are counts and cents, far
+// below Number's safe-integer range.
+pg.types.setTypeParser(20, value => (value === null ? null : Number(value)));   // int8 / bigint
+pg.types.setTypeParser(1700, value => (value === null ? null : Number(value))); // numeric
+
 let pool = null;
 
 function getConnectionString() {
@@ -59,6 +68,9 @@ export function getPool() {
     max: Number(process.env.PGPOOL_MAX || 10),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
+    // Test scripts are short-lived processes; let them exit as soon as their
+    // last query finishes instead of waiting out the idle timeout.
+    allowExitOnIdle: process.env.NODE_ENV === 'test',
   });
 
   pool.on('error', (err) => {

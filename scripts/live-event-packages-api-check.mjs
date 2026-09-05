@@ -20,13 +20,12 @@ process.env.ADMIN_USERNAME = 'live-event-admin';
 process.env.ADMIN_PASSWORD = 'live-event-password';
 
 const databaseUrl = pathToFileURL(path.join(repoRoot, 'server/src/database.js'));
-const migrateUrl = pathToFileURL(path.join(repoRoot, 'server/src/migrate.js'));
 const appUrl = pathToFileURL(path.join(repoRoot, 'server/src/index.js'));
 
-const { migrate } = await import(migrateUrl);
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, get, run, saveDb } = await import(databaseUrl);
 
-await migrate();
+await prepareTestDatabase();
 await getDb();
 
 const globalPhdPackage = await get("SELECT id FROM packages WHERE is_phd = 1 AND is_active = 1 LIMIT 1");

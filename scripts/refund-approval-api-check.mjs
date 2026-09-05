@@ -24,9 +24,9 @@ process.env.REFUND_APPROVAL_EMAILS = '';
 process.env.SUPER_ADMIN_EMAILS = '';
 process.env.EMAIL_BCC = '';
 
-const { migrate } = await import(pathToFileURL(path.join(repoRoot, 'server/src/migrate.js')));
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, get, run, saveDb } = await import(pathToFileURL(path.join(repoRoot, 'server/src/database.js')));
-await migrate();
+await prepareTestDatabase();
 await getDb();
 
 const password = 'refund-approval-test-password';

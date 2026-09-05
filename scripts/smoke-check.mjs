@@ -12,7 +12,7 @@ process.env.DATABASE_URL = dbPath;
 process.env.SKIP_LEGACY_DB_COPY = '1';
 process.env.SKIP_RENDER_DISK_CHECK = '1';
 
-const { migrate } = await import(pathToFileURL(path.join(repoRoot, 'server/src/migrate.js')));
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, all } = await import(pathToFileURL(path.join(repoRoot, 'server/src/database.js')));
 
 function assert(condition, message) {
@@ -22,7 +22,7 @@ function assert(condition, message) {
 }
 
 try {
-  await migrate();
+  await prepareTestDatabase();
   await getDb();
 
   const packages = await all('SELECT name, type, is_active, is_phd FROM packages ORDER BY sort_order, name');

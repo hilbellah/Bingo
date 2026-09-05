@@ -22,9 +22,9 @@ process.env.GMAIL_APP_PASSWORD = '';
 process.env.RESEND_API_KEY = '';
 process.env.PAYMENT_RECONCILE_MIN_AGE_SECONDS = '10';
 
-const { migrate } = await import(pathToFileURL(path.join(repoRoot, 'server/src/migrate.js')));
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, get, run, saveDb } = await import(pathToFileURL(path.join(repoRoot, 'server/src/database.js')));
-await migrate();
+await prepareTestDatabase();
 await getDb();
 
 const sessionId = 'reconcile-session';

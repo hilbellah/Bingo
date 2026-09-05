@@ -13,9 +13,9 @@ process.env.SKIP_RENDER_DISK_CHECK = '1';
 process.env.STALE_PENDING_HOURS = '48';
 
 const importLocal = relativePath => import(pathToFileURL(path.join(repoRoot, relativePath)));
-const { migrate } = await importLocal('server/src/migrate.js');
+const { prepareTestDatabase } = await importLocal('scripts/lib/test-db.mjs');
 const { get, run, saveDb } = await importLocal('server/src/database.js');
-await migrate();
+await prepareTestDatabase();
 
 const now = new Date('2099-08-15T12:00:00.000Z');
 const old = new Date(now.getTime() - 72 * 60 * 60 * 1000).toISOString();

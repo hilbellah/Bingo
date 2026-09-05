@@ -20,12 +20,11 @@ process.env.GMAIL_APP_PASSWORD = '';
 process.env.RESEND_API_KEY = '';
 
 const databaseUrl = pathToFileURL(path.join(repoRoot, 'server/src/database.js'));
-const migrateUrl = pathToFileURL(path.join(repoRoot, 'server/src/migrate.js'));
 const appUrl = pathToFileURL(path.join(repoRoot, 'server/src/index.js'));
-const { migrate } = await import(migrateUrl);
+const { prepareTestDatabase } = await import(pathToFileURL(path.join(repoRoot, 'scripts/lib/test-db.mjs')));
 const { getDb, get, run, saveDb } = await import(databaseUrl);
 
-await migrate();
+await prepareTestDatabase();
 await getDb();
 
 const sessionId = 'late-payment-session';

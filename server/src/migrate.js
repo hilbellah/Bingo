@@ -926,7 +926,10 @@ async function migrate() {
   console.log('Migrations complete.');
 }
 
-export { migrate };
+// ensureRegularBingoSchedule / ensureBaselinePackages are also used by the
+// Postgres test harness (scripts/lib/test-db.mjs) to seed a fresh schema with
+// the same baseline rows production started from.
+export { migrate, ensureRegularBingoSchedule, ensureBaselinePackages };
 
 // When run directly (not imported), execute and exit
 const isMainModule = process.argv[1] && (
