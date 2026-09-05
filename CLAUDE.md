@@ -91,7 +91,7 @@ TEST_DB_DRIVER=postgres DATABASE_URL_POSTGRES=postgres://bingo:bingo@localhost:5
 | Webhook-independent payment confirmation | `server/src/services/paymentReconciliation.js` (poller), `paymentAudit.js` (6-hourly gateway audit) |
 | Admin payment attention panel (bell icon) | `server/src/routes/adminPaymentReviewRoutes.js`, `client/src/admin/NotificationsBell.jsx` |
 | Seat holds | `server/src/services/holds.js`, `server/src/routes/seatRoutes.js`; heartbeat in `GET /api/bookings/:id/status` |
-| Customer app (React/Vite) | `client/src/App.jsx`, `client/src/components/*` |
+| Customer app (React/Vite) | `client/src/App.jsx` (booking flow state), `client/src/bookingHelpers.js` (pure helpers), `client/src/components/*` (incl. `LiveEventBookingSurface`, `FeaturedEventRail`, `EventCheckoutPanel`, `BookingPanel`) |
 | Admin app | `client/src/admin/*` |
 | DB adapters | `server/src/db/sqlite.js` (tests/dev), `server/src/db/postgres.js` (production) |
 | Migrations | `server/src/migrate.js` (SQLite), `server/migrations/postgres/*.sql` (Postgres, applied by `migratePostgres.js` on boot) |
