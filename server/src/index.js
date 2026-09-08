@@ -342,6 +342,7 @@ app.get('/health', async (req, res) => {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: Math.floor((Date.now() - startTime) / 1000),
+      memory: memorySnapshot(),
       db: 'connected',
       config: getSafeRuntimeConfig()
     });
@@ -350,12 +351,26 @@ app.get('/health', async (req, res) => {
       status: 'error',
       timestamp: new Date().toISOString(),
       uptime: Math.floor((Date.now() - startTime) / 1000),
+      memory: memorySnapshot(),
       db: 'disconnected',
       error: error.message,
       config: getSafeRuntimeConfig()
     });
   }
 });
+
+// Process memory in MB, so drift is visible on /health long before the
+// 512 MB Render instance is exhausted (see the 2026-09-07 SDK logger leak).
+function memorySnapshot() {
+  const usage = process.memoryUsage();
+  const toMb = bytes => Math.round(bytes / 1024 / 1024 * 10) / 10;
+  return {
+    rssMb: toMb(usage.rss),
+    heapUsedMb: toMb(usage.heapUsed),
+    heapTotalMb: toMb(usage.heapTotal),
+    externalMb: toMb(usage.external)
+  };
+}
 
 // ============ AUDIT HELPER ============
 

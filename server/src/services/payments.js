@@ -59,8 +59,25 @@
 
 import pkg from 'authorizenet';
 import crypto from 'crypto';
+import { createRequire } from 'module';
 
 const { APIContracts, APIControllers, Constants } = pkg;
+
+// ---------- SDK logger leak guard ----------
+// authorizenet 1.0.10 asks winston for a *new* logger (random category name)
+// inside every contract constructor and every controller call, and winston's
+// container keeps every one of them alive forever. With the reconciler polling
+// the gateway once a minute that retained ~136 KB per call and filled the
+// 512 MB Render instance in ~2.5 days (unplanned restart 2026-09-07 18:32 UTC).
+// The SDK's own logging is disabled by its default config, so nothing is lost
+// by handing it one shared no-op logger instead. The SDK looks `getLogger` up
+// on the module object at call time, so replacing it here covers every path.
+// scripts/authorizenet-logger-leak-check.mjs fails the build if this ever
+// stops working (e.g. after an SDK upgrade).
+const require = createRequire(import.meta.url);
+const sdkLogger = require('authorizenet/lib/logger.js');
+const silentSdkLogger = { debug() {}, info() {}, warn() {}, error() {}, log() {} };
+sdkLogger.getLogger = () => silentSdkLogger;
 
 // ---------- Config helpers (lazy reads — no module-load freeze) ----------
 
