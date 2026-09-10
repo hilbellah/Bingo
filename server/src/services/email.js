@@ -1082,6 +1082,7 @@ export async function sendPaymentAuditAlert({ anomalies = [], critical = [], sta
       case 'charge_without_booking': return `Charge ${a.transId} references ${a.invoiceNumber}, which matches no booking.`;
       case 'unrecorded_second_charge': return `Second charge ${a.transId} on ${a.invoiceNumber} (${who}, ${amount}); booking already paid by ${a.originalTransactionId}. Needs a refund.`;
       case 'awaiting_staff_review': return `${a.invoiceNumber} (${who}, ${amount}) has been waiting in the dashboard notifications for ${a.waitingHours ?? '?'} hour(s) - a customer is charged with no confirmed seat until someone acts.`;
+      case 'review_marked_handled': return `${a.invoiceNumber} (${who}, ${amount}) was quarantined for review and staff marked it handled - no action needed.`;
       default: return `${a.kind}: ${a.invoiceNumber} / ${a.transId}`;
     }
   };

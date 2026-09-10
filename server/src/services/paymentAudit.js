@@ -61,7 +61,7 @@ export function createGatewayAuditor({ paymentServices, sendAlert, getRecipients
       if (!invoice) continue; // non-booking transactions (manual terminal sales etc.)
       const base = { transId: tx.transId, invoiceNumber: invoice, submitTimeUTC: tx.submitTimeUTC || null, gatewayStatus: tx.status || null };
       const booking = await get(
-        'SELECT id, reference_number, payment_status, transaction_id, total_amount, customer_first_name, customer_last_name, email, payment_completed_at FROM bookings WHERE reference_number = ?',
+        'SELECT id, reference_number, payment_status, transaction_id, total_amount, customer_first_name, customer_last_name, email, payment_completed_at, created_at FROM bookings WHERE reference_number = ?',
         [invoice]
       );
       if (!booking) {
@@ -90,7 +90,18 @@ export function createGatewayAuditor({ paymentServices, sendAlert, getRecipients
       }
       if (booking.payment_status === 'payment_review') {
         const waitingMs = booking.payment_completed_at ? now() - new Date(booking.payment_completed_at).getTime() : 0;
-        anomalies.push({ kind: 'awaiting_staff_review', ...base, ...who, waitingHours: Math.round(waitingMs / 36e5 * 10) / 10 });
+        const waitingHours = Math.round(waitingMs / 36e5 * 10) / 10;
+        // "Mark handled" leaves the booking in payment_review on purpose (the
+        // money still shows in reports) and records a dismissal instead. The
+        // bell and /health/payments already hide those; the audit must agree,
+        // or it re-emails staff every run about a case they already closed.
+        // Same rule as adminPaymentReviewRoutes: the dismissal must post-date
+        // the current review so a later re-quarantine is flagged again.
+        const dismissed = await get(
+          `SELECT id FROM payment_events WHERE booking_id = ? AND event_type = 'payment_review_dismissed' AND created_at >= ?`,
+          [booking.id, booking.payment_completed_at || booking.created_at || '']
+        );
+        anomalies.push({ kind: dismissed ? 'review_marked_handled' : 'awaiting_staff_review', ...base, ...who, waitingHours });
       }
     }
 
@@ -121,7 +132,7 @@ export function createGatewayAuditor({ paymentServices, sendAlert, getRecipients
     if (critical.length > 0) {
       logger.error?.(`[audit] ${critical.length} critical payment anomaly(ies): ${critical.map(a => `${a.kind}:${a.invoiceNumber}/${a.transId}`).join(', ')}`);
     } else {
-      logger.info?.(`[audit] gateway payment audit clean: ${transactions.length} transaction(s) checked, ${anomalies.length} awaiting staff review`);
+      logger.info?.(`[audit] gateway payment audit clean: ${transactions.length} transaction(s) checked, ${anomalies.filter(a => a.kind === 'awaiting_staff_review').length} awaiting staff review`);
     }
     return { transactionsChecked: transactions.length, anomalies, critical };
   }

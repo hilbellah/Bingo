@@ -59,6 +59,26 @@ await run(
   [flaggedDouble.id, JSON.stringify({ duplicateTransactionId: 'tx-flag-b', originalTransactionId: 'tx-flag-a' }), new Date().toISOString()]
 );
 const inReview = await booking('payment_review', 'tx-review');
+// Quarantined 3h ago, then staff pressed "Mark handled": the booking stays
+// payment_review by design, so the audit must read the dismissal or it will
+// email a stale-review reminder every run about a closed case.
+const handled = await booking('payment_review', 'tx-handled');
+const threeHoursAgo = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
+await run('UPDATE bookings SET payment_completed_at = ? WHERE id = ?', [threeHoursAgo, handled.id]);
+await run(
+  `INSERT INTO payment_events (id, booking_id, event_type, source, raw_payload, created_at)
+   VALUES ('handled-evt', ?, 'payment_review_dismissed', 'admin', ?, ?)`,
+  [handled.id, JSON.stringify({ note: 'moved to another seat', resolvedBy: 'staff' }), new Date().toISOString()]
+);
+// Dismissed once, then quarantined AGAIN afterwards: the old dismissal must
+// not hide the new review (same rule as the notifications bell).
+const requarantined = await booking('payment_review', 'tx-again');
+await run('UPDATE bookings SET payment_completed_at = ? WHERE id = ?', [new Date().toISOString(), requarantined.id]);
+await run(
+  `INSERT INTO payment_events (id, booking_id, event_type, source, raw_payload, created_at)
+   VALUES ('old-dismiss-evt', ?, 'payment_review_dismissed', 'admin', ?, ?)`,
+  [requarantined.id, JSON.stringify({ note: 'refunded', resolvedBy: 'staff' }), threeHoursAgo]
+);
 await saveDb();
 
 const { app, runGatewayAudit, __setPaymentServicesForTesting } = await import(pathToFileURL(path.join(repoRoot, 'server/src/index.js')));
@@ -72,6 +92,8 @@ const gateway = [
   { transId: 'tx-flag-a', invoiceNumber: flaggedDouble.ref, status: 'settledSuccessfully' },
   { transId: 'tx-flag-b', invoiceNumber: flaggedDouble.ref, status: 'capturedPendingSettlement' },
   { transId: 'tx-review', invoiceNumber: inReview.ref, status: 'capturedPendingSettlement' },
+  { transId: 'tx-handled', invoiceNumber: handled.ref, status: 'settledSuccessfully' },
+  { transId: 'tx-again', invoiceNumber: requarantined.ref, status: 'capturedPendingSettlement' },
   { transId: 'tx-ghost', invoiceNumber: 'BNG-DOESNOTEXIST', status: 'capturedPendingSettlement' },
   { transId: 'tx-declined', invoiceNumber: pendingCharged.ref, status: 'declined' },
   { transId: 'tx-terminal', invoiceNumber: null, status: 'settledSuccessfully' },
@@ -86,20 +108,28 @@ const baseUrl = `http://127.0.0.1:${listener.address().port}`;
 
 try {
   const before = await fetch(`${baseUrl}/health/payments`);
-  assert.equal(before.status, 200, 'no audit yet and no reviews open -> not red');
+  assert.equal(before.status, 200, 'no audit yet and no review older than the escalation threshold -> not red');
+  const beforeBody = await before.json();
+  assert.equal(beforeBody.openReviews, 2, 'handled review is hidden; fresh and re-quarantined ones count');
 
   const result = await runGatewayAudit({ reason: 'test' });
   assert.equal(result.error, undefined, JSON.stringify(result));
   const kinds = result.anomalies.map(a => `${a.kind}:${a.invoiceNumber}`).sort();
   assert.deepEqual(kinds, [
     `awaiting_staff_review:${inReview.ref}`,
+    `awaiting_staff_review:${requarantined.ref}`,
+    `review_marked_handled:${handled.ref}`,
     `charge_on_unconfirmed_booking:${cancelledCharged.ref}`,
     `charge_on_unconfirmed_booking:${pendingCharged.ref}`,
     'charge_without_booking:BNG-DOESNOTEXIST',
     `unrecorded_second_charge:${doubleCharged.ref}`,
   ].sort());
   assert.equal(result.critical.length, 4);
-  assert.ok(await get("SELECT id FROM audit_log WHERE action = 'gateway_payment_audit'"));
+  const auditRow = await get("SELECT details FROM audit_log WHERE action = 'gateway_payment_audit' ORDER BY created_at DESC LIMIT 1");
+  assert.ok(auditRow);
+  // The handled booking has waited 3h (> escalation threshold) but was
+  // dismissed, so it must not be counted as a stale review (= no reminder email).
+  assert.equal(JSON.parse(auditRow.details).staleReviewCount, 0, auditRow.details);
 
   const red = await fetch(`${baseUrl}/health/payments`);
   const redBody = await red.json();
