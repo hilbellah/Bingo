@@ -756,7 +756,8 @@ export default function BulkPrintTab() {
             <div ref={bulkPrintTopRef} className="bg-white rounded-xl p-5 shadow-sm mb-4 no-print scroll-mt-4">
               <h3 className="font-semibold text-brand-blue mb-3">Bulk Print Tickets</h3>
               <p className="text-sm text-gray-500 mb-4">
-                Select a date or date range to load paid tickets. Regular and special bingo print 3 per sheet; live events / venues print 6 per sheet.
+                Step 1: pick the departments and dates, then load the paid tickets. Step 2: choose Special Paper or Thermal Copy below and print.
+                Regular and special bingo print 3 per sheet; live events / venues print 6 per sheet.
               </p>
               <div className="flex flex-wrap gap-3 items-end">
                 <div className="min-w-[260px]">
@@ -788,97 +789,7 @@ export default function BulkPrintTab() {
                   className="bg-brand-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-gold/90 disabled:opacity-40">
                   {bulkLoading ? 'Loading...' : 'Load Tickets'}
                 </button>
-                {bulkData && bulkData.totalTickets > 0 && (
-                  <button onClick={handlePrintSpecialPaper}
-                    disabled={!hasPrintableSelectedTickets}
-                    className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-blue/90">
-                    Print Special Paper ({selectedTickets.length})
-                  </button>
-                )}
-                {bulkData && bulkData.totalTickets > 0 && (
-                  <button onClick={handlePrintThermalReceipts}
-                    disabled={selectedReceiptBookings.length === 0}
-                    className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-black disabled:opacity-40">
-                    Print Thermal Copy ({selectedReceiptBookings.length})
-                  </button>
-                )}
               </div>
-            </div>
-
-            <div className="bg-white rounded-xl p-5 shadow-sm mb-4 no-print">
-              <h3 className="font-semibold text-brand-blue mb-1">Walk-in Tickets (blank)</h3>
-              <p className="text-sm text-gray-500 mb-3">
-                Print fill-in tickets for a session&apos;s remaining unsold seats. The name line prints blank for staff to write in;
-                the ticket uses that session&apos;s required entry package, with the real table and seat number. Print-only: no bookings are created and these
-                never count toward seat sale totals.
-              </p>
-              <div className="flex flex-wrap gap-3 items-end">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Session</label>
-                  <select
-                    value={walkInSessionId}
-                    onChange={e => handleSelectWalkInSession(e.target.value)}
-                    className="px-3 py-2 border rounded-lg text-sm min-w-[280px]"
-                  >
-                    <option value="">Select a session...</option>
-                    {walkInSessions.map(session => (
-                      <option key={session.id} value={session.id}>
-                        {session.date} {formatPrintTime(session.time)} — {session.event_title || getWalkInSessionTypeLabel(session)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  onClick={handlePrintWalkInTickets}
-                  disabled={walkInLoading || walkInSeatsToPrint.length === 0}
-                  className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-blue/90 disabled:opacity-40"
-                >
-                  {walkInLoading ? 'Loading seats...' : `Print Walk-in Tickets (${walkInSeatsToPrint.length})`}
-                </button>
-              </div>
-              {walkInSessionId && !walkInLoading && walkInPackage && (
-                <p className="text-xs text-gray-600 mt-3">
-                  Walk-in ticket package: <span className="font-semibold text-brand-blue">
-                    ${(Number(walkInPackage.price || 0) / 100).toFixed(2)} {walkInPackage.name}
-                  </span>
-                </p>
-              )}
-              {walkInSessionId && !walkInLoading && walkInAvailableSeats.length === 0 && (
-                <p className="text-sm text-gray-400 mt-3">No unsold seats left for this session.</p>
-              )}
-              {walkInSessionId && !walkInLoading && walkInAvailableSeats.length > 0 && (
-                <div className="mt-3">
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <p className="text-xs text-gray-500">
-                      {walkInAvailableSeats.length} unsold seat(s) across {walkInTables.length} table(s). Untick tables you do not want to print.
-                    </p>
-                    <button
-                      onClick={() => setWalkInSelectedTables(new Set(walkInTables.map(table => table.tableNumber)))}
-                      className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-                    >
-                      Select all
-                    </button>
-                    <button
-                      onClick={() => setWalkInSelectedTables(new Set())}
-                      className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {walkInTables.map(table => (
-                      <label key={table.tableNumber} className="inline-flex items-center gap-2 px-3 py-1.5 border rounded-lg text-sm bg-white">
-                        <input
-                          type="checkbox"
-                          checked={walkInSelectedTables.has(table.tableNumber)}
-                          onChange={() => toggleWalkInTable(table.tableNumber)}
-                        />
-                        Table {table.tableNumber} ({table.count})
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {bulkData && bulkData.error && (
@@ -940,8 +851,22 @@ export default function BulkPrintTab() {
                 </div>
 
                 <div className="bg-white rounded-xl p-4 shadow-sm mb-4 no-print">
-                  <p className="text-sm font-semibold text-brand-blue mb-2">Special Paper Print</p>
-                  <div className="flex flex-wrap gap-4 items-end">
+                  <div className="flex flex-wrap justify-between gap-3 items-start">
+                    <div>
+                      <p className="text-sm font-semibold text-brand-blue mb-1">Special Paper Print</p>
+                      <p className="text-xs text-gray-500">
+                        Prints the selected tickets on the pre-printed special paper, 3 per sheet. Copies per Ticket and Print Order apply to this print only.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handlePrintSpecialPaper}
+                      disabled={!hasPrintableSelectedTickets}
+                      className="px-3 py-1.5 text-xs bg-brand-blue text-white rounded-lg hover:bg-brand-blue/90 disabled:opacity-40"
+                    >
+                      Print Special Paper ({selectedTickets.length})
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-4 items-end">
                     <label className="text-sm text-gray-700">
                       <span className="block text-xs text-gray-400 mb-1">Copies per Ticket</span>
                       <select
@@ -1098,6 +1023,82 @@ export default function BulkPrintTab() {
 
               </div>
             )}
+
+            <div className="bg-white rounded-xl p-5 shadow-sm mb-4 no-print">
+              <h3 className="font-semibold text-brand-blue mb-1">Walk-in Tickets (blank)</h3>
+              <p className="text-sm text-gray-500 mb-3">
+                Print fill-in tickets for a session&apos;s remaining unsold seats. The name line prints blank for staff to write in;
+                the ticket uses that session&apos;s required entry package, with the real table and seat number. Print-only: no bookings are created and these
+                never count toward seat sale totals.
+              </p>
+              <div className="flex flex-wrap gap-3 items-end">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Session</label>
+                  <select
+                    value={walkInSessionId}
+                    onChange={e => handleSelectWalkInSession(e.target.value)}
+                    className="px-3 py-2 border rounded-lg text-sm min-w-[280px]"
+                  >
+                    <option value="">Select a session...</option>
+                    {walkInSessions.map(session => (
+                      <option key={session.id} value={session.id}>
+                        {session.date} {formatPrintTime(session.time)} — {session.event_title || getWalkInSessionTypeLabel(session)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={handlePrintWalkInTickets}
+                  disabled={walkInLoading || walkInSeatsToPrint.length === 0}
+                  className="bg-brand-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-blue/90 disabled:opacity-40"
+                >
+                  {walkInLoading ? 'Loading seats...' : `Print Walk-in Tickets (${walkInSeatsToPrint.length})`}
+                </button>
+              </div>
+              {walkInSessionId && !walkInLoading && walkInPackage && (
+                <p className="text-xs text-gray-600 mt-3">
+                  Walk-in ticket package: <span className="font-semibold text-brand-blue">
+                    ${(Number(walkInPackage.price || 0) / 100).toFixed(2)} {walkInPackage.name}
+                  </span>
+                </p>
+              )}
+              {walkInSessionId && !walkInLoading && walkInAvailableSeats.length === 0 && (
+                <p className="text-sm text-gray-400 mt-3">No unsold seats left for this session.</p>
+              )}
+              {walkInSessionId && !walkInLoading && walkInAvailableSeats.length > 0 && (
+                <div className="mt-3">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <p className="text-xs text-gray-500">
+                      {walkInAvailableSeats.length} unsold seat(s) across {walkInTables.length} table(s). Untick tables you do not want to print.
+                    </p>
+                    <button
+                      onClick={() => setWalkInSelectedTables(new Set(walkInTables.map(table => table.tableNumber)))}
+                      className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      onClick={() => setWalkInSelectedTables(new Set())}
+                      className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {walkInTables.map(table => (
+                      <label key={table.tableNumber} className="inline-flex items-center gap-2 px-3 py-1.5 border rounded-lg text-sm bg-white">
+                        <input
+                          type="checkbox"
+                          checked={walkInSelectedTables.has(table.tableNumber)}
+                          onChange={() => toggleWalkInTable(table.tableNumber)}
+                        />
+                        Table {table.tableNumber} ({table.count})
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             <style>{`
               @media print {
