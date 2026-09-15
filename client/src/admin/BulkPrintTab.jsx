@@ -112,19 +112,14 @@ img { filter: none !important; -webkit-filter: none !important; }
 .bulk-ticket-page .ticket-stub-main { font-size: 19px; font-weight: 700; color: #000; margin: 0 0 2px; line-height: 1.2; overflow-wrap: anywhere; }
 .bulk-ticket-page .ticket-dateref { font-size: 12px; font-weight: 700; color: #000; margin: 0; white-space: nowrap; }
 .bulk-ticket-page .ticket-dateref u { text-decoration: underline; }
-.bulk-ticket-page-single {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(4, 1fr);
-}
-.bulk-ticket-page-single .ticket-card { width: 100%; height: 2.75in; }
-.bulk-ticket-page-single .ticket-inner { padding: 0.28in 0.22in 0.3in; }
-.bulk-ticket-page-single .ticket-half-single { flex: 0 0 100%; padding: 0 0.12in; }
-.bulk-ticket-page-single .ticket-half-single .ticket-title-main { font-size: 24px; }
-.bulk-ticket-page-single .ticket-half-single .ticket-tableseat { font-size: 29px; }
-.bulk-ticket-page-single .ticket-half-single .ticket-stub-label { font-size: 15px; }
-.bulk-ticket-page-single .ticket-half-single .ticket-stub-main { font-size: 24px; }
-.bulk-ticket-page-single .ticket-half-single .ticket-dateref { font-size: 10px; }
+/* Single-copy (large print) pages use the same pre-printed stock as the
+   2-copy layout: 3 tickets per letter sheet, same slot height and padding, so
+   only the type gets bigger - the ticket occupies the full slot width. */
+.bulk-ticket-page-single .ticket-half-single .ticket-title-main { font-size: 34px; }
+.bulk-ticket-page-single .ticket-half-single .ticket-tableseat { font-size: 40px; }
+.bulk-ticket-page-single .ticket-half-single .ticket-stub-label { font-size: 18px; }
+.bulk-ticket-page-single .ticket-half-single .ticket-stub-main { font-size: 28px; }
+.bulk-ticket-page-single .ticket-half-single .ticket-dateref { font-size: 14px; }
 `;
 }
 
@@ -212,7 +207,7 @@ function buildSpecialPaperPrintBody(sessions = [], selectedTicketsForPrint = [],
     const isEventSession = session.sessionType === 'event';
     const isSingleCopy = !isEventSession && printParts.singleCopy;
     if (!isEventSession && !printParts.nameCopy && !printParts.seatCopy && !printParts.singleCopy) return '';
-    const ticketsPerPage = isEventSession ? 6 : isSingleCopy ? 8 : 3;
+    const ticketsPerPage = isEventSession ? 6 : 3;
     const pages = [];
     for (let i = 0; i < sessionTickets.length; i += ticketsPerPage) {
       pages.push(sessionTickets.slice(i, i + ticketsPerPage));
@@ -402,7 +397,19 @@ export default function BulkPrintTab() {
   );
   const selectedTicketsForPrint = useMemo(() => {
     const tickets = [...selectedTickets];
-    if (printSort !== 'name') return tickets;
+    const compareSession = (a, b) => {
+      const date = String(a.sessionDate || '').localeCompare(String(b.sessionDate || ''));
+      if (date !== 0) return date;
+      return String(a.sessionTime || '').localeCompare(String(b.sessionTime || ''));
+    };
+    if (printSort !== 'name') {
+      // The API returns tickets grouped by booking reference, so "Table / seat
+      // order" must sort explicitly or staff re-sort the printed stack by hand.
+      return tickets.sort((a, b) => compareSession(a, b)
+        || (Number(a.tableNumber) - Number(b.tableNumber))
+        || (Number(a.chairNumber) - Number(b.chairNumber))
+        || String(a.referenceNumber || '').localeCompare(String(b.referenceNumber || ''), undefined, { sensitivity: 'base' }));
+    }
     return tickets.sort((a, b) => {
       const last = String(a.lastName || '').localeCompare(String(b.lastName || ''), undefined, { sensitivity: 'base' });
       if (last !== 0) return last;
