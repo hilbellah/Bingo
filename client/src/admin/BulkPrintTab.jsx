@@ -101,7 +101,6 @@ img { filter: none !important; -webkit-filter: none !important; }
 .bulk-ticket-page .ticket-inner { display: flex; width: 100%; height: 100%; padding: 0.5in 0.3in 0.55in; gap: 0; }
 .bulk-ticket-page .ticket-half { flex: 0 0 50%; display: flex; flex-direction: column; align-items: center; justify-content: space-between; text-align: center; padding: 0 0.25in; color: #000; }
 .bulk-ticket-page .ticket-half-spacer { flex: 0 0 50%; }
-.bulk-ticket-page .ticket-half-single { flex: 0 0 100%; padding: 0 0.55in; }
 .bulk-ticket-page .ticket-block { max-width: 100%; }
 .bulk-ticket-page .ticket-name-prominent { font-size: 28px; font-weight: 700; color: #000; margin: 0; line-height: 1.15; overflow-wrap: anywhere; max-width: 100%; }
 .bulk-ticket-page .ticket-title-sub { font-size: 17px; font-weight: 700; color: #000; margin: 1px 0 0; line-height: 1.2; }
@@ -112,14 +111,6 @@ img { filter: none !important; -webkit-filter: none !important; }
 .bulk-ticket-page .ticket-stub-main { font-size: 19px; font-weight: 700; color: #000; margin: 0 0 2px; line-height: 1.2; overflow-wrap: anywhere; }
 .bulk-ticket-page .ticket-dateref { font-size: 12px; font-weight: 700; color: #000; margin: 0; white-space: nowrap; }
 .bulk-ticket-page .ticket-dateref u { text-decoration: underline; }
-/* Single-copy (large print) pages use the same pre-printed stock as the
-   2-copy layout: 3 tickets per letter sheet, same slot height and padding, so
-   only the type gets bigger - the ticket occupies the full slot width. */
-.bulk-ticket-page-single .ticket-half-single .ticket-title-main { font-size: 34px; }
-.bulk-ticket-page-single .ticket-half-single .ticket-tableseat { font-size: 40px; }
-.bulk-ticket-page-single .ticket-half-single .ticket-stub-label { font-size: 18px; }
-.bulk-ticket-page-single .ticket-half-single .ticket-stub-main { font-size: 28px; }
-.bulk-ticket-page-single .ticket-half-single .ticket-dateref { font-size: 14px; }
 `;
 }
 
@@ -207,21 +198,29 @@ function buildSpecialPaperPrintBody(sessions = [], selectedTicketsForPrint = [],
     const isEventSession = session.sessionType === 'event';
     const isSingleCopy = !isEventSession && printParts.singleCopy;
     if (!isEventSession && !printParts.nameCopy && !printParts.seatCopy && !printParts.singleCopy) return '';
-    const ticketsPerPage = isEventSession ? 6 : 3;
+    // Bingo stock is 3 perforated strips per letter sheet. The 2-copy layout
+    // uses one strip per ticket (Name half + Seat half). Single copy puts two
+    // different tickets on one strip, one per half, so 6 tickets per sheet.
+    const ticketsPerPage = isEventSession || isSingleCopy ? 6 : 3;
     const pages = [];
     for (let i = 0; i < sessionTickets.length; i += ticketsPerPage) {
       pages.push(sessionTickets.slice(i, i + ticketsPerPage));
     }
 
     return pages.map(pageTickets => {
-      const cards = pageTickets.map(ticket =>
-        isEventSession
-          ? buildEventTicketHtml(session, ticket)
-          : buildBingoTicketHtml(session, ticket, printParts)
-      ).join('');
-      const pageClass = isEventSession
-        ? 'event-ticket-page'
-        : `bulk-ticket-page${isSingleCopy ? ' bulk-ticket-page-single' : ''}`;
+      let cards;
+      if (isEventSession) {
+        cards = pageTickets.map(ticket => buildEventTicketHtml(session, ticket)).join('');
+      } else if (isSingleCopy) {
+        const strips = [];
+        for (let i = 0; i < pageTickets.length; i += 2) {
+          strips.push(buildBingoSingleCopyStripHtml(session, pageTickets[i], pageTickets[i + 1]));
+        }
+        cards = strips.join('');
+      } else {
+        cards = pageTickets.map(ticket => buildBingoTicketHtml(session, ticket, printParts)).join('');
+      }
+      const pageClass = isEventSession ? 'event-ticket-page' : 'bulk-ticket-page';
       return `<section class="${pageClass}">${cards}</section>`;
     }).join('');
   }).join('');
@@ -256,6 +255,47 @@ function buildEventTicketHtml(session, ticket) {
   </div>`;
 }
 
+// One half of a single-copy strip: the same "Keep this Ticket" content and
+// type sizes as the Seat half of the 2-copy layout, so it lines up with the
+// perforations and the centre split staff already cut along.
+function buildBingoSingleCopyHalfHtml(session, ticket, sideClass) {
+  const isWalkIn = Boolean(ticket.isWalkIn);
+  const displayTitle = escapePrintHtml(getTicketDisplayTitle(session));
+  const name = isWalkIn
+    ? 'Name <span class="ticket-blank-line"></span>'
+    : escapePrintHtml(`${ticket.firstName || ''} ${ticket.lastName || ''}`.trim());
+  const tableNumber = escapePrintHtml(ticket.tableNumber);
+  const chairNumber = escapePrintHtml(ticket.chairNumber);
+  const date = escapePrintHtml(formatPrintDate(session.sessionDate));
+  const time = escapePrintHtml(formatPrintTime(session.sessionTime));
+  const reference = escapePrintHtml(isWalkIn ? getWalkInReference(ticket) : ticket.referenceNumber);
+  const dateRef = `${date} – ${time} - <u>${reference}</u>`;
+
+  return `<div class="ticket-half ${sideClass}">
+    <div class="ticket-block">
+      <div class="ticket-title-main">${displayTitle}</div>
+    </div>
+    <div class="ticket-block">
+      <div class="ticket-tableseat">Table ${tableNumber} – Seat ${chairNumber}</div>
+    </div>
+    <div class="ticket-block">
+      <div class="ticket-stub-label ticket-stub-label-u">Keep this Ticket</div>
+      <div class="ticket-stub-main">${name}</div>
+      <div class="ticket-dateref">${dateRef}</div>
+    </div>
+  </div>`;
+}
+
+// A single-copy strip holds two different tickets, left then right. An odd
+// last ticket leaves the right half blank so the stock stays aligned.
+function buildBingoSingleCopyStripHtml(session, leftTicket, rightTicket) {
+  const left = buildBingoSingleCopyHalfHtml(session, leftTicket, 'ticket-half-left');
+  const right = rightTicket
+    ? buildBingoSingleCopyHalfHtml(session, rightTicket, 'ticket-half-right')
+    : '<div class="ticket-half-spacer"></div>';
+  return `<div class="ticket-card ticket-card-single"><div class="ticket-inner">${left}${right}</div></div>`;
+}
+
 function buildBingoTicketHtml(session, ticket, printParts) {
   const isWalkIn = Boolean(ticket.isWalkIn);
   const displayTitle = escapePrintHtml(getTicketDisplayTitle(session));
@@ -272,24 +312,6 @@ function buildBingoTicketHtml(session, ticket, printParts) {
   const price = escapePrintHtml(`$${priceCents % 100 === 0 ? (priceCents / 100).toFixed(0) : (priceCents / 100).toFixed(2)}`);
   const redeemMain = `${price} ${packageName}`;
   const dateRef = `${date} – ${time} - <u>${reference}</u>`;
-
-  if (printParts.singleCopy) {
-    return `<div class="ticket-card ticket-card-single"><div class="ticket-inner">
-      <div class="ticket-half ticket-half-single">
-        <div class="ticket-block">
-          <div class="ticket-title-main">${displayTitle}</div>
-        </div>
-        <div class="ticket-block">
-          <div class="ticket-tableseat">Table ${tableNumber} – Seat ${chairNumber}</div>
-        </div>
-        <div class="ticket-block">
-          <div class="ticket-stub-label ticket-stub-label-u">Keep this Ticket</div>
-          <div class="ticket-stub-main">${name}</div>
-          <div class="ticket-dateref">${dateRef}</div>
-        </div>
-      </div>
-    </div></div>`;
-  }
 
   const nameCopy = printParts.nameCopy ? `<div class="ticket-half ticket-half-left">
     <div class="ticket-block">
@@ -855,7 +877,7 @@ export default function BulkPrintTab() {
                     <div>
                       <p className="text-sm font-semibold text-brand-blue mb-1">Special Paper Print</p>
                       <p className="text-xs text-gray-500">
-                        Prints the selected tickets on the pre-printed special paper, 3 per sheet. Copies per Ticket and Print Order apply to this print only.
+                        Prints the selected tickets on the pre-printed special paper: 3 per sheet with 2 copies, 6 per sheet with 1 copy. Copies per Ticket and Print Order apply to this print only.
                       </p>
                     </div>
                     <button
@@ -875,7 +897,7 @@ export default function BulkPrintTab() {
                         className="px-3 py-2 border rounded-lg text-sm"
                       >
                         <option value="both">2 copies — Name + Seat (usual)</option>
-                        <option value="single">1 copy — Complete ticket (large print)</option>
+                        <option value="single">1 copy — Complete ticket (6 per sheet)</option>
                       </select>
                     </label>
                     <label className="text-sm text-gray-700">

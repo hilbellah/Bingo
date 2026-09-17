@@ -35,7 +35,7 @@ Use this for:
 - Special bingo tickets
 - Live event / venue tickets
 
-Regular and special bingo print 3 tickets per page. Live event / venue tickets print 6 tickets per page.
+Regular and special bingo print 3 tickets per page with **2 copies** per ticket (Name copy on the left, Seat copy on the right). With **1 copy** per ticket they print 6 per page: two different tickets on each perforated strip, side by side, split at the same centre line as the Name and Seat copies. Live event / venue tickets print 6 tickets per page.
 
 If the last page has blank spaces, that is normal. The system keeps the layout aligned for physical paper.
 
