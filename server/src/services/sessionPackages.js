@@ -46,7 +46,7 @@ export const REGULAR_BINGO_PACKAGE_DEFINITIONS = [
   { id: 'pkg-regular-optional-phd-4', name: 'PHD #4', price: 5000, type: 'optional', max_quantity: 2, sort_order: 23, is_phd: 1, description: 'Handheld device package level 4.' },
   { id: 'pkg-regular-optional-phd-5', name: 'PHD #5', price: 6000, type: 'optional', max_quantity: 2, sort_order: 24, is_phd: 1, description: 'Handheld device package level 5.' },
   { id: 'pkg-regular-optional-phd-6', name: 'PHD #6', price: 8000, type: 'optional', max_quantity: 2, sort_order: 25, is_phd: 1, description: 'Handheld device package level 6.' },
-  { id: PHD_CREDIT_PACKAGE_ID, name: '$1 Credit', price: 100, type: 'optional', max_quantity: 50, sort_order: 26, is_phd: 0, description: 'PHD credit. Available only when this player purchases a PHD package.' },
+  { id: PHD_CREDIT_PACKAGE_ID, name: '$1 Credit', price: 100, type: 'optional', max_quantity: 100, sort_order: 26, is_phd: 0, description: 'PHD credit. Available only when this player purchases a PHD package.' },
 ];
 
 function normalizePackageName(value) {

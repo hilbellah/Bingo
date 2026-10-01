@@ -29,7 +29,7 @@ await getDb();
 const creditPkg = await get("SELECT * FROM packages WHERE id = 'pkg-regular-optional-phd-credit'");
 assert.equal(creditPkg.name, '$1 Credit');
 assert.equal(creditPkg.price, 100);
-assert.equal(creditPkg.max_quantity, 50);
+assert.equal(creditPkg.max_quantity, 100);
 assert.equal(creditPkg.is_phd, 0);
 
 const phdPkg = await get("SELECT * FROM packages WHERE is_phd = 1 AND type = 'optional' AND is_active = 1 ORDER BY sort_order ASC LIMIT 1");
@@ -117,13 +117,13 @@ try {
     holderId: 'phd-credit-valid-holder',
     addons: [
       { packageId: phdPkg.id, quantity: 1 },
-      { packageId: creditPkg.id, quantity: 50 },
+      { packageId: creditPkg.id, quantity: 100 },
     ],
   }));
 
   assert.equal(validResult.response.status, 200);
   assert.ok(validResult.data.bookingId);
-  assert.equal(validResult.data.totalAmount, requiredTotal + phdPkg.price + creditPkg.price * 50 + 200);
+  assert.equal(validResult.data.totalAmount, requiredTotal + phdPkg.price + creditPkg.price * 100 + 200);
 
   const savedCredits = await get(
     `SELECT ba.quantity, ba.price
@@ -132,8 +132,8 @@ try {
      WHERE bi.booking_id = ? AND ba.package_id = ?`,
     [validResult.data.bookingId, creditPkg.id]
   );
-  assert.equal(savedCredits.quantity, 50);
-  assert.equal(savedCredits.price, 5000);
+  assert.equal(savedCredits.quantity, 100);
+  assert.equal(savedCredits.price, 10000);
 
   const noPhdResult = await postJson('/api/bookings/initiate', bookingBody({
     sessionId: 'phd-credit-no-phd-session',
@@ -151,12 +151,12 @@ try {
     holderId: 'phd-credit-over-limit-holder',
     addons: [
       { packageId: phdPkg.id, quantity: 1 },
-      { packageId: creditPkg.id, quantity: 51 },
+      { packageId: creditPkg.id, quantity: 101 },
     ],
   }));
 
   assert.equal(overLimitResult.response.status, 400);
-  assert.match(overLimitResult.data.error, /\$1 Credit is limited to 50 per player/i);
+  assert.match(overLimitResult.data.error, /\$1 Credit is limited to 100 per player/i);
 
   console.log('PHD credit API check passed.');
 } finally {
