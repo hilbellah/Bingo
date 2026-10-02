@@ -531,7 +531,27 @@ export default function BookingPanel({
                                 <div className="flex items-center gap-1.5">
                                   <button onClick={() => updateAddon(i, pkg.id, qty - 1)}
                                     className="w-7 h-7 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold flex items-center justify-center text-sm">-</button>
-                                  <span className="w-5 text-center font-bold">{qty}</span>
+                                  {isPhdCreditPackage(pkg) ? (
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max={maxQty}
+                                      step="1"
+                                      inputMode="numeric"
+                                      aria-label={`${pkg.name} quantity`}
+                                      value={qty}
+                                      onChange={e => {
+                                        const nextQty = Number.parseInt(e.target.value, 10);
+                                        if (!Number.isFinite(nextQty)) return;
+                                        updateAddon(i, pkg.id, Math.min(maxQty, Math.max(1, nextQty)));
+                                      }}
+                                      onFocus={e => e.currentTarget.select()}
+                                      onWheel={e => e.currentTarget.blur()}
+                                      className="w-16 h-8 rounded-lg border border-gray-300 bg-white px-1 text-center font-bold text-gray-800 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/30 outline-none"
+                                    />
+                                  ) : (
+                                    <span className="w-5 text-center font-bold">{qty}</span>
+                                  )}
                                   <button onClick={() => updateAddon(i, pkg.id, Math.min(maxQty, qty + 1))}
                                     disabled={qty >= maxQty || atStockLimit}
                                     className="w-7 h-7 rounded-full bg-brand-gold hover:bg-brand-gold-light text-white font-bold flex items-center justify-center text-sm disabled:opacity-40">+</button>
