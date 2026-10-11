@@ -1,6 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
-import { formatLocalDateStr } from '../utils/formatters';
+import { formatLocalDateStr, venueToday } from '../utils/formatters';
+
+function daysBeforeToday(days) {
+  const date = new Date(`${venueToday()}T00:00:00`);
+  date.setDate(date.getDate() - days);
+  return formatLocalDateStr(date);
+}
 
 function SalesPanel({ title, description, children }) {
   return (
@@ -21,6 +27,9 @@ export default function BookingsTab() {
     tab,
     formatPrice,
     bookingSales,
+    bookingSalesRange,
+    datedBookingSales,
+    loadDatedBookingSales,
     handleSalesDrilldown,
     dailySalesSearch,
     setDailySalesSearch,
@@ -42,7 +51,16 @@ export default function BookingsTab() {
   } = useAdminDashboard();
   const [activeBoard, setActiveBoard] = useState('dailySales');
   const [transactionSort, setTransactionSort] = useState('newest');
-  const bingoSales = bookingSales.filter(sale => sale.sessionType !== 'event');
+  const [salesDateFrom, setSalesDateFrom] = useState(() => daysBeforeToday(30));
+  const [salesDateTo, setSalesDateTo] = useState(() => venueToday());
+  const isSalesDateView = Boolean(bookingSalesRange);
+  const salesSource = isSalesDateView ? (datedBookingSales?.rows || []) : bookingSales;
+  const bingoSales = salesSource.filter(sale => sale.sessionType !== 'event');
+  const salesDateRangeInvalid = !salesDateFrom || !salesDateTo || salesDateFrom > salesDateTo;
+  const showSalesDateRange = () => {
+    if (salesDateRangeInvalid) return;
+    loadDatedBookingSales({ dateFrom: salesDateFrom, dateTo: salesDateTo });
+  };
   const transactionRows = transactions?.items || [];
   const sortedTransactionRows = useMemo(() => {
     const rows = [...transactionRows];
@@ -163,8 +181,56 @@ export default function BookingsTab() {
               title="Booking Sales"
               description="Session-by-session sales totals for bingo bookings, with ticket counts you can click to drill into purchasers."
             >
-              {bingoSales.length === 0 ? (
-                <p className="text-gray-400 text-center py-8">No sessions found</p>
+              <div className="flex flex-wrap items-end gap-3 py-4 border-b border-gray-100 mb-2">
+                <label className="text-xs text-gray-500">
+                  <span className="block mb-1">From</span>
+                  <input
+                    type="date"
+                    value={salesDateFrom}
+                    onChange={e => setSalesDateFrom(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800"
+                  />
+                </label>
+                <label className="text-xs text-gray-500">
+                  <span className="block mb-1">To</span>
+                  <input
+                    type="date"
+                    value={salesDateTo}
+                    onChange={e => setSalesDateTo(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={showSalesDateRange}
+                  disabled={salesDateRangeInvalid}
+                  className="px-4 py-1.5 text-sm bg-brand-blue text-white rounded-lg hover:bg-blue-800 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Show Dates
+                </button>
+                {isSalesDateView && (
+                  <button
+                    type="button"
+                    onClick={() => loadDatedBookingSales(null)}
+                    className="px-4 py-1.5 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold"
+                  >
+                    Back to Current Sessions
+                  </button>
+                )}
+                <p className="text-xs text-gray-500 w-full">
+                  {salesDateRangeInvalid
+                    ? 'Choose a From date on or before the To date.'
+                    : isSalesDateView
+                      ? `Showing sessions from ${bookingSalesRange.dateFrom} to ${bookingSalesRange.dateTo}, including past sessions with paid bookings.`
+                      : 'Showing current sessions. Pick a date range to view past sessions and refund their bookings.'}
+                </p>
+              </div>
+              {isSalesDateView && datedBookingSales?.error ? (
+                <p className="text-red-600 text-center py-8">{datedBookingSales.error}</p>
+              ) : isSalesDateView && datedBookingSales?.loading && bingoSales.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">Loading...</p>
+              ) : bingoSales.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">{isSalesDateView ? 'No sessions with sales in that date range' : 'No sessions found'}</p>
               ) : (
                 <>
                   <div className="overflow-x-auto">

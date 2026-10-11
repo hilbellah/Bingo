@@ -149,6 +149,11 @@ export default function AdminDashboard() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [bookingSearch, setBookingSearch] = useState('');
   const [bookingSales, setBookingSales] = useState([]);
+  // Date view for Booking Sales: { dateFrom, dateTo } when active, otherwise
+  // null. Kept separate from bookingSales so Event Sales is unaffected.
+  const [bookingSalesRange, setBookingSalesRange] = useState(null);
+  const [datedBookingSales, setDatedBookingSales] = useState(null); // { rows, error, loading }
+  const bookingSalesRangeRef = useRef(null);
   const [customers, setCustomers] = useState([]);
   const [customerSearch, setCustomerSearch] = useState('');
   const [salesDrilldown, setSalesDrilldown] = useState(null); // { session, bookings }
@@ -257,7 +262,31 @@ export default function AdminDashboard() {
   const loadAnnouncements = () => fetchAdminAnnouncements(token).then(setAnnouncements);
   const loadDeletedSessions = () => fetchDeletedSessions(token).then(setDeletedSessions);
   const loadAuditLogs = () => fetchAuditLog(token, { limit: 50 }).then(setAuditLogs);
-  const loadBookingSales = () => fetchBookingSales(token).then(setBookingSales);
+  const loadDatedBookingSales = (range) => {
+    bookingSalesRangeRef.current = range;
+    setBookingSalesRange(range);
+    if (!range) {
+      setDatedBookingSales(null);
+      return Promise.resolve();
+    }
+    setDatedBookingSales(prev => ({ rows: prev?.rows || [], error: '', loading: true }));
+    return fetchBookingSales(token, range)
+      .then(data => {
+        if (bookingSalesRangeRef.current !== range) return;
+        if (!Array.isArray(data)) throw new Error(data?.error || 'Could not load booking sales for those dates.');
+        setDatedBookingSales({ rows: data, error: '', loading: false });
+      })
+      .catch(err => {
+        if (bookingSalesRangeRef.current !== range) return;
+        setDatedBookingSales({ rows: [], error: err?.message || 'Could not load booking sales for those dates.', loading: false });
+      });
+  };
+  // Refunds and other booking changes call this; refresh the date view too
+  // so its counts do not go stale while staff work through past sessions.
+  const loadBookingSales = () => {
+    if (bookingSalesRangeRef.current) loadDatedBookingSales(bookingSalesRangeRef.current);
+    return fetchBookingSales(token).then(setBookingSales);
+  };
   const loadDailySales = (filters = {}, legacySearch) => {
     const nextFilters = typeof filters === 'object' && filters !== null
       ? filters
@@ -1386,6 +1415,9 @@ export default function AdminDashboard() {
     handleToggleAnnouncement,
     handleDeleteAnnouncement,
     bookingSales,
+    bookingSalesRange,
+    datedBookingSales,
+    loadDatedBookingSales,
     customers,
     customerSearch,
     setCustomerSearch,

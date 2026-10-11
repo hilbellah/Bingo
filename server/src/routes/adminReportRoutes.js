@@ -697,8 +697,36 @@ export function registerAdminReportRoutes(app) {
 
   app.get('/api/admin/booking-sales', adminAuth, async (req, res) => {
     try {
+      const dateFrom = String(req.query.dateFrom || '').trim();
+      const dateTo = String(req.query.dateTo || '').trim();
+      const hasRange = Boolean(dateFrom || dateTo);
+      if (hasRange && (!DATE_RE.test(dateFrom) || !DATE_RE.test(dateTo))) {
+        return res.status(400).json({ error: 'dateFrom and dateTo must both be YYYY-MM-DD.' });
+      }
+      if (hasRange && dateFrom > dateTo) {
+        return res.status(400).json({ error: 'dateFrom must be on or before dateTo.' });
+      }
       const cutoff = await getSalesReportCutoff();
       const bookingCutoffSql = cutoff ? " AND datetime(COALESCE(b.payment_completed_at, b.created_at)) >= datetime(?)" : '';
+      // Past sessions are auto-archived (deleted_at set) by sessionArchive.js,
+      // which hid them from this report and from the View / Refund drilldown.
+      // A date range brings back archived sessions that still have paid
+      // bookings so staff can refund past dates; empty archived sessions and
+      // the default (no range) view are unchanged.
+      const params = cutoff ? [cutoff] : [];
+      let whereSql = 's.deleted_at IS NULL';
+      if (hasRange) {
+        const paidCutoffSql = cutoff ? " AND datetime(COALESCE(pb.payment_completed_at, pb.created_at)) >= datetime(?)" : '';
+        whereSql = `s.date >= ? AND s.date <= ? AND (
+          s.deleted_at IS NULL
+          OR EXISTS (
+            SELECT 1 FROM bookings pb
+            WHERE pb.session_id = s.id AND pb.payment_status IN ('paid', 'partially_refunded')${paidCutoffSql}
+          )
+        )`;
+        params.push(dateFrom, dateTo);
+        if (cutoff) params.push(cutoff);
+      }
       const rows = await all(`
         SELECT s.id, s.date, s.time, s.is_special_event, s.event_title, ${sessionTypeSql('s')} as session_type,
           COUNT(bi.id) as quantity,
@@ -712,10 +740,10 @@ export function registerAdminReportRoutes(app) {
           FROM booking_addons
           GROUP BY booking_item_id
         ) addons ON addons.booking_item_id = bi.id
-        WHERE s.deleted_at IS NULL
+        WHERE ${whereSql}
         GROUP BY s.id
         ORDER BY s.date ASC, s.time ASC
-      `, cutoff ? [cutoff] : []);
+      `, params);
       res.json(rows.map(row => ({
         id: row.id,
         date: row.date,

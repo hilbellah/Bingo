@@ -300,8 +300,12 @@ export async function resetAdminSalesReporting(token) {
   return { ok: res.ok, ...json };
 }
 
-export async function fetchBookingSales(token) {
-  const res = await fetch(`${API}/admin/booking-sales`, { headers: adminHeaders(token) });
+export async function fetchBookingSales(token, range = null) {
+  const params = new URLSearchParams();
+  if (range?.dateFrom) params.set('dateFrom', range.dateFrom);
+  if (range?.dateTo) params.set('dateTo', range.dateTo);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API}/admin/booking-sales${qs}`, { headers: adminHeaders(token) });
   return res.json();
 }
 
