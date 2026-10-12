@@ -14,6 +14,7 @@ import InventoryTab from './InventoryTab';
 import UsersTab from './UsersTab';
 import SettingsTab from './SettingsTab';
 import SalesDrilldownModal from './SalesDrilldownModal';
+import { AdminDialogHost } from './adminDialogs';
 import { AdminDashboardProvider } from './AdminDashboardContext';
 
 export default function AdminDashboardContent({ value }) {
@@ -37,6 +38,7 @@ export default function AdminDashboardContent({ value }) {
       </div>
 
       <SalesDrilldownModal />
+      <AdminDialogHost />
     </AdminDashboardProvider>
   );
 }

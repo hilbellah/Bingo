@@ -26,6 +26,10 @@ import {
   saveSalesDrilldownCsv,
 } from './adminPrintUtils';
 import { confirmAdminAction } from './adminConfirm';
+import { askAdmin, tellAdmin } from './adminDialogs';
+
+// Shared field for actions the server only accepts with a written reason.
+const reasonField = label => ({ name: 'reason', label, type: 'textarea', required: true, minLength: 3 });
 import { formatDateShort, formatTime, venueToday } from '../utils/formatters';
 import { emptyWebsiteListing, missingWebsiteListingFields, websiteListingFromSession } from './WebsiteListingFields';
 
@@ -881,13 +885,17 @@ export default function AdminDashboard() {
   };
 
   const handleCancelBooking = async (id) => {
-    if (!confirmAdminAction({
-      action: 'Cancel this unpaid booking and release its temporary seat hold',
+    if (!await askAdmin({
+      title: 'Cancel this unpaid booking?',
+      details: ['Releases its temporary seat hold.'],
       warning: 'Paid bookings cannot be cancelled here. If a payment exists, you must use Refund/Void so Authorize.Net reverses the charge before the seat is released.',
+      confirmLabel: 'Cancel booking',
+      cancelLabel: 'Keep booking',
+      tone: 'danger',
     })) return;
     const result = await cancelAdminBooking(token, id);
     if (!result?.ok) {
-      alert(result?.message || result?.error || 'Could not cancel this booking.');
+      await tellAdmin(result?.message || result?.error || 'Could not cancel this booking.', { title: 'Not cancelled', tone: 'error' });
     }
     loadBookings(reportSession);
   };
@@ -947,19 +955,26 @@ export default function AdminDashboard() {
   };
 
   const handleResetSalesReporting = async () => {
-    const proceed = confirmAdminAction({
-      action: 'Reset sales report totals',
+    if (!await askAdmin({
+      title: 'Reset sales report totals?',
       warning: 'This keeps Authorize.Net payment records and audit history, but hides older test sales/refunds from Daily Sales, Booking Sales, Transactions, and dashboard totals. New sales after this reset will count normally.',
-    });
-    if (!proceed) return;
+      fields: [{
+        name: 'confirmText',
+        label: 'Type RESET to confirm',
+        required: true,
+        validate: value => (value === 'RESET' ? '' : 'Type RESET in capitals to confirm.'),
+      }],
+      confirmLabel: 'Reset totals',
+      tone: 'danger',
+    })) return;
 
     const result = await resetAdminSalesReporting(token);
     if (!result.ok) {
-      window.alert(result.message || result.error || 'Could not reset sales reporting totals.');
+      await tellAdmin(result.message || result.error || 'Could not reset sales reporting totals.', { title: 'Sales totals', tone: 'error' });
       return;
     }
 
-    window.alert(result.message || 'Sales reporting totals were reset.');
+    await tellAdmin(result.message || 'Sales reporting totals were reset.', { title: 'Sales totals', tone: 'success' });
     loadBookingSales();
     loadDailySales(dailySalesDate, dailySalesSearch);
     loadTransactions(transactionFilters);
@@ -970,57 +985,63 @@ export default function AdminDashboard() {
   // then the same authorized admin immediately executes it. No second person
   // is required.
   const handleRefundBooking = async (id, refNumber) => {
-    const reason = window.prompt(`Reason for refund ${refNumber || id}:`);
-    if (!reason?.trim()) return;
-    const proceed = confirmAdminAction({
-      action: `Refund ${refNumber || id}`,
-      details: [`Reason: ${reason.trim()}`],
+    const answers = await askAdmin({
+      title: `Refund ${refNumber || id}`,
       warning: 'This will immediately submit the void/refund to Authorize.Net and release the affected seats when successful. This financial action cannot be undone.',
+      fields: [reasonField('Reason for refund')],
+      confirmLabel: 'Refund now',
+      tone: 'danger',
     });
-    if (!proceed) return;
+    if (!answers) return;
+    const reason = answers.reason;
 
-    const result = await refundAdminBooking(token, id, reason.trim());
+    const result = await refundAdminBooking(token, id, reason);
     if (result.ok) {
-      const completion = await approveRefundRequest(token, result.requestId, reason.trim());
-      window.alert(completion.ok
+      const completion = await approveRefundRequest(token, result.requestId, reason);
+      await tellAdmin(completion.ok
         ? `Refund ${completion.action || 'reversal'} completed successfully.`
-        : `Refund could not be completed: ${completion.error || 'Unknown error'}`);
+        : `Refund could not be completed: ${completion.error || 'Unknown error'}`,
+      { title: refNumber || 'Refund', tone: completion.ok ? 'success' : 'error' });
       loadRefundRequests();
       loadBookings(reportSession);
       loadTransactions(transactionFilters);
       loadBookingSales();
       loadDailySales(dailySalesDate, dailySalesSearch);
-      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
+      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
     } else {
-      window.alert('Refund failed: ' + (result.error || 'Unknown error'));
+      await tellAdmin('Refund failed: ' + (result.error || 'Unknown error'), { title: refNumber || 'Refund', tone: 'error' });
     }
   };
 
   const handleRefundBookingItem = async (item, booking) => {
     const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
-    const reason = window.prompt(`Reason for refunding ticket ${item.referenceNumber || item.id}:`);
-    if (!reason?.trim()) return;
-    const proceed = confirmAdminAction({
-      action: `Refund ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`,
-      details: [`Reason: ${reason.trim()}`],
+    const title = `Refund ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`;
+    const answers = await askAdmin({
+      title,
+      details: [booking?.referenceNumber ? `Booking: ${booking.referenceNumber}` : '', `Seat: Table ${item.tableNumber}, Chair ${item.chairNumber}`],
       warning: 'This will immediately submit the ticket refund to Authorize.Net and release its seat when successful. This financial action cannot be undone.',
+      fields: [reasonField('Reason for refund')],
+      confirmLabel: 'Refund ticket',
+      tone: 'danger',
     });
-    if (!proceed) return;
+    if (!answers) return;
+    const reason = answers.reason;
 
-    const result = await refundAdminBookingItem(token, item.id, reason.trim());
+    const result = await refundAdminBookingItem(token, item.id, reason);
     if (result.ok) {
-      const completion = await approveRefundRequest(token, result.requestId, reason.trim());
-      window.alert(completion.ok
+      const completion = await approveRefundRequest(token, result.requestId, reason);
+      await tellAdmin(completion.ok
         ? `Ticket refund ${completion.action || 'reversal'} completed successfully.`
-        : `Ticket refund could not be completed: ${completion.error || 'Unknown error'}`);
+        : `Ticket refund could not be completed: ${completion.error || 'Unknown error'}`,
+      { title, tone: completion.ok ? 'success' : 'error' });
       loadRefundRequests();
       loadBookings(reportSession);
       loadTransactions(transactionFilters);
       loadBookingSales();
       loadDailySales(dailySalesDate, dailySalesSearch);
-      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
+      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
     } else {
-      window.alert('Ticket refund failed: ' + (result.error || 'Unknown error'));
+      await tellAdmin('Ticket refund failed: ' + (result.error || 'Unknown error'), { title, tone: 'error' });
     }
   };
 
@@ -1028,28 +1049,41 @@ export default function AdminDashboard() {
     // In-flight guard: the gateway round-trip can take seconds and a second
     // click on the money-moving Approve button must not fire a second POST.
     if (approvingRefundRequestRef.current) return;
-    if (!confirmAdminAction({
-      action: `Approve refund ${request.bookingReference}`,
+    const answers = await askAdmin({
+      title: `Approve refund ${request.bookingReference}`,
       details: [`Amount: ${request.amountFormatted}`, `Requested by: ${request.requestedBy}`, `Reason: ${request.reason}`],
       warning: 'Approval will immediately submit the void/refund to Authorize.Net. This financial action cannot be undone.',
-    })) return;
-    const note = window.prompt('Optional approval note:') || '';
+      fields: [{ name: 'note', label: 'Approval note', type: 'textarea' }],
+      confirmLabel: 'Approve and refund',
+      tone: 'danger',
+    });
+    if (!answers) return;
+    if (approvingRefundRequestRef.current) return;
     approvingRefundRequestRef.current = true;
+    let result;
     try {
-      const result = await approveRefundRequest(token, request.id, note);
-      window.alert(result.ok ? `Refund approved and ${result.action || 'reversal'} completed.` : `Approval failed: ${result.error || 'Unknown error'}`);
+      result = await approveRefundRequest(token, request.id, answers.note);
     } finally {
       approvingRefundRequestRef.current = false;
     }
+    await tellAdmin(result.ok ? `Refund approved and ${result.action || 'reversal'} completed.` : `Approval failed: ${result.error || 'Unknown error'}`,
+      { title: request.bookingReference, tone: result.ok ? 'success' : 'error' });
     loadRefundRequests();
     loadDashboard();
   };
 
   const handleRejectRefundRequest = async (request) => {
-    const note = window.prompt('Reason for rejecting this refund request:');
-    if (!note?.trim()) return;
-    const result = await rejectRefundRequest(token, request.id, note.trim());
-    window.alert(result.ok ? 'Refund request rejected. No money was moved.' : `Rejection failed: ${result.error || 'Unknown error'}`);
+    const answers = await askAdmin({
+      title: `Reject refund request ${request.bookingReference || ''}`,
+      details: [request.amountFormatted ? `Amount: ${request.amountFormatted}` : '', request.reason ? `Requested because: ${request.reason}` : ''],
+      warning: 'No money is moved. The request is closed and kept in the audit history.',
+      fields: [reasonField('Reason for rejecting')],
+      confirmLabel: 'Reject request',
+    });
+    if (!answers) return;
+    const result = await rejectRefundRequest(token, request.id, answers.reason);
+    await tellAdmin(result.ok ? 'Refund request rejected. No money was moved.' : `Rejection failed: ${result.error || 'Unknown error'}`,
+      { title: request.bookingReference || 'Refund request', tone: result.ok ? 'success' : 'error' });
     loadRefundRequests();
   };
 
@@ -1057,19 +1091,21 @@ export default function AdminDashboard() {
   // gateway signal after the hold lapsed). When the seat is still free this
   // completes the booking exactly as a normal payment would.
   const handleConfirmPaymentReview = async (review) => {
-    if (!confirmAdminAction({
-      action: `Confirm seat for ${review.bookingReference}`,
+    if (!await askAdmin({
+      title: `Confirm seat for ${review.bookingReference}`,
       details: [
         `Customer: ${review.customerName || review.email}`,
         `Already paid: ${review.amountFormatted} (transaction ${review.transactionId})`,
         `Seats: ${(review.seats || []).map(s => `Table ${s.tableNumber} Chair ${s.chairNumber}`).join(', ')}`,
       ],
       warning: 'The payment is re-verified with Authorize.Net, the seat is marked sold, and the customer receives the normal confirmation email. No new charge is made.',
+      confirmLabel: 'Confirm seat',
     })) return;
     const result = await confirmPaymentReview(token, review.id);
-    window.alert(result.ok
+    await tellAdmin(result.ok
       ? `Booking ${review.bookingReference} confirmed. The customer has been emailed their tickets.`
-      : `Could not confirm: ${result.message || result.error || 'Unknown error'}`);
+      : `Could not confirm: ${result.message || result.error || 'Unknown error'}`,
+    { title: review.bookingReference, tone: result.ok ? 'success' : 'error' });
     loadPaymentReviews();
     loadDashboard();
   };
@@ -1077,28 +1113,36 @@ export default function AdminDashboard() {
   // Handled another way (customer reseated, refunded outside the panel,
   // etc.). Records the note in the audit trail and clears the notification.
   const handleDismissPaymentReview = async (review) => {
-    const note = window.prompt(
-      `Mark ${review.bookingReference} as handled.\n\nDescribe what was done for the customer (required, kept in the audit log):`
-    );
-    if (!note?.trim()) return;
-    const result = await dismissPaymentReview(token, review.id, note.trim());
-    window.alert(result.ok ? 'Marked as handled.' : `Could not update: ${result.message || result.error || 'Unknown error'}`);
+    const answers = await askAdmin({
+      title: `Mark ${review.bookingReference} as handled`,
+      details: [review.customerName || review.email ? `Customer: ${review.customerName || review.email}` : '', review.amountFormatted ? `Paid: ${review.amountFormatted}` : ''],
+      warning: 'This clears the notification without moving money or seats. Your note is kept in the audit log.',
+      fields: [reasonField('What was done for the customer')],
+      confirmLabel: 'Mark handled',
+    });
+    if (!answers) return;
+    const result = await dismissPaymentReview(token, review.id, answers.reason);
+    await tellAdmin(result.ok ? 'Marked as handled.' : `Could not update: ${result.message || result.error || 'Unknown error'}`,
+      { title: review.bookingReference, tone: result.ok ? 'success' : 'error' });
     loadPaymentReviews();
   };
 
   const handleResolveDuplicateCharge = async (dup) => {
-    if (!confirmAdminAction({
-      action: `Mark duplicate charge ${dup.duplicateTransactionId || ''} as handled`,
+    const answers = await askAdmin({
+      title: `Mark duplicate charge ${dup.duplicateTransactionId || ''} as handled`,
       details: [
         `Booking ${dup.bookingReference} - ${dup.customerName || dup.email}`,
         `Extra charge: ${dup.amountFormatted}`,
         `Original (keeps the seat): ${dup.originalTransactionId || 'unknown'}`,
       ],
       warning: 'Only do this after the extra charge has actually been refunded or voided in Authorize.Net. This does not move money and does not touch the seat.',
-    })) return;
-    const note = window.prompt('Refund/void reference or note:') || '';
-    const result = await resolveDuplicateCharge(token, dup.id, note);
-    window.alert(result.ok ? 'Duplicate charge marked as handled.' : `Could not update: ${result.message || result.error || 'Unknown error'}`);
+      fields: [{ name: 'note', label: 'Refund/void reference or note', type: 'textarea' }],
+      confirmLabel: 'Mark handled',
+    });
+    if (!answers) return;
+    const result = await resolveDuplicateCharge(token, dup.id, answers.note);
+    await tellAdmin(result.ok ? 'Duplicate charge marked as handled.' : `Could not update: ${result.message || result.error || 'Unknown error'}`,
+      { title: dup.bookingReference || 'Duplicate charge', tone: result.ok ? 'success' : 'error' });
     loadPaymentReviews();
   };
 
@@ -1106,63 +1150,65 @@ export default function AdminDashboard() {
     const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
     const seatLabel = `Table ${item.tableNumber}, Seat ${item.chairNumber}`;
     const sourceLabel = booking?.bookingSource === 'donation' ? 'donation' : 'promo';
-    const proceed = confirmAdminAction({
-      action: `Remove ${sourceLabel} seat ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`,
+    const title = `Remove ${sourceLabel} seat ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`;
+    if (!await askAdmin({
+      title,
       warning: `${seatLabel} will become available again. No payment refund will be attempted because this is a $0 assigned seat. The removal will remain in the audit history.`,
-    });
-    if (!proceed) return;
+      confirmLabel: 'Remove seat',
+      tone: 'danger',
+    })) return;
 
     const result = await removeAdminAssignedTicket(token, item.id);
     if (result.ok) {
-      window.alert(`${sourceLabel === 'donation' ? 'Donation' : 'Promo'} seat removed. ${seatLabel} is now available.`);
+      await tellAdmin(`${sourceLabel === 'donation' ? 'Donation' : 'Promo'} seat removed. ${seatLabel} is now available.`, { title, tone: 'success' });
       loadBookings(reportSession);
       loadTransactions(transactionFilters);
       loadBookingSales();
       loadDailySales(dailySalesDate, dailySalesSearch);
       loadSessions();
-      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
+      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
     } else {
-      window.alert('Assigned seat removal failed: ' + (result.error || 'Unknown error'));
+      await tellAdmin('Assigned seat removal failed: ' + (result.error || 'Unknown error'), { title, tone: 'error' });
     }
   };
 
   const handleIssueNoShowCredit = async (item, booking) => {
+    const title = `Issue no-show credit for ${item.referenceNumber || 'this ticket'}`;
     if (item.credit?.code) {
-      window.alert(`This ticket already has credit ${item.credit.code}.`);
+      await tellAdmin(`This ticket already has credit ${item.credit.code}.`, { title });
       return;
     }
     const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
     const defaultAmount = Number(item.packagePrice || 0) + (item.addons || []).reduce((sum, addon) => sum + Number(addon.price || 0), 0);
-    const amountValue = window.prompt(
-      `Issue no-show credit${ticketName ? ` for ${ticketName}` : ''}\nTicket: ${item.referenceNumber || ''}\n\nCredit amount in dollars:`,
-      (defaultAmount / 100).toFixed(2)
-    );
-    if (amountValue === null) return;
-    const amountCents = Math.round(Number(amountValue) * 100);
-    if (!Number.isFinite(amountCents) || amountCents < 0) {
-      window.alert('Enter a valid credit amount.');
-      return;
-    }
-    const note = window.prompt('Credit note (optional):', 'No-show credit');
-    if (note === null) return;
-
-    const proceed = confirmAdminAction({
-      action: `Issue no-show credit for ${item.referenceNumber || 'this ticket'}`,
+    const answers = await askAdmin({
+      title,
       details: [
         `Booking: ${booking?.referenceNumber || ''}`,
         ticketName ? `Ticket holder: ${ticketName}` : '',
-        `Credit amount: ${formatPrice(amountCents)}`,
-      ].filter(Boolean),
+      ],
       warning: 'This records a store credit only. It does not refund Authorize.Net and does not change the paid booking status.',
+      fields: [
+        {
+          name: 'amount',
+          label: 'Credit amount (CA$)',
+          type: 'number',
+          required: true,
+          defaultValue: (defaultAmount / 100).toFixed(2),
+          validate: value => (/^\d+(\.\d{1,2})?$/.test(value) ? '' : 'Enter an amount like 30 or 30.00.'),
+        },
+        { name: 'note', label: 'Credit note', defaultValue: 'No-show credit' },
+      ],
+      confirmLabel: 'Issue credit',
     });
-    if (!proceed) return;
+    if (!answers) return;
+    const amountCents = Math.round(Number(answers.amount) * 100);
 
-    const result = await issueNoShowCredit(token, item.id, { amountCents, note });
+    const result = await issueNoShowCredit(token, item.id, { amountCents, note: answers.note });
     if (!result.ok) {
-      window.alert('No-show credit failed: ' + (result.error || 'Unknown error'));
+      await tellAdmin('No-show credit failed: ' + (result.error || 'Unknown error'), { title, tone: 'error' });
       return;
     }
-    window.alert(`Credit created: ${result.credit?.code || ''} (${result.credit?.amountFormatted || formatPrice(amountCents)})`);
+    await tellAdmin(`Credit created: ${result.credit?.code || ''} (${result.credit?.amountFormatted || formatPrice(amountCents)})`, { title, tone: 'success' });
     refreshBookingViewsAfterSeatChange();
   };
 
@@ -1171,41 +1217,37 @@ export default function AdminDashboard() {
     loadBookingSales();
     loadDailySales(dailySalesDate, dailySalesSearch);
     loadDashboard(dashboardDateFrom, dashboardDateTo);
-    if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
+    if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
   };
 
   const handleMoveBookingItemSeat = async (item, booking) => {
     const ticketName = `${item.firstName || ''} ${item.lastName || ''}`.trim();
     const currentSeat = `T${item.tableNumber}-C${item.chairNumber}`;
-    const tableValue = window.prompt(
-      `Move ${item.referenceNumber || 'this ticket'}${ticketName ? ` for ${ticketName}` : ''}\nCurrent seat: ${currentSeat}\n\nTarget table number:`
-    );
-    if (tableValue === null) return;
-    const chairValue = window.prompt('Target chair number:');
-    if (chairValue === null) return;
-    const tableNumber = Number(tableValue);
-    const chairNumber = Number(chairValue);
-    if (!Number.isInteger(tableNumber) || !Number.isInteger(chairNumber) || tableNumber <= 0 || chairNumber <= 0) {
-      window.alert('Enter a valid table number and chair number.');
-      return;
-    }
-
-    const proceed = confirmAdminAction({
-      action: `Move ticket ${item.referenceNumber || ''} from ${currentSeat} to T${tableNumber}-C${chairNumber}`,
+    const title = `Move ticket ${item.referenceNumber || ''}${ticketName ? ` for ${ticketName}` : ''}`;
+    const positiveWhole = value => (/^[1-9]\d*$/.test(value) ? '' : 'Enter a whole number, 1 or higher.');
+    const answers = await askAdmin({
+      title,
       details: [
         `Booking: ${booking?.referenceNumber || ''}`,
-        ticketName ? `Ticket holder: ${ticketName}` : '',
-      ].filter(Boolean),
+        `Current seat: ${currentSeat}`,
+      ],
       warning: 'This keeps the booking paid and only changes the assigned seat. The target seat must be vacant.',
+      fields: [
+        { name: 'table', label: 'Target table number', type: 'number', required: true, validate: positiveWhole },
+        { name: 'chair', label: 'Target chair number', type: 'number', required: true, validate: positiveWhole },
+      ],
+      confirmLabel: 'Move seat',
     });
-    if (!proceed) return;
+    if (!answers) return;
+    const tableNumber = Number(answers.table);
+    const chairNumber = Number(answers.chair);
 
     const result = await moveAdminBookingItemSeat(token, item.id, { tableNumber, chairNumber });
     if (result.ok) {
-      window.alert(`Seat moved to T${result.toSeat?.tableNumber || tableNumber}-C${result.toSeat?.chairNumber || chairNumber}.`);
+      await tellAdmin(`Seat moved to T${result.toSeat?.tableNumber || tableNumber}-C${result.toSeat?.chairNumber || chairNumber}.`, { title, tone: 'success' });
       refreshBookingViewsAfterSeatChange();
     } else {
-      window.alert('Seat move failed: ' + (result.error || 'Unknown error'));
+      await tellAdmin('Seat move failed: ' + (result.error || 'Unknown error'), { title, tone: 'error' });
     }
   };
 
