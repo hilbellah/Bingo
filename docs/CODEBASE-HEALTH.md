@@ -35,6 +35,27 @@ Run from the repository root on `main`:
 
 ## History
 
+### 2026-10-12 (morning) — 8 / 10 (commit `26b9e4c`)
+
+| Area | Score | Change |
+|---|---|---|
+| Payment safety | 9 | Unchanged |
+| Testing | 8.5 | +0.5: 53 component tests in 10 files (money handlers, sales/date view, packages, sessions, print documents incl. HTML escaping, dialogs, helpers); customer checkout screens still have no component tests |
+| Process & docs | 8.5 | +0.5: client lint is now a hard gate (`--max-warnings 0` in `npm run check` and CI); verified backup + restore runbook |
+| Server structure | 7 | Unchanged (`index.js` 1,302 lines, `email.js` 1,110) |
+| Admin/customer UI structure | 8.5 | +3: every screen under 600 lines (largest 584; `AdminDashboard.jsx` 1,518 → 547 via per-area hooks); 0 lint warnings (23 fixed, 7 documented intentional exceptions); dead components retired. Not 9+: the dashboard still owns most admin state and shares one context with every tab |
+| Design & data model | 7 | Unchanged (remaining 27 browser dialogs left by request: no UX changes) |
+| Upkeep & monitoring | 6 | Unchanged: audit clean, no error monitoring |
+
+Measurements: `npm run check` passes (now including lint) · 32 check scripts · 10 component test
+files (53 tests) · 0 lint errors / 0 warnings · 0 advisories · largest client screen 584 lines,
+largest server file 1,302 · 27 browser dialogs in admin · no monitoring.
+
+Weighted: 9×.25 + 8.5×.20 + 8.5×.10 + 7×.10 + 8.5×.15 + 7×.10 + 6×.10 = **8.075 → 8**.
+
+To reach 8.5+: error monitoring (upkeep → 8.5), split `server/src/index.js` and `email.js`
+(server → 8), component tests for the customer checkout (testing → 9).
+
 ### 2026-10-12 (later) — 7.5 / 10 (commit `09c5562`)
 
 | Area | Score | Change |
