@@ -1,15 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  editPendingBooking,
   fetchBookingConfig,
-  initiateBooking,
   fetchPhdInventory,
   fetchSeats,
   fetchSessionPackages,
   fetchSessions,
   fetchTheme,
-  lockSeat,
-  unlockSeat
 } from './api';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import BookingPanel from './components/BookingPanel';
@@ -20,11 +16,14 @@ import EventCheckoutPanel from './components/EventCheckoutPanel';
 import FloorPlan from './components/FloorPlan';
 import SessionWeekPicker from './components/SessionWeekPicker';
 import VenueClock from './components/VenueClock';
-import { formatPrice } from './utils/formatters';
 import FeaturedEventRail from './components/FeaturedEventRail';
 import LegendItem from './components/LegendItem';
 import LiveEventBookingSurface from './components/LiveEventBookingSurface';
 import { useSocket } from './useSocket';
+import SiteHeader from './components/SiteHeader';
+import SiteFooter from './components/SiteFooter';
+import { useSeatSelection } from './useSeatSelection';
+import { useCheckout } from './useCheckout';
 import {
   CHECKOUT_SERVICE_FEE_CENTS,
   EVENT_HST_RATE,
@@ -244,334 +243,6 @@ function BookingApp() {
     }
   }, [seats, holdExpiry, paymentSession, loading, namesFilledBeforeChairs, isSelectedSpecialBingo]);
 
-  const handleChairClick = async (chair) => {
-    if (bookingClosed) {
-      setError(selectedBookingStatus.message);
-      setTimeout(() => setError(''), 4000);
-      return;
-    }
-    // One in-flight request per seat: a double-tap must not run two
-    // lock/unlock round-trips that both mutate the selection.
-    if (pendingSeatClicksRef.current.has(chair.id)) return;
-    pendingSeatClicksRef.current.add(chair.id);
-    try {
-    if (selectedSeatsRef.current.includes(chair.id)) {
-      await unlockSeat(chair.id, holderId);
-      const current = selectedSeatsRef.current;
-      const removedIndex = current.indexOf(chair.id);
-      const newSelected = current.filter(id => id !== chair.id);
-      applySelectedSeats(newSelected);
-      if (!namesFilledBeforeChairs) {
-        setPartySize(newSelected.length);
-        setAttendees(prev => prev.filter((_, index) => index !== removedIndex));
-      }
-      if (newSelected.length === 0) setHoldExpiry(null);
-      setBookingStep(prev => newSelected.length === 0 ? 0 : (prev === 2 ? 1 : prev));
-      return;
-    }
-
-    if (chair.is_disabled || chair.status === 'sold') return;
-    if (chair.status === 'held' && !chair.isMyHold) return;
-    if (bookingStep === 2) return;
-
-    if (selectedSeatsRef.current.length >= 6) {
-      setError('Maximum 6 chairs per booking. Tap a selected chair to deselect.');
-      setTimeout(() => setError(''), 4000);
-      return;
-    }
-
-    const result = await lockSeat(chair.id, holderId);
-    if (!result.success) {
-      setError(result.error || 'Could not select chair');
-      setTimeout(() => setError(''), 3000);
-      return;
-    }
-
-    // Re-check after the await: never append the same seat twice, and never
-    // exceed the 6-chair limit (two clicks on DIFFERENT chairs can both pass
-    // the pre-request check at 5 selected). Release the lock we just took.
-    if (selectedSeatsRef.current.includes(chair.id)) return;
-    if (selectedSeatsRef.current.length >= 6) {
-      unlockSeat(chair.id, holderId).catch(() => {});
-      setError('Maximum 6 chairs per booking. Tap a selected chair to deselect.');
-      setTimeout(() => setError(''), 4000);
-      return;
-    }
-    const wasEmpty = selectedSeatsRef.current.length === 0;
-    const newSelected = [...selectedSeatsRef.current, chair.id];
-    applySelectedSeats(newSelected);
-
-    if (!namesFilledBeforeChairs) {
-      setPartySize(newSelected.length);
-      setAttendees(prev => {
-        const updated = [...prev];
-        while (updated.length < newSelected.length) {
-          updated.push(emptyAttendee());
-        }
-        return updated;
-      });
-    }
-
-    // Each seat carries its own 20-minute hold; the countdown must show the
-    // EARLIEST expiry or seats picked first expire while the timer still runs.
-    setHoldExpiry(prev => (!prev || new Date(result.holdUntil) < new Date(prev)) ? result.holdUntil : prev);
-
-    if (wasEmpty && !namesFilledBeforeChairs) {
-      setPanelOpen(true);
-    }
-    } finally {
-      pendingSeatClicksRef.current.delete(chair.id);
-    }
-  };
-
-  const reserveEventTickets = async (size) => {
-    if (!selectedSession) return false;
-
-    const latestSeats = await fetchSeats(selectedSession.id, holderId);
-    const latestById = new Map(latestSeats.map(seat => [seat.id, seat]));
-    const trackedHeldSeats = selectedSeats.filter(seatId => latestById.get(seatId)?.status === 'held');
-    const myHeldSeats = latestSeats
-      .filter(seat => seat.status === 'held' && seat.isMyHold)
-      .map(seat => seat.id);
-    const heldSeatCandidates = [...new Set([...trackedHeldSeats, ...myHeldSeats])];
-    const keptSeats = heldSeatCandidates.slice(0, size);
-    const keptSet = new Set(keptSeats);
-    const seatsToRelease = heldSeatCandidates.filter(seatId => !keptSet.has(seatId));
-
-    for (const seatId of seatsToRelease) {
-      await unlockSeat(seatId, holderId);
-    }
-
-    const newlyLocked = [];
-    let nextHoldExpiry = holdExpiry;
-    for (const seat of latestSeats) {
-      if (keptSeats.length + newlyLocked.length >= size) break;
-      if (keptSet.has(seat.id)) continue;
-      if (seat.is_disabled || seat.status === 'sold') continue;
-      if (seat.status === 'held' && !seat.isMyHold) continue;
-
-      if (seat.status === 'held' && seat.isMyHold) {
-        newlyLocked.push(seat.id);
-        continue;
-      }
-
-      const result = await lockSeat(seat.id, holderId);
-      if (result.success) {
-        newlyLocked.push(seat.id);
-        if (!nextHoldExpiry || new Date(result.holdUntil) < new Date(nextHoldExpiry)) {
-          nextHoldExpiry = result.holdUntil;
-        }
-      }
-    }
-
-    const nextSelectedSeats = [...keptSeats, ...newlyLocked].slice(0, size);
-    if (nextSelectedSeats.length < size) {
-      for (const seatId of newlyLocked) {
-        if (!keptSet.has(seatId)) await unlockSeat(seatId, holderId);
-      }
-      setError('Not enough live event tickets are available for that party size.');
-      setTimeout(() => setError(''), 4000);
-      setSeats(await fetchSeats(selectedSession.id, holderId));
-      return null;
-    }
-
-    setSelectedSeats(nextSelectedSeats);
-    setHoldExpiry(nextHoldExpiry);
-    setSeats(await fetchSeats(selectedSession.id, holderId));
-    return nextSelectedSeats;
-  };
-
-  const handlePartySize = async (size, eventTicketPackageIds = []) => {
-    if (isSelectedEvent) {
-      const reserved = await reserveEventTickets(size);
-      if (!reserved) return false;
-    }
-
-    const eventAttendeePools = isSelectedEvent
-      ? attendees.reduce((pools, attendee) => {
-          const packageId = attendee.ticketPackageId || requiredPkgs[0]?.id || '';
-          const packagePool = pools.get(packageId) || [];
-          packagePool.push(attendee);
-          pools.set(packageId, packagePool);
-          return pools;
-        }, new Map())
-      : null;
-
-    setPartySize(size);
-    setAttendees(Array.from({ length: size }, (_, index) => {
-      const packageId = eventTicketPackageIds[index] || attendees[index]?.ticketPackageId || requiredPkgs[0]?.id || '';
-      const matchedEventAttendee = isSelectedEvent
-        ? eventAttendeePools.get(packageId)?.shift()
-        : null;
-      const previousAttendee = matchedEventAttendee || attendees[index];
-
-      return {
-        firstName: previousAttendee?.firstName || '',
-        lastName: previousAttendee?.lastName || '',
-        ticketPackageId: isSelectedEvent ? packageId : '',
-        addons: previousAttendee?.addons || []
-      };
-    }));
-
-    if (!isSelectedEvent && size < selectedSeats.length) {
-      const toRelease = selectedSeats.slice(size);
-      for (const seatId of toRelease) unlockSeat(seatId, holderId);
-      setSelectedSeats(selectedSeats.slice(0, size));
-    }
-    return true;
-  };
-
-  const handleSelectSession = (session) => {
-    setSelectedSession(session);
-    setSelectedSeats([]);
-    setHoldExpiry(null);
-    setOpenTable(null);
-    setBookingStep(0);
-
-    if (getSessionType(session) === 'special_bingo') {
-      setPartySize(1);
-      setAttendees([emptyAttendee()]);
-    } else {
-      setPartySize(0);
-      setAttendees([]);
-    }
-  };
-
-  const handleSubmit = async (customer, submittedAttendees = attendees) => {
-    if (bookingClosed) {
-      setError(selectedBookingStatus.message);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError('');
-
-    // Everything below performs network calls; without the try/finally a
-    // dropped request left the customer stuck on a disabled spinner button.
-    try {
-
-    let submitSelectedSeats = selectedSeats;
-    if (isSelectedEvent && selectedSeats.length !== partySize) {
-      const reserved = await reserveEventTickets(partySize);
-      if (!reserved) {
-        setLoading(false);
-        return;
-      }
-      submitSelectedSeats = reserved;
-    }
-
-    const bookingAttendees = submittedAttendees.map((attendee, index) => ({
-      firstName: attendee.firstName,
-      lastName: attendee.lastName,
-      seatId: submitSelectedSeats[index],
-      ticketPackageId: isSelectedEvent ? (attendee.ticketPackageId || requiredPkgs[0]?.id || '') : undefined,
-      addons: (attendee.addons || []).filter(addon => addon.quantity > 0)
-    }));
-    const checkoutSummary = {
-      customerName: [submittedAttendees[0]?.firstName, submittedAttendees[0]?.lastName].filter(Boolean).join(' ').trim(),
-      items: submittedAttendees.map((attendee, index) => {
-        const seat = seats.find(item => item.id === submitSelectedSeats[index]);
-        const addonItems = (attendee.addons || [])
-          .filter(addon => addon.quantity > 0)
-          .map(addon => {
-            const pkg = optionalPkgs.find(item => item.id === addon.packageId);
-            if (!pkg) return null;
-            return {
-              id: pkg.id,
-              name: pkg.name,
-              quantity: addon.quantity,
-              price: pkg.price * addon.quantity,
-              priceFormatted: formatPrice(pkg.price * addon.quantity),
-            };
-          })
-          .filter(Boolean);
-
-        return {
-          name: [attendee.firstName, attendee.lastName].filter(Boolean).join(' ').trim(),
-          seat: isSelectedEvent ? 'General admission' : seat ? `Table ${seat.table_number}, Chair ${seat.chair_number}` : '',
-          packages: [
-            ...(isSelectedEvent
-              ? [requiredPkgs.find(pkg => pkg.id === (attendee.ticketPackageId || requiredPkgs[0]?.id)) || requiredPkgs[0]].filter(Boolean)
-              : requiredPkgs
-            ).map(pkg => ({
-              id: pkg.id,
-              name: pkg.name,
-              quantity: 1,
-              price: pkg.price,
-              priceFormatted: formatPrice(pkg.price),
-            })),
-            ...addonItems,
-          ],
-        };
-      }),
-    };
-
-    // /api/bookings/initiate creates the booking as 'pending' and returns a
-    // short-lived Authorize.Net hosted-page token + redirect URL.
-    const result = await initiateBooking(selectedSession.id, holderId, bookingAttendees, customer);
-
-    if (!result || !result.bookingId || !result.token || !result.redirectUrl) {
-      setLoading(false);
-      setError(result?.error || 'Could not start payment. Please try again.');
-      return;
-    }
-
-    // Render Authorize.Net's hosted card-entry form inside our branded checkout page.
-    // Authorize.Net still owns the card iframe, so we never see PAN/CVV.
-    const serviceFeeAmount = result.serviceFeeAmount || 0;
-    const serviceFeeQuantity = result.serviceFeeQuantity || submittedAttendees.length || 1;
-    const serviceFeeUnitFormatted = result.serviceFeeUnitFormatted || formatPrice(result.serviceFeeUnitAmount || CHECKOUT_SERVICE_FEE_CENTS);
-    const salesTaxAmount = result.salesTaxAmount || 0;
-    setPaymentSession({
-      ...result,
-      checkoutSummary: {
-        ...checkoutSummary,
-        serviceFee: serviceFeeAmount > 0 ? {
-          name: `Service charge (${serviceFeeUnitFormatted} x ${serviceFeeQuantity} ${serviceFeeQuantity === 1 ? 'player' : 'players'})`,
-          price: serviceFeeAmount,
-          priceFormatted: result.serviceFeeFormatted || formatPrice(serviceFeeAmount),
-        } : null,
-        salesTax: salesTaxAmount > 0 ? {
-          name: result.salesTaxLabel || 'HST (15%)',
-          price: salesTaxAmount,
-          priceFormatted: result.salesTaxFormatted || formatPrice(salesTaxAmount),
-        } : null,
-      },
-    });
-
-    } catch (err) {
-      console.error('Booking submit failed:', err);
-      setError('Could not start payment. Please check your connection and try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBackToEditCheckout = async () => {
-    if (!paymentSession?.bookingId) return;
-    setLoading(true);
-    setError('');
-
-    try {
-      const result = await editPendingBooking(paymentSession.bookingId);
-      if (!result?.success) {
-        setError(result?.error || 'Could not reopen this booking for editing.');
-        setLoading(false);
-        return;
-      }
-
-      if (result.heldUntil) setHoldExpiry(result.heldUntil);
-      if (selectedSession) {
-        fetchSeats(selectedSession.id, holderId).then(setSeats).catch(() => {});
-      }
-      setPaymentSession(null);
-      setBookingStep(isSelectedEvent ? 0 : 2);
-      setPanelOpen(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const requiredPkgs = packages.filter(pkg => pkg.type === 'required');
   const requiredPkg = requiredPkgs[0];
   const optionalPkgs = packages.filter(pkg => pkg.type === 'optional');
@@ -581,18 +252,6 @@ function BookingApp() {
   if (namesFilledBeforeChairs && allSeatsSelected && allNamesValid && !panelOpen) {
     setPanelOpen(true);
     setNamesFilledBeforeChairs(false);
-  }
-
-  if (paymentSession) {
-    return (
-      <EmbeddedAuthorizeNetPayment
-        payment={paymentSession}
-        onBack={handleBackToEditCheckout}
-        onCancel={() => {
-          window.location.href = `/payment/cancel?bookingId=${encodeURIComponent(paymentSession.bookingId)}`;
-        }}
-      />
-    );
   }
 
   const tableMap = seats.reduce((map, seat) => {
@@ -660,40 +319,85 @@ function BookingApp() {
   const serviceFeeAmount = partySize > 0 ? serviceFeeUnitAmount * partySize : 0;
   const salesTaxAmount = isSelectedEvent ? Math.round(orderSubtotal * EVENT_HST_RATE) : 0;
   const total = orderSubtotal + serviceFeeAmount + salesTaxAmount;
+  const {
+    handleChairClick,
+    reserveEventTickets,
+    handlePartySize,
+    handleSelectSession,
+  } = useSeatSelection({
+    holderId,
+    selectedSession,
+    setSelectedSession,
+    setPartySize,
+    attendees,
+    setAttendees,
+    seats,
+    setSeats,
+    selectedSeats,
+    setSelectedSeats,
+    holdExpiry,
+    setHoldExpiry,
+    error,
+    setError,
+    setPanelOpen,
+    setOpenTable,
+    namesFilledBeforeChairs,
+    bookingStep,
+    setBookingStep,
+    selectedSeatsRef,
+    applySelectedSeats,
+    pendingSeatClicksRef,
+    isSelectedEvent,
+    requiredPkgs,
+    selectedBookingStatus,
+    bookingClosed,
+  });
+  const {
+    handleSubmit,
+    handleBackToEditCheckout,
+  } = useCheckout({
+    holderId,
+    packages,
+    selectedSession,
+    partySize,
+    attendees,
+    seats,
+    setSeats,
+    selectedSeats,
+    setHoldExpiry,
+    setLoading,
+    error,
+    setError,
+    paymentSession,
+    setPaymentSession,
+    setPanelOpen,
+    setBookingStep,
+    isSelectedEvent,
+    requiredPkgs,
+    optionalPkgs,
+    selectedBookingStatus,
+    bookingClosed,
+    serviceFeeUnitAmount,
+    serviceFeeAmount,
+    salesTaxAmount,
+    reserveEventTickets,
+  });
+
+  if (paymentSession) {
+    return (
+      <EmbeddedAuthorizeNetPayment
+        payment={paymentSession}
+        onBack={handleBackToEditCheckout}
+        onCancel={() => {
+          window.location.href = `/payment/cancel?bookingId=${encodeURIComponent(paymentSession.bookingId)}`;
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header — visually matches the Wolastoq Casino main site (purple gradient,
-          white wordmark logo). The functional booking controls on the right are
-          preserved unchanged so the seat-selection / booking flow keeps working. */}
-      <header className="bg-gradient-to-r from-casino-purple-light via-casino-purple to-casino-purple-dark border-b border-white/10 px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between flex-shrink-0">
-        {/* Wolastoq Casino wordmark — links back to the main casino site so
-            customers can navigate away from the booking flow if they want. */}
-        <a
-          href="https://www.wolastoqcasino.ca"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center shrink-0"
-          aria-label="Wolastoq Casino home"
-        >
-          <img
-            src="/wolastoq-logo.png"
-            alt="Wolastoq Casino"
-            className="h-9 md:h-11 w-auto"
-          />
-        </a>
-
-        {/* Main site nav — hidden on small screens (the booking button takes
-            priority on mobile). Shown at lg+ where there's horizontal room.
-            "Bingo" is rendered as the current/active link. */}
-        <nav className="hidden lg:flex items-center gap-6 text-sm font-medium" aria-label="Main site">
-          <a href="https://www.wolastoqcasino.ca" target="_blank" rel="noopener noreferrer" className="text-white hover:text-casino-cream transition-colors">Casino</a>
-          <a href="https://www.wolastoqcasino.ca/events/" target="_blank" rel="noopener noreferrer" className="text-white hover:text-casino-cream transition-colors">Events</a>
-          <a href="https://www.wolastoqcasino.ca/promotions/" target="_blank" rel="noopener noreferrer" className="text-white hover:text-casino-cream transition-colors">Promotions</a>
-          <a href="https://booking.wolastoqcasino.ca" className="text-casino-cream font-semibold border-b-2 border-casino-cream pb-1" aria-current="page">Bingo</a>
-          <a href="https://www.wolastoqcasino.ca/contact-us/" target="_blank" rel="noopener noreferrer" className="text-white hover:text-casino-cream transition-colors">Contact Us</a>
-        </nav>
-
+      <SiteHeader>
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end md:w-auto md:gap-3">
           <VenueClock className="w-full sm:w-auto" />
 
@@ -734,7 +438,7 @@ function BookingApp() {
             )}
           </button>
         </div>
-      </header>
+      </SiteHeader>
 
       {/* Session week picker bar — sits between the header and the FloorPlan.
           Colored to blend with the dark casino body background so the FloorPlan
@@ -891,99 +595,7 @@ function BookingApp() {
         />
       )}
 
-      {/* Footer — matches the Wolastoq Casino main site footer (purple gradient,
-          stacked logo, contact info, social icons, responsible gambling links).
-          All external nav goes back to wolastoqcasino.ca pages. */}
-      <footer className="bg-gradient-to-br from-casino-purple-light via-casino-purple to-casino-purple-dark border-t border-white/10 flex-shrink-0">
-        <div className="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-          {/* Stacked Wolastoq Casino logo — same asset the main site uses */}
-          <div className="flex md:justify-start justify-center">
-            <a
-              href="https://www.wolastoqcasino.ca"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Wolastoq Casino home"
-            >
-              <img
-                src="/wolastoq-logo-stacked.png"
-                alt="Wolastoq Casino"
-                className="h-24 w-auto"
-              />
-            </a>
-          </div>
-
-          {/* Contact info — address, hours, phone numbers, chat link.
-              Pulled from https://www.wolastoqcasino.ca/ footer. */}
-          <ul className="text-white text-sm space-y-2 md:text-left text-center">
-            <li className="flex items-start gap-2 md:justify-start justify-center">
-              <svg className="w-4 h-4 mt-0.5 text-casino-cream shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-              </svg>
-              <span>185 Gabriel Drive, Fredericton, NB E3A 5V9</span>
-            </li>
-            <li className="flex items-start gap-2 md:justify-start justify-center">
-              <svg className="w-4 h-4 mt-0.5 text-casino-cream shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-              </svg>
-              <span>Open 7 Days a Week, 10:00 AM - 2:00 AM</span>
-            </li>
-            <li className="flex items-center gap-2 md:justify-start justify-center">
-              <svg className="w-4 h-4 text-casino-cream shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
-              </svg>
-              <a href="tel:+18889924646" className="hover:text-casino-cream transition-colors">888-992-4646</a>
-            </li>
-            <li className="flex items-center gap-2 md:justify-start justify-center">
-              <svg className="w-4 h-4 text-casino-cream shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
-              </svg>
-              <a href="tel:+15064629300" className="hover:text-casino-cream transition-colors">506-462-9300</a>
-            </li>
-          </ul>
-
-          {/* Social icons. Links currently point at the main site's footer
-              targets — update when official Facebook/YouTube URLs are known. */}
-          <div className="flex flex-col gap-3 md:items-end items-center">
-            <p className="text-white text-sm font-semibold">Follow US :</p>
-            <div className="flex items-center gap-3">
-              <a
-                href="https://www.wolastoqcasino.ca"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Facebook"
-                className="text-white hover:text-casino-cream transition-colors"
-              >
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                </svg>
-              </a>
-              <a
-                href="https://www.wolastoqcasino.ca"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="YouTube"
-                className="text-white hover:text-casino-cream transition-colors"
-              >
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                </svg>
-              </a>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom bar — copyright + compliance links. Matches the main site
-            footer's secondary row. */}
-        <div className="border-t border-white/20">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex flex-col md:flex-row md:justify-between items-center gap-2 text-xs text-white/80">
-            <p>© {new Date().getFullYear()} Wolastoq Casino. All Rights Reserved.</p>
-            <div className="flex items-center gap-4">
-              <a href="https://www.wolastoqcasino.ca" target="_blank" rel="noopener noreferrer" className="hover:text-casino-cream transition-colors">Responsible Gambling</a>
-              <a href="https://www.wolastoqcasino.ca" target="_blank" rel="noopener noreferrer" className="hover:text-casino-cream transition-colors">Policies/Terms and Conditions</a>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
