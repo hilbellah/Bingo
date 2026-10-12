@@ -210,7 +210,7 @@ export async function pruneFutureSessionsBeyondLookahead() {
   );
 
   for (const session of sessions) {
-    await run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [prunedAt, session.id]);
+    await run("UPDATE sessions SET deleted_at = ?, deleted_reason = 'schedule_pruned' WHERE id = ?", [prunedAt, session.id]);
   }
 
   if (sessions.length > 0) {

@@ -95,7 +95,8 @@ async function correctFutureRegularSessionsForSchedule() {
   await run(
     `UPDATE sessions
         SET is_available = 0,
-            deleted_at = COALESCE(deleted_at, datetime('now'))
+            deleted_at = COALESCE(deleted_at, datetime('now')),
+            deleted_reason = 'schedule_pruned'
       WHERE date >= ?
         AND deleted_at IS NULL
         AND COALESCE(is_special_event, 0) = 0
@@ -563,6 +564,8 @@ async function migrate() {
 
   // Add deleted_at column to sessions for soft-delete
   try { await exec('ALTER TABLE sessions ADD COLUMN deleted_at TEXT'); } catch(e) {}
+  // Why it is hidden: past_session | staff | schedule_pruned (backfilled at the end).
+  try { await exec('ALTER TABLE sessions ADD COLUMN deleted_reason TEXT'); } catch(e) {}
 
   // Audit log table
   await exec(`
@@ -922,6 +925,27 @@ async function migrate() {
   try { await exec("CREATE UNIQUE INDEX idx_refund_requests_pending_scope ON refund_requests(booking_id) WHERE status IN ('pending', 'processing', 'reconciliation_required')"); } catch(e) {}
 
   await repairRefundAmounts();
+
+  // Why a session is hidden (mirrors postgres/018_session_deleted_reason.sql):
+  // past_session | staff | schedule_pruned. deleted_at keeps meaning "hidden".
+  await run(`
+    UPDATE sessions
+    SET deleted_reason = CASE (
+        SELECT a.action
+        FROM audit_log a
+        WHERE a.entity_type = 'session'
+          AND a.entity_id = sessions.id
+          AND a.action IN ('session_auto_archived', 'session_deleted')
+        ORDER BY datetime(a.created_at) DESC
+        LIMIT 1
+      )
+      WHEN 'session_auto_archived' THEN 'past_session'
+      WHEN 'session_deleted' THEN 'staff'
+      ELSE NULL
+    END
+    WHERE deleted_at IS NOT NULL
+      AND deleted_reason IS NULL
+  `);
 
   console.log('Migrations complete.');
 }

@@ -369,7 +369,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       if (inFlight.length > 0) await logAudit('checkout_guard_overridden', 'session', req.params.id, { action: 'delete_session', by: req.adminUser?.email, bookings: inFlight.map(x => x.referenceNumber) });
 
       const now = new Date().toISOString();
-      await run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [now, req.params.id]);
+      await run("UPDATE sessions SET deleted_at = ?, deleted_reason = 'staff' WHERE id = ?", [now, req.params.id]);
 
       // A deleted session drops out of the public website feed; tell the
       // marketing site so the flyer comes down instead of waiting for a purge.
@@ -743,7 +743,7 @@ export function registerAdminSessionRoutes(app, { io, logAudit }) {
       const session = await get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NOT NULL', [req.params.id]);
       if (!session) return res.status(404).json({ error: 'Deleted session not found' });
 
-      await run('UPDATE sessions SET deleted_at = NULL WHERE id = ?', [req.params.id]);
+      await run('UPDATE sessions SET deleted_at = NULL, deleted_reason = NULL WHERE id = ?', [req.params.id]);
       await logAudit('session_restored', 'session', req.params.id, { date: session.date, time: session.time });
       await saveDb();
       res.json({ success: true });

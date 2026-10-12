@@ -1,6 +1,13 @@
 import React from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 
+// sessions.deleted_reason (see server/migrations/postgres/018_session_deleted_reason.sql).
+const DELETED_REASONS = {
+  past_session: { label: 'Past date (auto)', className: 'bg-blue-100 text-blue-700' },
+  staff: { label: 'Deleted by staff', className: 'bg-red-100 text-red-700' },
+  schedule_pruned: { label: 'Removed by schedule', className: 'bg-amber-100 text-amber-700' },
+};
+
 export default function ArchiveAuditTab() {
   const {
     tab,
@@ -22,7 +29,7 @@ export default function ArchiveAuditTab() {
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
               <h3 className="font-semibold text-brand-blue mb-3">Deleted Sessions</h3>
               <div className="border border-amber-100 bg-amber-50 text-amber-900 rounded-lg px-3 py-2 text-xs leading-relaxed mb-4">
-                <span className="font-semibold">Definition:</span> Archive is session-based. Sessions move here after their event date has passed or when they are deleted. The bookings shown here are the bookings attached to that archived session, not every transaction by payment date.
+                <span className="font-semibold">Definition:</span> Archive is session-based. Sessions move here after their event date has passed, when staff delete them, or when the schedule generator removes an empty future session; the Reason column says which. The bookings shown here are the bookings attached to that archived session, not every transaction by payment date.
               </div>
               {deletedSessions.length === 0 ? (
                 <p className="text-gray-400 text-sm">No deleted sessions.</p>
@@ -35,7 +42,8 @@ export default function ArchiveAuditTab() {
                       <th className="pb-2">Live Event / Venue</th>
                       <th className="pb-2">Paid Bookings</th>
                       <th className="pb-2">Revenue</th>
-                      <th className="pb-2">Deleted At</th>
+                      <th className="pb-2">Reason</th>
+                      <th className="pb-2">Hidden At</th>
                       <th className="pb-2">Actions</th>
                     </tr>
                   </thead>
@@ -47,6 +55,11 @@ export default function ArchiveAuditTab() {
                         <td className="py-2">{s.is_special_event && s.event_title ? s.event_title : '-'}</td>
                         <td className="py-2">{s.paid_bookings || 0}</td>
                         <td className="py-2">{formatPrice(s.total_revenue || 0)}</td>
+                        <td className="py-2">
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${DELETED_REASONS[s.deleted_reason]?.className || 'bg-gray-100 text-gray-600'}`}>
+                            {DELETED_REASONS[s.deleted_reason]?.label || 'Not recorded'}
+                          </span>
+                        </td>
                         <td className="py-2 text-xs text-gray-400">{new Date(s.deleted_at).toLocaleString()}</td>
                         <td className="py-2 space-x-2">
                           <button onClick={() => handleViewArchiveBookings(s)}

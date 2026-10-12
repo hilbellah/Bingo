@@ -36,7 +36,7 @@ export async function archivePastSessions() {
   if (pastSessions.length === 0) return { archived: 0 };
 
   const archivedAt = new Date().toISOString();
-  await run('UPDATE sessions SET deleted_at = ? WHERE deleted_at IS NULL AND date < ?', [archivedAt, today]);
+  await run("UPDATE sessions SET deleted_at = ?, deleted_reason = 'past_session' WHERE deleted_at IS NULL AND date < ?", [archivedAt, today]);
 
   for (const session of pastSessions) {
     await logArchiveAudit(session);
