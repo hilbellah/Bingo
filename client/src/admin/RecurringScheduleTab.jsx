@@ -14,7 +14,6 @@ import { confirmAdminAction } from './adminConfirm';
 
 // JS Date.getDay() convention: Sunday = 0
 const DAY_LABELS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const DAY_LABELS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const SESSION_TYPES = [
   { value: 'regular_bingo', label: 'Regular Bingo' },
   { value: 'special_bingo', label: 'Special Bingo' },

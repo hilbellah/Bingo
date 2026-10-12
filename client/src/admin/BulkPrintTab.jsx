@@ -346,7 +346,6 @@ export default function BulkPrintTab() {
   const {
     tab,
     sessions,
-    bookings,
     bulkDateFrom,
     setBulkDateFrom,
     bulkDateTo,

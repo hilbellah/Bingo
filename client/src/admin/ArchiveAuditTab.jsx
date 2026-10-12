@@ -4,9 +4,7 @@ import { useAdminDashboard } from './AdminDashboardContext';
 export default function ArchiveAuditTab() {
   const {
     tab,
-    sessions,
     formatPrice,
-    bookings,
     deletedSessions,
     handleViewArchiveBookings,
     handleRestoreSession,

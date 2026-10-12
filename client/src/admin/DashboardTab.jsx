@@ -34,8 +34,6 @@ export default function DashboardTab() {
     setRecentReceipts,
     printBookingReceipt,
     handleSalesDrilldown,
-    bookings,
-    phdInventory,
     setChairMgmtSession,
   } = useAdminDashboard();
 

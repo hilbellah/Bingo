@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   fetchAdminDashboard, fetchAdminSessions, createAdminSession,
   updateAdminSession, deleteAdminSession, fetchAdminPackages, createAdminPackage, updateAdminPackage, deleteAdminPackage,
-  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, refundAdminBooking, refundAdminBookingItem, fetchRefundRequests, approveRefundRequest, rejectRefundRequest, fetchPaymentReviews, confirmPaymentReview, dismissPaymentReview, resolveDuplicateCharge, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, createAssignedTicket, getExportUrl, adminHeaders,
+  fetchAdminBookings, fetchAdminBookingReceipt, cancelAdminBooking, refundAdminBooking, refundAdminBookingItem, fetchRefundRequests, approveRefundRequest, rejectRefundRequest, fetchPaymentReviews, confirmPaymentReview, dismissPaymentReview, resolveDuplicateCharge, removeAdminAssignedTicket, moveAdminBookingItemSeat, issueNoShowCredit, getExportUrl, adminHeaders,
   fetchAdminAnnouncements, createAdminAnnouncement, updateAdminAnnouncement, deleteAdminAnnouncement,
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
@@ -13,10 +13,8 @@ import {
   fetchAdminCustomers, getCustomersExportUrl,
   fetchSettings, saveSettings,
   uploadImage,
-  fetchAdminPhdInventory, updateAdminPhdInventory,
-  toggleAdminSeat
+  fetchAdminPhdInventory,
 } from '../api';
-import { fetchSeats } from '../api';
 import AdminDashboardContent from './AdminDashboardContent';
 import AdminShell from './AdminShell';
 import NotificationsBell from './NotificationsBell';

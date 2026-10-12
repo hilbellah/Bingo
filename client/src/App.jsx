@@ -14,7 +14,6 @@ import {
 import AnnouncementBanner from './components/AnnouncementBanner';
 import BookingPanel from './components/BookingPanel';
 import BookingProcessing from './components/BookingProcessing';
-import Confirmation from './components/Confirmation';
 import CountdownTimer from './components/CountdownTimer';
 import EmbeddedAuthorizeNetPayment from './components/EmbeddedAuthorizeNetPayment';
 import EventCheckoutPanel from './components/EventCheckoutPanel';
@@ -82,7 +81,6 @@ function BookingApp() {
   // one chair must not fire two lock requests that both append the seat.
   const pendingSeatClicksRef = useRef(new Set());
   const [holdExpiry, setHoldExpiry] = useState(null);
-  const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [paymentSession, setPaymentSession] = useState(null);
@@ -592,21 +590,6 @@ function BookingApp() {
         onCancel={() => {
           window.location.href = `/payment/cancel?bookingId=${encodeURIComponent(paymentSession.bookingId)}`;
         }}
-      />
-    );
-  }
-
-  if (booking) {
-    return (
-      <Confirmation
-        booking={booking}
-        session={selectedSession}
-        attendees={attendees}
-        seats={seats}
-        selectedSeats={selectedSeats}
-        requiredPkg={requiredPkg}
-        requiredPkgs={requiredPkgs}
-        optionalPkgs={optionalPkgs}
       />
     );
   }

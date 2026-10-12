@@ -32,7 +32,6 @@ export default function SessionsTab() {
     sessionPkgList,
     setSessionPkgList,
     handleSaveSessionPkgs,
-    packages,
     sessionFlyerFile,
     sessionFlyerPreview,
     handleSessionFlyerFileChange,
