@@ -14,14 +14,13 @@ import CountdownTimer from './components/CountdownTimer';
 import EmbeddedAuthorizeNetPayment from './components/EmbeddedAuthorizeNetPayment';
 import EventCheckoutPanel from './components/EventCheckoutPanel';
 import FloorPlan from './components/FloorPlan';
-import SessionWeekPicker from './components/SessionWeekPicker';
 import VenueClock from './components/VenueClock';
-import FeaturedEventRail from './components/FeaturedEventRail';
 import LegendItem from './components/LegendItem';
 import LiveEventBookingSurface from './components/LiveEventBookingSurface';
 import { useSocket } from './useSocket';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
+import SessionPickerBar from './components/SessionPickerBar';
 import { useSeatSelection } from './useSeatSelection';
 import { useCheckout } from './useCheckout';
 import {
@@ -440,31 +439,15 @@ function BookingApp() {
         </div>
       </SiteHeader>
 
-      {/* Session week picker bar — sits between the header and the FloorPlan.
-          Colored to blend with the dark casino body background so the FloorPlan
-          itself remains the focal point. */}
-      <div className="bg-casino-dark-soft border-b border-white/10 px-4 py-2 flex-shrink-0">
-        <FeaturedEventRail
-          events={featuredEventSessions}
-          selectedSession={selectedSession}
-          onSelectSession={handleSelectSession}
-        />
-        {!isSelectedEvent && (
-          <section aria-label="Weekly bingo schedule">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-white/65">Weekly Bingo Schedule</h2>
-              <span className="text-xs text-white/40">{bingoSessions.length} available</span>
-            </div>
-            <SessionWeekPicker
-              sessions={bingoSessions}
-              selectedSession={selectedSession}
-              weekOffset={weekOffset}
-              onWeekOffsetChange={setWeekOffset}
-              onSelectSession={handleSelectSession}
-            />
-          </section>
-        )}
-      </div>
+      <SessionPickerBar
+        featuredEventSessions={featuredEventSessions}
+        selectedSession={selectedSession}
+        handleSelectSession={handleSelectSession}
+        isSelectedEvent={isSelectedEvent}
+        bingoSessions={bingoSessions}
+        weekOffset={weekOffset}
+        setWeekOffset={setWeekOffset}
+      />
 
       <div className="flex-1 overflow-auto p-4 md:p-6">
         {!isSelectedEvent && <AnnouncementBanner socket={socket} />}

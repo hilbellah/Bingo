@@ -11,32 +11,8 @@ import {
   pruneAdminSchedule,
 } from '../api';
 import { confirmAdminAction } from './adminConfirm';
-
-// JS Date.getDay() convention: Sunday = 0
-const DAY_LABELS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const SESSION_TYPES = [
-  { value: 'regular_bingo', label: 'Regular Bingo' },
-  { value: 'special_bingo', label: 'Special Bingo' },
-];
-
-function formatTimestamp(iso) {
-  if (!iso) return 'Never';
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
-
-function formatDateLabel(dateStr) {
-  if (!dateStr) return '';
-  try {
-    const d = new Date(dateStr + 'T12:00:00');
-    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-  } catch {
-    return dateStr;
-  }
-}
+import { DAY_LABELS_FULL, SESSION_TYPES, formatTimestamp } from './recurringScheduleHelpers';
+import UpcomingSessionsPreview from './UpcomingSessionsPreview';
 
 export default function RecurringScheduleTab() {
   const { tab, token } = useAdminDashboard();
@@ -602,41 +578,7 @@ export default function RecurringScheduleTab() {
       </div>
 
       {/* Upcoming preview */}
-      {upcomingPreview.length > 0 && (
-        <div className="bg-white rounded-xl p-5 shadow-sm">
-          <h4 className="font-semibold text-brand-blue mb-3">Next Upcoming Auto-Generated Sessions</h4>
-          <div className="text-xs text-gray-500 mb-2">
-            Showing the first 10 of {summary?.upcomingAutoSessions || 0} in the look-ahead window.
-            Manage or cancel individual sessions on the Bingo Sessions tab.
-          </div>
-          <table className="w-full text-sm">
-            <thead className="text-xs text-gray-500 uppercase">
-              <tr className="border-b">
-                <th className="text-left py-2">Date</th>
-                <th className="text-left py-2">Time</th>
-                <th className="text-left py-2">Cutoff</th>
-                <th className="text-left py-2">Type</th>
-                <th className="text-left py-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {upcomingPreview.map((s, i) => (
-                <tr key={i} className="border-b last:border-b-0">
-                  <td className="py-2">{formatDateLabel(s.date)}</td>
-                  <td className="py-2">{s.time}</td>
-                  <td className="py-2 text-gray-500">{s.cutoff_time}</td>
-                  <td className="py-2">{s.session_type === 'special_bingo' ? 'Special' : 'Regular'}</td>
-                  <td className="py-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${s.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
-                      {s.is_available ? 'Open' : 'Closed'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <UpcomingSessionsPreview upcomingPreview={upcomingPreview} summary={summary} />
     </div>
   );
 }
