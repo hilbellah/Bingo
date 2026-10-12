@@ -49,6 +49,8 @@ import { registerAnnouncementRoutes } from './routes/announcementRoutes.js';
 import { registerWebsiteEventRoutes } from './routes/websiteEventRoutes.js';
 import { registerSeatRoutes } from './routes/seatRoutes.js';
 import { registerTicketRoutes } from './routes/ticketRoutes.js';
+import { registerErrorMonitorRoutes } from './routes/errorMonitorRoutes.js';
+import { installServerErrorCapture, startErrorDigest } from './services/errorMonitor.js';
 import { registerSocketHandlers } from './socket.js';
 import {
   migrateSeatLayout,
@@ -58,7 +60,7 @@ import {
 } from './startup.js';
 import { createUploadMiddleware } from './uploads.js';
 import { formatCurrency, formatVenueDate, generateRef } from './utils/format.js';
-import { sendEmailVerificationCode, sendPaymentAuditAlert } from './services/email.js';
+import { sendEmailVerificationCode, sendPaymentAuditAlert, sendErrorDigestAlert } from './services/email.js';
 import {
   createHostedPaymentPage,
   listSettledTransactions,
@@ -1240,6 +1242,7 @@ registerSeatRoutes(app, { bookingLimiter, holdMinutes: HOLD_MINUTES, io });
 
 registerSocketHandlers(io, { logger, authenticateAdminToken });
 registerTicketRoutes(app);
+registerErrorMonitorRoutes(app, { logAudit });
 
 // Keep API misses as JSON. Without this, the SPA fallback returns index.html,
 // and admin fetch callers fail with "Unexpected token '<'" while parsing JSON.
@@ -1275,6 +1278,9 @@ async function start() {
   await startMaintenanceTasks(io, { reconcileReversedBookingSeats }, logger);
   startPaymentReconciliation(paymentReconciler, { logger });
   startGatewayAudit(gatewayAuditor, { logger });
+  // In-house error monitoring: mirror server errors and email a digest of new ones.
+  installServerErrorCapture();
+  startErrorDigest({ send: sendErrorDigestAlert, logger });
   registerGracefulShutdown({ server, logger });
 }
 

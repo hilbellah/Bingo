@@ -1108,3 +1108,40 @@ export async function sendPaymentAuditAlert({ anomalies = [], critical = [], sta
   return { ok: false, status: 0, error: 'no_provider_configured' };
 }
 const CRITICAL_KINDS = new Set(['charge_on_unconfirmed_booking', 'charge_without_booking', 'unrecorded_second_charge']);
+
+// In-house error monitoring digest (errorMonitor.js): one email listing
+// unexpected errors that are new since the last digest. Same recipients as
+// the payment audit unless ERROR_ALERT_EMAILS is set.
+export async function sendErrorDigestAlert({ groups = [], recipients: explicitRecipients = [] }) {
+  const configuredRecipients = (process.env.ERROR_ALERT_EMAILS || process.env.SUPER_ADMIN_EMAILS || process.env.PAYMENT_REVIEW_EMAILS || process.env.EMAIL_BCC || '')
+    .split(',')
+    .map(value => value.trim());
+  const recipients = [...new Set([...explicitRecipients, ...configuredRecipients]
+    .map(value => String(value || '').trim().toLowerCase())
+    .filter(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))];
+  if (recipients.length === 0) return { ok: false, status: 0, error: 'no_admin_recipient' };
+  if (groups.length === 0) return { ok: false, status: 0, error: 'nothing_to_send' };
+
+  const adminUrl = `${(process.env.PUBLIC_SITE_URL || 'https://booking.wolastoqcasino.ca').replace(/\/$/, '')}/admin/dashboard`;
+  const subject = `Booking system: ${groups.length} new error${groups.length === 1 ? '' : 's'} to look at`;
+  const where = g => (g.source === 'server' ? 'Server' : String(g.page || '').startsWith('/admin') ? 'Admin screen' : 'Customer page');
+  const describe = g => `${where(g)}${g.page ? ` (${g.page})` : ''}: ${g.message} - ${g.occurrences} time(s), last ${g.lastSeenAt}`;
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.5">
+    <h2 style="color:#1a3a5c">${escapeHtml(subject)}</h2>
+    <p>The booking system recorded these unexpected errors. Customers may or may not have noticed; nothing was changed automatically.</p>
+    <ul>${groups.map(g => `<li>${escapeHtml(describe(g))}</li>`).join('')}</ul>
+    <p>Full details and a Resolve button are on the Archive &amp; Audit tab, under System errors.</p>
+    <p><a href="${escapeHtml(adminUrl)}" style="display:inline-block;background:#1a3a5c;color:white;padding:10px 16px;border-radius:6px;text-decoration:none">Open Admin Dashboard</a></p>
+  </body></html>`;
+  const text = [subject, '', ...groups.map(g => `- ${describe(g)}`), '', 'Details: Archive & Audit tab > System errors', `Dashboard: ${adminUrl}`].join('\n');
+  const to = recipients[0];
+  const bcc = recipients.slice(1);
+  const emailBooking = { referenceNumber: 'error-digest' };
+  const postmarkToken = process.env.POSTMARK_SERVER_TOKEN;
+  if (postmarkToken) return sendViaPostmark({ token: postmarkToken, to, bcc, subject, html, text, booking: emailBooking });
+  const transporter = getGmailTransporter();
+  if (transporter) return sendViaGmail({ transporter, to, bcc, subject, html, text, booking: emailBooking });
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey) return sendViaResend({ apiKey, to, bcc, subject, html, text, booking: emailBooking });
+  return { ok: false, status: 0, error: 'no_provider_configured' };
+}

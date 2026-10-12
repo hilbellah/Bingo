@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
+import SystemErrorsPanel from './SystemErrorsPanel';
 
 // sessions.deleted_reason (see server/migrations/postgres/018_session_deleted_reason.sql).
 const DELETED_REASONS = {
@@ -18,6 +19,8 @@ export default function ArchiveAuditTab() {
     archiveBookings,
     setArchiveBookings,
     auditLogs,
+    token,
+    adminRole,
   } = useAdminDashboard();
 
   return (
@@ -77,6 +80,8 @@ export default function ArchiveAuditTab() {
                 </table>
               )}
             </div>
+
+            <SystemErrorsPanel token={token} canResolve={adminRole !== 'viewer'} />
 
             {/* Audit Log */}
             <div className="bg-white rounded-xl p-5 shadow-sm">

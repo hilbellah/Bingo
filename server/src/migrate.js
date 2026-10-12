@@ -947,6 +947,26 @@ async function migrate() {
       AND deleted_reason IS NULL
   `);
 
+  // In-house error monitoring (mirrors postgres/019_error_events.sql).
+  await exec(`
+    CREATE TABLE IF NOT EXISTS error_events (
+      id TEXT PRIMARY KEY,
+      fingerprint TEXT NOT NULL UNIQUE,
+      source TEXT NOT NULL,
+      message TEXT NOT NULL,
+      stack TEXT,
+      page TEXT,
+      user_agent TEXT,
+      occurrences INTEGER NOT NULL DEFAULT 1,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      notified_at TEXT,
+      resolved_at TEXT,
+      resolved_by TEXT
+    )
+  `);
+  try { await exec('CREATE INDEX IF NOT EXISTS idx_error_events_last_seen ON error_events (last_seen_at)'); } catch(e) {}
+
   console.log('Migrations complete.');
 }
 

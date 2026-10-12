@@ -536,6 +536,20 @@ export async function fetchAuditLog(token, params = {}) {
   return res.json();
 }
 
+// In-house error monitoring (System errors on the Archive & Audit tab)
+export async function fetchAdminErrors(token, { includeResolved = false } = {}) {
+  const res = await fetch(`${API}/admin/errors${includeResolved ? '?status=all' : ''}`, { headers: adminHeaders(token) });
+  if (!res.ok) throw new Error('Could not load system errors.');
+  return res.json();
+}
+
+export async function resolveAdminError(token, id) {
+  const res = await fetch(`${API}/admin/errors/${encodeURIComponent(id)}/resolve`, {
+    method: 'POST', headers: adminHeaders(token)
+  });
+  return { ok: res.ok, ...(await res.json().catch(() => ({}))) };
+}
+
 // Admin Schedule
 export async function fetchAdminSchedule(token) {
   const res = await fetch(`${API}/admin/schedule`, { headers: adminHeaders(token) });

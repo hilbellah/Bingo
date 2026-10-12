@@ -2,6 +2,9 @@ import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import './index.css';
+import { installErrorReporter } from './errorReporter';
+
+installErrorReporter();
 
 const App = lazy(() => import('./App'));
 const AdminLogin = lazy(() => import('./admin/AdminLogin'));
