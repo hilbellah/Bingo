@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 import SystemErrorsPanel from './SystemErrorsPanel';
 
@@ -22,13 +22,46 @@ export default function ArchiveAuditTab() {
     token,
     adminRole,
   } = useAdminDashboard();
+  const [activeView, setActiveView] = useState('deletedSessions');
+  // Same switcher as Sales & Transactions (BookingsTab), one section at a time.
+  const archiveViews = [
+    { id: 'deletedSessions', label: 'Deleted Sessions', description: `${deletedSessions.length} session(s)` },
+    { id: 'systemErrors', label: 'System Errors', description: 'Booking pages, admin & server' },
+    { id: 'auditLog', label: 'Audit Log', description: `Last ${auditLogs.length} entr${auditLogs.length === 1 ? 'y' : 'ies'}` },
+  ];
 
   return (
     <>
         {/* ARCHIVE & AUDIT TAB */}
         {tab === 'archive' && (
           <div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-2 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2" role="tablist" aria-label="Archive and audit views">
+                {archiveViews.map(view => {
+                  const active = activeView === view.id;
+                  return (
+                    <button
+                      key={view.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setActiveView(view.id)}
+                      className={`text-left rounded-lg px-4 py-3 border transition-colors ${
+                        active
+                          ? 'bg-brand-blue text-white border-brand-blue shadow-sm'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="block font-semibold text-sm">{view.label}</span>
+                      <span className={`block text-xs mt-1 ${active ? 'text-white/80' : 'text-gray-500'}`}>{view.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Deleted Sessions */}
+            {activeView === 'deletedSessions' && (
             <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
               <h3 className="font-semibold text-brand-blue mb-3">Deleted Sessions</h3>
               <div className="border border-amber-100 bg-amber-50 text-amber-900 rounded-lg px-3 py-2 text-xs leading-relaxed mb-4">
@@ -80,10 +113,14 @@ export default function ArchiveAuditTab() {
                 </table>
               )}
             </div>
+            )}
 
-            <SystemErrorsPanel token={token} canResolve={adminRole !== 'viewer'} />
+            {activeView === 'systemErrors' && (
+              <SystemErrorsPanel token={token} canResolve={adminRole !== 'viewer'} />
+            )}
 
             {/* Audit Log */}
+            {activeView === 'auditLog' && (
             <div className="bg-white rounded-xl p-5 shadow-sm">
               <h3 className="font-semibold text-brand-blue mb-3">Audit Log (Last 50)</h3>
               {auditLogs.length === 0 ? (
@@ -124,6 +161,7 @@ export default function ArchiveAuditTab() {
                 </div>
               )}
             </div>
+            )}
           </div>
         )}
 

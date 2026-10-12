@@ -2,7 +2,13 @@ import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+vi.mock('../api', () => ({
+  fetchAdminErrors: vi.fn().mockResolvedValue([]),
+  resolveAdminError: vi.fn(),
+}));
 import ArchiveAuditTab from './ArchiveAuditTab';
+import * as api from '../api';
 import { renderWithAdmin } from '../test/renderWithAdmin';
 
 function hidden(id, date, deletedReason, overrides = {}) {
@@ -66,5 +72,28 @@ describe('Archive tab: why a session is hidden', () => {
   it('hides Restore from accounts that may not restore', () => {
     renderArchive({ deletedSessions: [hidden('x', '2026-12-20', 'staff')], handleRestoreSession: null });
     expect(screen.queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument();
+  });
+});
+
+describe('Archive tab: section switcher', () => {
+  it('opens on Deleted Sessions and switches to System Errors and the Audit Log', async () => {
+    renderArchive({
+      deletedSessions: [hidden('a', '2026-09-05', 'past_session')],
+      auditLogs: [{ id: 'log-1-abcdefgh', created_at: '2026-10-12T04:00:00.000Z', action: 'session_delete', entity_type: 'session', entity_id: 'abcdefgh1234', details: null }],
+    });
+
+    expect(screen.getByRole('tab', { name: /Deleted Sessions/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('2026-09-05')).toBeInTheDocument();
+    expect(screen.queryByText('System Errors', { selector: 'h3' })).not.toBeInTheDocument();
+    expect(api.fetchAdminErrors).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('tab', { name: /System Errors/ }));
+    expect(screen.getByText('System Errors', { selector: 'h3' })).toBeInTheDocument();
+    expect(await screen.findByText('No open errors.')).toBeInTheDocument();
+    expect(screen.queryByText('2026-09-05')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: /Audit Log/ }));
+    expect(screen.getByText('session_delete')).toBeInTheDocument();
+    expect(screen.queryByText('System Errors', { selector: 'h3' })).not.toBeInTheDocument();
   });
 });
