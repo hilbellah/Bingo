@@ -532,10 +532,13 @@ export default function BulkPrintTab() {
       .map(option => option.label)
       .join(', ');
 
-  useEffect(() => {
+  // A new ticket list (new search or reload) re-selects everything still unprinted.
+  const [selectionSource, setSelectionSource] = useState(null);
+  if (allTickets !== selectionSource) {
+    setSelectionSource(allTickets);
     setSelectedTicketIds(new Set(allTickets.filter(ticket => !ticket.printedAt).map(ticket => ticket.id)));
     setPrintFilter('unprinted');
-  }, [allTickets]);
+  }
 
   useEffect(() => {
     if (tab === 'bulkprint' && previousTabRef.current !== 'bulkprint') {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { createAssignedTicket, fetchAdminSeats, moveAdminBookingItemSeat, toggleAdminSeat, toggleAdminTableSeats, toggleAdminSeatsBulk } from '../api';
 import SessionWeekPicker from '../components/SessionWeekPicker';
@@ -48,7 +48,7 @@ export default function ChairManagementTab() {
     .slice()
     .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
 
-  const loadSessionSeats = async (sessionId) => {
+  const loadSessionSeats = useCallback(async (sessionId) => {
     if (!sessionId) {
       setChairMgmtSeats([]);
       return;
@@ -61,16 +61,20 @@ export default function ChairManagementTab() {
     } finally {
       setChairMgmtLoading(false);
     }
-  };
+  }, [token, setChairMgmtSeats, setChairMgmtLoading]);
 
   useEffect(() => {
     if (tab !== 'chairs') return;
     loadSessionSeats(chairMgmtSession);
-  }, [tab, chairMgmtSession]);
+  }, [tab, chairMgmtSession, loadSessionSeats]);
 
-  useEffect(() => {
+  // Switching session or tab clears any bulk selection.
+  const selectionKey = `${chairMgmtSession}|${tab}`;
+  const [selectionFor, setSelectionFor] = useState(selectionKey);
+  if (selectionKey !== selectionFor) {
+    setSelectionFor(selectionKey);
     setSelectedSeatIds(new Set());
-  }, [chairMgmtSession, tab]);
+  }
 
   const handleToggleChair = async (chair) => {
     if (chair.status === 'sold') return;

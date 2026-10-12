@@ -47,8 +47,13 @@ export default function EmbeddedAuthorizeNetPayment({ payment, onBack, onCancel 
     window.location.href = url;
   }, []);
 
-  useEffect(() => {
+  // A new checkout starts with an empty cardholder name and no submission.
+  const [cardholderFor, setCardholderFor] = useState(payment.bookingId);
+  if (payment.bookingId !== cardholderFor) {
+    setCardholderFor(payment.bookingId);
     setCardholderName('');
+  }
+  useEffect(() => {
     submittedRef.current = false;
   }, [payment.bookingId]);
 

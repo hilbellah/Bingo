@@ -53,8 +53,8 @@ export default function App() {
 // in App is not an early return ahead of these hooks (rules-of-hooks); App's
 // paymentRoute never changes after mount, so BookingApp mounts exactly once.
 function BookingApp() {
-  const holderId = useRef(generateHolderId()).current;
-  const socketRef = useSocket();
+  const [holderId] = useState(generateHolderId);
+  const socket = useSocket();
 
   const [sessions, setSessions] = useState([]);
   const [packages, setPackages] = useState([]);
@@ -86,6 +86,14 @@ function BookingApp() {
   const [paymentSession, setPaymentSession] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [openTable, setOpenTable] = useState(null);
+  // Picking a session starts with no table popup open and no stale PHD count
+  // (the session effect below then loads the new session's data).
+  const [viewedSession, setViewedSession] = useState(null);
+  if (selectedSession && selectedSession !== viewedSession) {
+    setViewedSession(selectedSession);
+    setPhdInventory(null);
+    setOpenTable(null);
+  }
   const [weekOffset, setWeekOffset] = useState(0);
   const [namesFilledBeforeChairs, setNamesFilledBeforeChairs] = useState(false);
   const [bookingStep, setBookingStep] = useState(0);
@@ -161,12 +169,7 @@ function BookingApp() {
       setError('Could not load the seat map. Please refresh the page.');
     });
     fetchSessionPackages(selectedSession.id).then(setPackages).catch(() => {});
-    setPhdInventory(null);
     fetchPhdInventory(selectedSession.id).then(setPhdInventory).catch(() => {});
-    setOpenTable(null);
-
-    const socket = socketRef.current;
-    if (!socket) return undefined;
 
     const handleLocked = (data) => {
       setSeats(prev => prev.map(seat =>
@@ -207,7 +210,7 @@ function BookingApp() {
       socket.off('seat:sold', handleSold);
       socket.off('seats:refresh', handleRefresh);
     };
-  }, [selectedSession, socketRef, holderId]);
+  }, [selectedSession, socket, holderId]);
 
   // Reconcile the local selection against seat reality: when a hold expires
   // or a seat is taken, drop it from the selection instead of showing "Your
@@ -239,7 +242,7 @@ function BookingApp() {
       setError('Your chair hold expired, so your selection was cleared. Please pick your chairs again.');
       setTimeout(() => setError(''), 6000);
     }
-  }, [seats, holdExpiry, paymentSession, loading]);
+  }, [seats, holdExpiry, paymentSession, loading, namesFilledBeforeChairs, isSelectedSpecialBingo]);
 
   const handleChairClick = async (chair) => {
     if (bookingClosed) {
@@ -575,12 +578,10 @@ function BookingApp() {
   const allNamesValid = attendees.length > 0 && attendees.every(attendee => attendee.firstName.trim() && attendee.lastName.trim());
   const allSeatsSelected = selectedSeats.length === partySize && partySize > 0;
 
-  useEffect(() => {
-    if (namesFilledBeforeChairs && allSeatsSelected && allNamesValid && !panelOpen) {
-      setPanelOpen(true);
-      setNamesFilledBeforeChairs(false);
-    }
-  }, [namesFilledBeforeChairs, allSeatsSelected, allNamesValid, panelOpen]);
+  if (namesFilledBeforeChairs && allSeatsSelected && allNamesValid && !panelOpen) {
+    setPanelOpen(true);
+    setNamesFilledBeforeChairs(false);
+  }
 
   if (paymentSession) {
     return (
@@ -762,7 +763,7 @@ function BookingApp() {
       </div>
 
       <div className="flex-1 overflow-auto p-4 md:p-6">
-        {!isSelectedEvent && <AnnouncementBanner socket={socketRef.current} />}
+        {!isSelectedEvent && <AnnouncementBanner socket={socket} />}
 
         {!isSelectedEvent && (
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">

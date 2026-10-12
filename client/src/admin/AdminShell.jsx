@@ -98,24 +98,26 @@ export default function AdminShell({
   const [expanded, setExpanded] = useState(loadInitialExpanded);
   const [activeGroupId, setActiveGroupId] = useState(null);
 
-  useEffect(() => {
+  // When the active tab changes, open its sidebar group. Only on a change, so
+  // an admin can still collapse the group they are in.
+  const navKey = `${activeTab}|${activeGroupId}`;
+  const [expandedForNav, setExpandedForNav] = useState(null);
+  if (navKey !== expandedForNav) {
+    setExpandedForNav(navKey);
     const parent = ADMIN_TABS.find(tab => tab.id === activeGroupId && tab.children?.some(child => child.id === activeTab))
       || getAdminTabParentGroup(activeTab);
     if (parent && !expanded[parent.id]) {
-      setExpanded(prev => {
-        const next = { ...prev, [parent.id]: true };
-        saveExpanded(next);
-        return next;
-      });
+      setExpanded(prev => ({ ...prev, [parent.id]: true }));
     }
-  }, [activeTab, activeGroupId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
+
+  // Persist group open/closed state; storage is a side effect, so it lives here.
+  useEffect(() => {
+    saveExpanded(expanded);
+  }, [expanded]);
 
   const toggleGroup = (groupId) => {
-    setExpanded(prev => {
-      const next = { ...prev, [groupId]: !prev[groupId] };
-      saveExpanded(next);
-      return next;
-    });
+    setExpanded(prev => ({ ...prev, [groupId]: !prev[groupId] }));
   };
 
   const parentGroup = ADMIN_TABS.find(tab => tab.id === activeGroupId && tab.children?.some(child => child.id === activeTab))

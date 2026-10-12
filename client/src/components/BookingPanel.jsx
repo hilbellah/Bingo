@@ -45,14 +45,20 @@ export default function BookingPanel({
     if (isOpen && allNamesValid && allSeatsSelected && step === 0) {
       setStep(1);
     }
+    // Deliberately only when the panel opens or the chairs change: reacting to
+    // allNamesValid would jump to Packages while the customer is still typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [isOpen, allSeatsSelected]);
 
-  useEffect(() => {
+  // Closing the panel clears the contact email for the next checkout.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
     if (!isOpen) {
       setCustomerEmail('');
       setEmailTouched(false);
     }
-  }, [isOpen]);
+  }
 
   const getSeatInfo = (seatId) => {
     const seat = seats.find(s => s.id === seatId);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { fetchAdminPhdInventory, updateAdminPhdInventory, updateAdminSessionPhdInventory } from '../api';
 import { confirmAdminAction } from './adminConfirm';
@@ -18,12 +18,15 @@ export default function InventoryTab() {
   const [sessionStockSaving, setSessionStockSaving] = useState(null);
   const [sessionStockError, setSessionStockError] = useState('');
 
-  useEffect(() => {
-    if (!phdInventory?.perSession) return;
+  // Reset the per-session drafts whenever fresh inventory arrives (adjusting
+  // state during render rather than in an effect avoids a second render).
+  const [draftsSource, setDraftsSource] = useState(null);
+  if (phdInventory?.perSession && phdInventory !== draftsSource) {
+    setDraftsSource(phdInventory);
     setSessionStockDrafts(Object.fromEntries(
       phdInventory.perSession.map(session => [session.id, String(session.totalStock ?? phdInventory.totalStock ?? 0)])
     ));
-  }, [phdInventory]);
+  }
 
   const refreshInventory = async () => {
     const data = await fetchAdminPhdInventory(token);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { createAdminUser, deactivateAdminUser, fetchAdminUsers, updateAdminUser } from '../api';
 import { useAdminDashboard } from './AdminDashboardContext';
 import { confirmAdminAction } from './adminConfirm';
@@ -24,7 +24,7 @@ export default function UsersTab() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     if (!isSuperUser) return;
     setLoading(true);
     setError('');
@@ -34,11 +34,12 @@ export default function UsersTab() {
       setError(err.message);
     }
     setLoading(false);
-  };
+  }, [isSuperUser, token]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch when the Users tab opens
     if (tab === 'users') loadUsers();
-  }, [tab]);
+  }, [tab, loadUsers]);
 
   const showSuccess = (message) => {
     setSuccess(message);

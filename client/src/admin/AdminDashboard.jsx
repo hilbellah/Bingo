@@ -42,7 +42,14 @@ export default function AdminDashboard() {
   const isPrintStaff = adminRole === 'print_staff';
   const isViewer = adminRole === 'viewer';
 
-  const [tab, setTab] = useState('dashboard');
+  const [tab, setTab] = useState(() => (isPrintStaff ? 'bulkprint' : 'dashboard'));
+  // Role guard: print staff, viewers and non-super users can only open some
+  // tabs; anything else falls back to their home tab.
+  let allowedTab = tab;
+  if (isPrintStaff && !['bulkprint', 'settings'].includes(tab)) allowedTab = 'bulkprint';
+  else if (tab === 'users' && !isSuperUser) allowedTab = 'dashboard';
+  else if (isViewer && !['dashboard', 'bookings', 'customers', 'archive'].includes(tab)) allowedTab = 'dashboard';
+  if (allowedTab !== tab) setTab(allowedTab);
   const [dashboard, setDashboard] = useState(null);
   const [refundRequests, setRefundRequests] = useState([]);
   const [paymentReviews, setPaymentReviews] = useState({ reviews: [], duplicates: [] });
@@ -205,11 +212,30 @@ export default function AdminDashboard() {
     loadBookingSales,
   });
 
+  const loadRefundRequests = () => fetchRefundRequests(token).then(setRefundRequests).catch(() => setRefundRequests([]));
+  const loadPaymentReviews = () => fetchPaymentReviews(token)
+    .then(data => setPaymentReviews({ reviews: data?.reviews || [], duplicates: data?.duplicates || [] }))
+    .catch(() => setPaymentReviews({ reviews: [], duplicates: [] }));
+  const loadDashboard = (from, to) => Promise.all([
+    fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard),
+    loadRefundRequests(),
+    loadPaymentReviews(),
+  ]);
+  // Latest-render loadDashboard for the socket effect: its deps are [token],
+  // so without the ref a 'booking:new' event refetches with the MOUNT-time
+  // date range and silently overwrites whatever range the admin selected.
+  const loadDashboardRef = useRef(loadDashboard);
+  useEffect(() => {
+    loadDashboardRef.current = loadDashboard;
+  });
+  const loadBookings = (sid) => fetchAdminBookings(token, sid).then(setBookings);
+  const loadDeletedSessions = () => fetchDeletedSessions(token).then(setDeletedSessions);
+  const loadAuditLogs = () => fetchAuditLog(token, { limit: 50 }).then(setAuditLogs);
+
+  // Once on mount: send signed-out visitors to login, load the dashboard and
+  // the saved settings.
   useEffect(() => {
     if (!token) { navigate('/admin'); return; }
-    if (isPrintStaff && !['bulkprint', 'settings'].includes(tab)) {
-      setTab('bulkprint');
-    }
     if (!isPrintStaff) loadDashboard();
     // Load receipt config from server
     fetchSettings(token, 'receipt_config').then(config => {
@@ -237,30 +263,13 @@ export default function AdminDashboard() {
         setBookingConfig({ ...DEFAULT_BOOKING_CONFIG, ...config });
       }).catch(() => {});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: token, role and loaders are read once at sign-in
   }, []);
 
-  const loadRefundRequests = () => fetchRefundRequests(token).then(setRefundRequests).catch(() => setRefundRequests([]));
-  const loadPaymentReviews = () => fetchPaymentReviews(token)
-    .then(data => setPaymentReviews({ reviews: data?.reviews || [], duplicates: data?.duplicates || [] }))
-    .catch(() => setPaymentReviews({ reviews: [], duplicates: [] }));
-  const loadDashboard = (from, to) => Promise.all([
-    fetchAdminDashboard(token, from || dashboardDateFrom, to || dashboardDateTo).then(setDashboard),
-    loadRefundRequests(),
-    loadPaymentReviews(),
-  ]);
-  // Latest-render loadDashboard for the socket effect: its deps are [token],
-  // so without the ref a 'booking:new' event refetches with the MOUNT-time
-  // date range and silently overwrites whatever range the admin selected.
-  const loadDashboardRef = useRef(loadDashboard);
-  loadDashboardRef.current = loadDashboard;
-  const loadBookings = (sid) => fetchAdminBookings(token, sid).then(setBookings);
-  const loadDeletedSessions = () => fetchDeletedSessions(token).then(setDeletedSessions);
-  const loadAuditLogs = () => fetchAuditLog(token, { limit: 50 }).then(setAuditLogs);
+  // Load each tab's data when it is opened (not on every render: the loaders
+  // are recreated each render, so they are deliberately not dependencies).
   useEffect(() => {
-    if (isPrintStaff && !['bulkprint', 'settings'].includes(tab)) {
-      setTab('bulkprint');
-      return;
-    }
+    if (tab !== allowedTab) return;
     if (tab === 'sessions') loadSessions();
     if (tab === 'events') { loadSessions(); loadBookingSales(); }
     if (tab === 'packages') loadPackages();
@@ -272,8 +281,7 @@ export default function AdminDashboard() {
     if (tab === 'inventory') { fetchAdminPhdInventory(token).then(data => { setPhdInventory(data); setPhdEditForm({ totalStock: data.totalStock, perPlayerLimit: data.perPlayerLimit }); }); }
     if (tab === 'chairs') loadSessions();
     if (tab === 'bulkprint') loadSessions();
-    if (tab === 'users' && !isSuperUser) setTab('dashboard');
-    if (isViewer && !['dashboard', 'bookings', 'customers', 'archive'].includes(tab)) setTab('dashboard');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the tab changes only
   }, [tab]);
 
   // Auto-print: keep refs in sync with state
@@ -335,6 +343,7 @@ export default function AdminDashboard() {
       socket.off('booking:payment_review_resolved', loadPaymentReviews);
       socket.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one live connection per sign-in; handlers read the latest values through refs
   }, [token]);
 
   const handlePrintBookingReceipt = (booking) => {

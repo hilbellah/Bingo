@@ -12,7 +12,7 @@ export default function AdminLogin() {
 
   React.useEffect(() => {
     if (sessionStorage.getItem('admin_token')) navigate('/admin/dashboard');
-  }, []);
+  }, [navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

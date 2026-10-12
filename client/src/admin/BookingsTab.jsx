@@ -61,9 +61,8 @@ export default function BookingsTab() {
     if (salesDateRangeInvalid) return;
     loadDatedBookingSales({ dateFrom: salesDateFrom, dateTo: salesDateTo });
   };
-  const transactionRows = transactions?.items || [];
   const sortedTransactionRows = useMemo(() => {
-    const rows = [...transactionRows];
+    const rows = [...(transactions?.items || [])];
     if (transactionSort === 'name-asc' || transactionSort === 'name-desc') {
       const direction = transactionSort === 'name-asc' ? 1 : -1;
       return rows.sort((a, b) => {
@@ -73,7 +72,7 @@ export default function BookingsTab() {
       });
     }
     return rows.sort((a, b) => String(b.transactionAt || '').localeCompare(String(a.transactionAt || '')));
-  }, [transactionRows, transactionSort]);
+  }, [transactions, transactionSort]);
   const transactionSummary = transactions?.summary || {};
   const dailySubtotalWithoutServiceCharges = dailySales?.subtotalWithoutServiceChargesFormatted || dailySales?.grandTotalFormatted || 'CA$0.00';
   const dailyServiceChargeSubtotal = dailySales?.serviceChargeSubtotalFormatted || 'CA$0.00';
@@ -428,7 +427,7 @@ export default function BookingsTab() {
                 </div>
               </div>
 
-              {transactionRows.length === 0 ? (
+              {sortedTransactionRows.length === 0 ? (
                 <p className="text-gray-400 text-center py-8">No transactions found</p>
               ) : (
                 <div className="overflow-x-auto">

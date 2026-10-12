@@ -274,6 +274,7 @@ export default function PrintableTickets() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch when the ticket reference changes
     if (ref) loadTickets(ref, { ticketAccessToken });
   }, [ref, ticketAccessToken]);
 

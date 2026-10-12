@@ -26,11 +26,16 @@ export default function EventCheckoutPanel({
   const [updatingTickets, setUpdatingTickets] = useState(false);
   const updatingTicketsRef = useRef(false);
 
-  useEffect(() => {
+  // A different event starts checkout from the first step with empty contact details.
+  const [contactFor, setContactFor] = useState(session?.id);
+  if (session?.id !== contactFor) {
+    setContactFor(session?.id);
     setCustomerEmail('');
     setContactTouched(false);
+  }
+  useEffect(() => {
     onStepChange(0);
-  }, [session?.id]);
+  }, [session?.id, onStepChange]);
 
   const packageCounts = useMemo(() => {
     const counts = new Map(requiredPkgs.map(pkg => [pkg.id, 0]));

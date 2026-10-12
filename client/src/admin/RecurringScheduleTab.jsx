@@ -75,6 +75,7 @@ export default function RecurringScheduleTab() {
   }, [token]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch when the Schedule tab opens
     if (tab === 'recurring' && token) load();
   }, [tab, token, load]);
 
