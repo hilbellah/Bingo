@@ -27,81 +27,21 @@ import {
 } from './adminPrintUtils';
 import { confirmAdminAction } from './adminConfirm';
 import { askAdmin, tellAdmin } from './adminDialogs';
-
-// Shared field for actions the server only accepts with a written reason.
-const reasonField = label => ({ name: 'reason', label, type: 'textarea', required: true, minLength: 3 });
 import { formatDateShort, formatTime, venueToday } from '../utils/formatters';
 import { emptyWebsiteListing, missingWebsiteListingFields, websiteListingFromSession } from './WebsiteListingFields';
-
-function formatPrice(cents) {
-  return 'CA$' + (cents / 100).toFixed(2);
-}
-
-function packageSummary(packages = []) {
-  return packages
-    .filter(pkg => pkg?.name)
-    .map(pkg => `${pkg.name} (${formatPrice(pkg.price || 0)})`)
-    .join(', ');
-}
-
-function splitSalesCutoffAt(value, fallbackDate = '', fallbackTime = '12:00') {
-  const text = String(value || '').trim();
-  if (text.length >= 16) {
-    return { date: text.slice(0, 10), time: text.slice(11, 16) };
-  }
-  return { date: fallbackDate || '', time: fallbackTime || '12:00' };
-}
-
-function buildSalesCutoffAt(date, time) {
-  return date && time ? `${date}T${time}` : null;
-}
-
-function formatSalesCutoff(value, fallbackTime = '') {
-  const split = splitSalesCutoffAt(value, '', fallbackTime || '12:00');
-  return split.date ? `${formatDateShort(split.date)} at ${formatTime(split.time)}` : formatTime(split.time);
-}
-
-const DEFAULT_SPECIAL_BINGO_CONFIG = {
-  admissionName: 'Special Bingo Admission',
-  admissionPrice: 7500,
-  additionalPhdName: 'PHD Unit',
-  additionalPhdPrice: 5000,
-  additionalPhdMaxQuantity: 1,
-};
-
-const DEFAULT_BOOKING_CONFIG = {
-  maxOptionalPackagesPerPlayer: 3,
-};
-
-function normalizeSpecialBingoConfig(config = {}) {
-  const resolved = { ...DEFAULT_SPECIAL_BINGO_CONFIG, ...(config || {}) };
-  return {
-    ...resolved,
-    admissionName: String(resolved.admissionName || DEFAULT_SPECIAL_BINGO_CONFIG.admissionName)
-      .replace(/\s*\(includes 1 PHD\)\s*/i, '')
-      .trim(),
-    admissionPrice: DEFAULT_SPECIAL_BINGO_CONFIG.admissionPrice,
-    additionalPhdName: String(resolved.additionalPhdName || DEFAULT_SPECIAL_BINGO_CONFIG.additionalPhdName)
-      .replace(/^Additional\s+/i, '')
-      .trim(),
-    additionalPhdPrice: DEFAULT_SPECIAL_BINGO_CONFIG.additionalPhdPrice,
-    additionalPhdMaxQuantity: 1,
-  };
-}
-
-function defaultSpecialEventPackages(config = DEFAULT_SPECIAL_BINGO_CONFIG) {
-  const resolved = normalizeSpecialBingoConfig(config);
-  return [
-    { name: resolved.admissionName, price: resolved.admissionPrice, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false, description: '' },
-    { name: resolved.additionalPhdName, price: resolved.additionalPhdPrice, type: 'optional', max_quantity: 1, sort_order: 1, is_phd: true, description: 'Handheld device for special bingo.' },
-  ];
-}
-
-function defaultEventPackages() {
-  return [
-    { name: 'Live Event / Venue Admission', price: 0, type: 'required', max_quantity: 1, sort_order: 0, is_phd: false, description: 'Admission ticket for the live event or venue booking.' },
-  ];
-}
+import {
+  reasonField,
+  formatPrice,
+  packageSummary,
+  splitSalesCutoffAt,
+  buildSalesCutoffAt,
+  formatSalesCutoff,
+  DEFAULT_SPECIAL_BINGO_CONFIG,
+  DEFAULT_BOOKING_CONFIG,
+  normalizeSpecialBingoConfig,
+  defaultSpecialEventPackages,
+  defaultEventPackages,
+} from './adminDashboardHelpers';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
