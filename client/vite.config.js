@@ -13,5 +13,12 @@ export default defineConfig({
         ws: true
       }
     }
+  },
+  // Component tests (vitest run). Only *.test.jsx files under src/ are
+  // collected; none of this is part of the production bundle.
+  test: {
+    environment: 'jsdom',
+    include: ['src/**/*.test.{js,jsx}'],
+    setupFiles: ['./src/test/setup.js'],
   }
 });
