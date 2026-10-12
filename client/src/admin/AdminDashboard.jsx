@@ -9,8 +9,7 @@ import {
   fetchAdminSessionPackages, setAdminSessionPackages,
   fetchAdminBulkTickets,
   fetchDeletedSessions, restoreSession, fetchSessionBookings, fetchAuditLog,
-  fetchBookingSales, fetchDailySales, fetchAdminTransactions, resetAdminSalesReporting,
-  fetchAdminCustomers, getCustomersExportUrl,
+  resetAdminSalesReporting,
   fetchSettings, saveSettings,
   uploadImage,
   fetchAdminPhdInventory,
@@ -20,10 +19,7 @@ import AdminShell from './AdminShell';
 import NotificationsBell from './NotificationsBell';
 import {
   printAutoBookingReceipt,
-  printDailySalesReceipt as printDailySalesReceiptDocument,
   printRefundReceipt,
-  printSalesDrilldown,
-  saveSalesDrilldownCsv,
 } from './adminPrintUtils';
 import { confirmAdminAction } from './adminConfirm';
 import { askAdmin, tellAdmin } from './adminDialogs';
@@ -42,6 +38,7 @@ import {
   defaultEventPackages,
 } from './adminDashboardHelpers';
 import { useBookingActions } from './useBookingActions';
+import { useSalesReports } from './useSalesReports';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -87,22 +84,6 @@ export default function AdminDashboard() {
   const [archiveBookings, setArchiveBookings] = useState(null); // { session, bookings }
   const [auditLogs, setAuditLogs] = useState([]);
   const [bookingSearch, setBookingSearch] = useState('');
-  const [bookingSales, setBookingSales] = useState([]);
-  // Date view for Booking Sales: { dateFrom, dateTo } when active, otherwise
-  // null. Kept separate from bookingSales so Event Sales is unaffected.
-  const [bookingSalesRange, setBookingSalesRange] = useState(null);
-  const [datedBookingSales, setDatedBookingSales] = useState(null); // { rows, error, loading }
-  const bookingSalesRangeRef = useRef(null);
-  const [customers, setCustomers] = useState([]);
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [salesDrilldown, setSalesDrilldown] = useState(null); // { session, bookings }
-  const [dailySales, setDailySales] = useState(null);
-  const [dailySalesDate, setDailySalesDate] = useState(venueToday());
-  const [dailySalesDateTo, setDailySalesDateTo] = useState(venueToday());
-  const [dailySalesRange, setDailySalesRange] = useState('daily');
-  const [dailySalesSearch, setDailySalesSearch] = useState('');
-  const [transactions, setTransactions] = useState({ items: [], summary: null, filters: {} });
-  const [transactionFilters, setTransactionFilters] = useState({ dateFrom: '', dateTo: '', status: 'all', search: '' });
   const [dashboardDateFrom, setDashboardDateFrom] = useState(venueToday());
   const [dashboardDateTo, setDashboardDateTo] = useState(venueToday());
   const [dashboardRange, setDashboardRange] = useState('daily');
@@ -145,6 +126,38 @@ export default function AdminDashboard() {
   const socketRef = useRef(null);
   const autoPrintRef = useRef(false);
   const receiptConfigRef = useRef(receiptConfig);
+  const {
+    bookingSales,
+    bookingSalesRange,
+    datedBookingSales,
+    customers,
+    customerSearch,
+    setCustomerSearch,
+    salesDrilldown,
+    setSalesDrilldown,
+    dailySales,
+    dailySalesDate,
+    setDailySalesDate,
+    dailySalesDateTo,
+    setDailySalesDateTo,
+    dailySalesRange,
+    setDailySalesRange,
+    dailySalesSearch,
+    setDailySalesSearch,
+    transactions,
+    transactionFilters,
+    setTransactionFilters,
+    loadDatedBookingSales,
+    loadBookingSales,
+    loadDailySales,
+    loadTransactions,
+    loadCustomers,
+    handleSalesDrilldown,
+    handlePrintSalesDrilldown,
+    handleSaveSalesDrilldownCsv,
+    handlePrintDailySalesReceipt,
+    handleExportCustomers,
+  } = useSalesReports({ token, receiptConfigRef });
 
   useEffect(() => {
     if (!token) { navigate('/admin'); return; }
@@ -200,54 +213,6 @@ export default function AdminDashboard() {
   const loadAnnouncements = () => fetchAdminAnnouncements(token).then(setAnnouncements);
   const loadDeletedSessions = () => fetchDeletedSessions(token).then(setDeletedSessions);
   const loadAuditLogs = () => fetchAuditLog(token, { limit: 50 }).then(setAuditLogs);
-  const loadDatedBookingSales = (range) => {
-    bookingSalesRangeRef.current = range;
-    setBookingSalesRange(range);
-    if (!range) {
-      setDatedBookingSales(null);
-      return Promise.resolve();
-    }
-    setDatedBookingSales(prev => ({ rows: prev?.rows || [], error: '', loading: true }));
-    return fetchBookingSales(token, range)
-      .then(data => {
-        if (bookingSalesRangeRef.current !== range) return;
-        if (!Array.isArray(data)) throw new Error(data?.error || 'Could not load booking sales for those dates.');
-        setDatedBookingSales({ rows: data, error: '', loading: false });
-      })
-      .catch(err => {
-        if (bookingSalesRangeRef.current !== range) return;
-        setDatedBookingSales({ rows: [], error: err?.message || 'Could not load booking sales for those dates.', loading: false });
-      });
-  };
-  // Refunds and other booking changes call this; refresh the date view too
-  // so its counts do not go stale while staff work through past sessions.
-  const loadBookingSales = () => {
-    if (bookingSalesRangeRef.current) loadDatedBookingSales(bookingSalesRangeRef.current);
-    return fetchBookingSales(token).then(setBookingSales);
-  };
-  const loadDailySales = (filters = {}, legacySearch) => {
-    const nextFilters = typeof filters === 'object' && filters !== null
-      ? filters
-      : { date: filters, search: legacySearch };
-    const range = nextFilters.range || dailySalesRange;
-    const date = nextFilters.date || dailySalesDate;
-    const dateFrom = nextFilters.dateFrom || date;
-    const dateTo = nextFilters.dateTo || dailySalesDateTo || dateFrom;
-    const request = {
-      range,
-      search: nextFilters.search ?? dailySalesSearch,
-    };
-    if (range === 'multi-day') {
-      request.dateFrom = dateFrom;
-      request.dateTo = dateTo;
-    } else {
-      request.date = date;
-    }
-    return fetchDailySales(token, request).then(setDailySales);
-  };
-  const loadTransactions = (filters = transactionFilters) => fetchAdminTransactions(token, filters).then(setTransactions);
-  const loadCustomers = (search) => fetchAdminCustomers(token, search ?? customerSearch).then(setCustomers);
-
   useEffect(() => {
     if (isPrintStaff && !['bulkprint', 'settings'].includes(tab)) {
       setTab('bulkprint');
@@ -328,40 +293,6 @@ export default function AdminDashboard() {
       socket.disconnect();
     };
   }, [token]);
-
-  const handleSalesDrilldown = (sale) => {
-    const quantity = Number(sale?.quantity || sale?.sold || 0);
-    if (!sale?.id || quantity <= 0) return;
-
-    setSalesDrilldown({ session: { ...sale, quantity }, bookings: [], loading: true, error: '' });
-    fetchAdminBookings(token, sale.id)
-      .then(data => {
-        if (!Array.isArray(data)) {
-          throw new Error(data?.message || data?.error || 'Could not load booking details.');
-        }
-        setSalesDrilldown({ session: { ...sale, quantity }, bookings: data, loading: false, error: '' });
-      })
-      .catch(err => {
-        setSalesDrilldown({
-          session: { ...sale, quantity },
-          bookings: [],
-          loading: false,
-          error: err?.message || 'Could not load booking details.',
-        });
-      });
-  };
-
-  const handlePrintSalesDrilldown = () => {
-    printSalesDrilldown(salesDrilldown);
-  };
-
-  const handleSaveSalesDrilldownCsv = () => {
-    saveSalesDrilldownCsv(salesDrilldown);
-  };
-
-  const handlePrintDailySalesReceipt = () => {
-    printDailySalesReceiptDocument(dailySales, receiptConfigRef.current);
-  };
 
   const handlePrintBookingReceipt = (booking) => {
     if (['partially_refunded', 'refunded', 'voided'].includes(booking?.paymentStatus)) {
@@ -961,19 +892,6 @@ export default function AdminDashboard() {
         a.href = URL.createObjectURL(blob);
         a.download = `bookings-report.csv`;
         a.click();
-      });
-  };
-
-  const handleExportCustomers = () => {
-    fetch(getCustomersExportUrl(customerSearch), { headers: adminHeaders(token) })
-      .then(r => r.blob())
-      .then(blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'customers-report.csv';
-        a.click();
-        URL.revokeObjectURL(url);
       });
   };
 
