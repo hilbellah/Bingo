@@ -35,6 +35,28 @@ Run from the repository root on `main`:
 
 ## History
 
+### 2026-10-12 (later) — 7.5 / 10 (commit `09c5562`)
+
+| Area | Score | Change |
+|---|---|---|
+| Payment safety | 9 | Unchanged |
+| Testing | 8 | +1: 23 component tests (refund buttons, Booking Sales date view, Archive reasons, money dialogs) run in `npm run check` and CI; new API checks for the date view and `deleted_reason`, passing on SQLite and Postgres |
+| Process & docs | 8 | Unchanged; added a verified production backup + `RESTORE.md` (kept off-repo) and this scorecard |
+| Server structure | 7 | Unchanged |
+| Admin/customer UI structure | 5.5 | +0.5: dead `SoldTicketsModal` and customer `Confirmation` retired, unused-variable warnings cleared (42 → 30); `AdminDashboard.jsx` still 1,518 lines |
+| Design & data model | 7 | +1: `sessions.deleted_reason` records why a session is hidden; refunds and other money actions use validated in-app dialogs (browser dialogs 57 → 27) |
+| Upkeep & monitoring | 6 | Unchanged: audit clean, still no error monitoring |
+
+Measurements: `npm run check` passes · 32 check scripts · 4 component test files (23 tests) ·
+0 lint errors / 30 warnings · 0 advisories · largest file 1,518 lines · 27 browser dialogs in
+admin · no monitoring.
+
+Weighted: 9×.25 + 8×.20 + 8×.10 + 7×.10 + 5.5×.15 + 7×.10 + 6×.10 = **7.475 → 7.5**.
+
+To reach 8.5+: split `AdminDashboard.jsx` per tab and clear the 30 react-hooks warnings
+(UI structure → 8), add error monitoring (upkeep → 8.5), move the remaining 27 browser dialogs
+(design → 8).
+
 ### 2026-10-12 — 7 / 10 (baseline, commit `9f556cf`)
 
 | Area | Score | Notes |
