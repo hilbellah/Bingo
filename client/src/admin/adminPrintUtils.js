@@ -348,27 +348,6 @@ export function buildBulkBookingReceiptsBody(bookings, cfg = {}) {
   return { body, paperWidth, cutPercent };
 }
 
-export function printPurchasers(soldModal) {
-  const el = document.getElementById('sold-modal-content');
-  if (!el || !soldModal) return;
-  const body = `<h2>Ticket Purchasers</h2><p class="sub">${soldModal.session.date} at ${soldModal.session.time} - ${soldModal.session.sold} sold</p>${el.innerHTML}`;
-  writePrintDocument(`Ticket Purchasers - ${soldModal.session.date}`, body, modalPrintStyle);
-}
-
-export function savePurchasersCsv(soldModal) {
-  if (!soldModal) return;
-  const rows = [['Reference', 'First Name', 'Last Name', 'Table', 'Chair', 'Package', 'Add-ons', 'Booking Total']];
-  for (const booking of soldModal.bookings) {
-    for (const item of booking.items) {
-      const addons = item.addons.length > 0
-        ? item.addons.map(addon => `${addon.packageName} x${addon.quantity}`).join('; ')
-        : '';
-      rows.push([item.referenceNumber || booking.referenceNumber, item.firstName, item.lastName, item.tableNumber, item.chairNumber, item.packageName, addons, booking.totalFormatted]);
-    }
-  }
-  downloadCsv(`purchasers-${soldModal.session.date}.csv`, rows);
-}
-
 export function printSalesDrilldown(salesDrilldown) {
   const el = document.getElementById('sales-drilldown-content');
   if (!el || !salesDrilldown) return;

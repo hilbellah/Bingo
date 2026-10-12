@@ -24,9 +24,7 @@ import {
   printAutoBookingReceipt,
   printDailySalesReceipt as printDailySalesReceiptDocument,
   printRefundReceipt,
-  printPurchasers,
   printSalesDrilldown,
-  savePurchasersCsv,
   saveSalesDrilldownCsv,
 } from './adminPrintUtils';
 import { confirmAdminAction } from './adminConfirm';
@@ -143,7 +141,6 @@ export default function AdminDashboard() {
   const [bulkDepartment, setBulkDepartment] = useState('all');
   const [bulkData, setBulkData] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);
-  const [soldModal, setSoldModal] = useState(null); // { session, bookings } when open
   const [deletedSessions, setDeletedSessions] = useState([]);
   const [archiveBookings, setArchiveBookings] = useState(null); // { session, bookings }
   const [auditLogs, setAuditLogs] = useState([]);
@@ -390,21 +387,6 @@ export default function AdminDashboard() {
       socket.disconnect();
     };
   }, [token]);
-
-  const handleSoldClick = (session) => {
-    if (session.sold === 0) return;
-    fetchAdminBookings(token, session.id).then(data => {
-      setSoldModal({ session, bookings: data });
-    });
-  };
-
-  const handlePrintPurchasers = () => {
-    printPurchasers(soldModal);
-  };
-
-  const handleSavePurchasersCsv = () => {
-    savePurchasersCsv(soldModal);
-  };
 
   const handleSalesDrilldown = (sale) => {
     const quantity = Number(sale?.quantity || sale?.sold || 0);
@@ -1010,12 +992,7 @@ export default function AdminDashboard() {
       loadTransactions(transactionFilters);
       loadBookingSales();
       loadDailySales(dailySalesDate, dailySalesSearch);
-      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
-      if (soldModal?.session?.id) {
-        fetchAdminBookings(token, soldModal.session.id).then(data => {
-          setSoldModal({ session: soldModal.session, bookings: data });
-        });
-      }
+      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
     } else {
       window.alert('Refund failed: ' + (result.error || 'Unknown error'));
     }
@@ -1043,12 +1020,7 @@ export default function AdminDashboard() {
       loadTransactions(transactionFilters);
       loadBookingSales();
       loadDailySales(dailySalesDate, dailySalesSearch);
-      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
-      if (soldModal?.session?.id) {
-        fetchAdminBookings(token, soldModal.session.id).then(data => {
-          setSoldModal({ session: soldModal.session, bookings: data });
-        });
-      }
+      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
     } else {
       window.alert('Ticket refund failed: ' + (result.error || 'Unknown error'));
     }
@@ -1150,12 +1122,7 @@ export default function AdminDashboard() {
       loadBookingSales();
       loadDailySales(dailySalesDate, dailySalesSearch);
       loadSessions();
-      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
-      if (soldModal?.session?.id) {
-        fetchAdminBookings(token, soldModal.session.id).then(data => {
-          setSoldModal({ session: soldModal.session, bookings: data });
-        });
-      }
+      if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
     } else {
       window.alert('Assigned seat removal failed: ' + (result.error || 'Unknown error'));
     }
@@ -1206,12 +1173,7 @@ export default function AdminDashboard() {
     loadBookingSales();
     loadDailySales(dailySalesDate, dailySalesSearch);
     loadDashboard(dashboardDateFrom, dashboardDateTo);
-    if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
-    if (soldModal?.session?.id) {
-      fetchAdminBookings(token, soldModal.session.id).then(data => {
-        setSoldModal({ session: soldModal.session, bookings: data });
-      });
-    }
+    if (salesDrilldown?.session?.id) handleSalesDrilldown(salesDrilldown.session);
   };
 
   const handleMoveBookingItemSeat = async (item, booking) => {
@@ -1346,7 +1308,6 @@ export default function AdminDashboard() {
     recentReceipts,
     setRecentReceipts,
     printBookingReceipt,
-    handleSoldClick,
     sessions,
     newSession,
     setNewSession,
@@ -1496,10 +1457,6 @@ export default function AdminDashboard() {
     handlePrintSalesDrilldown,
     handleSaveSalesDrilldownCsv,
     handleMoveBookingItemSeat: isViewer ? null : handleMoveBookingItemSeat,
-    soldModal,
-    setSoldModal,
-    handlePrintPurchasers,
-    handleSavePurchasersCsv,
   };
 
   return (
